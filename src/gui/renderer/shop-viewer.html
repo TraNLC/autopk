@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VLTK1 Shop Radar - Item Viewer</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',Tahoma,sans-serif; background:#0d1117; color:#c9d1d9; }
+.header { background:#161b22; padding:16px 24px; border-bottom:1px solid #30363d; position:sticky; top:0; z-index:10; }
+.header h1 { color:#58a6ff; font-size:20px; margin-bottom:8px; }
+.header .meta { font-size:13px; color:#8b949e; }
+.toolbar { display:flex; gap:12px; align-items:center; padding:12px 24px; background:#161b22; border-bottom:1px solid #30363d; flex-wrap:wrap; }
+.toolbar input, .toolbar select { background:#21262d; border:1px solid #30363d; color:#c9d1d9; padding:8px 12px; border-radius:6px; font-size:14px; }
+.toolbar input { flex:1; min-width:200px; }
+.toolbar input:focus, .toolbar select:focus { outline:none; border-color:#58a6ff; }
+.stats { padding:12px 24px; display:flex; gap:24px; flex-wrap:wrap; }
+.stat { background:#161b22; padding:8px 16px; border-radius:8px; border:1px solid #30363d; }
+.stat .val { font-size:22px; font-weight:700; color:#58a6ff; }
+.stat .lbl { font-size:12px; color:#8b949e; }
+.shop-card { background:#161b22; border:1px solid #30363d; border-radius:8px; margin:12px 24px; overflow:hidden; }
+.shop-header { padding:12px 16px; background:#21262d; cursor:pointer; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #30363d; }
+.shop-header:hover { background:#30363d; }
+.shop-header .name { font-weight:600; font-size:16px; color:#58a6ff; }
+.shop-header .info { font-size:13px; color:#8b949e; }
+.shop-body { display:none; }
+.shop-body.open { display:block; }
+.item-table { width:100%; border-collapse:collapse; font-size:13px; }
+.item-table th { background:#0d1117; padding:8px 12px; text-align:left; font-weight:600; color:#8b949e; border-bottom:2px solid #30363d; position:sticky; top:0; }
+.item-table td { padding:8px 12px; border-bottom:1px solid #21262d; }
+.item-table tr:hover td { background:#1c2128; }
+.price-gold { color:#ffd700; font-weight:600; }
+.price-knb { color:#ff6b6b; font-weight:600; }
+.price-free { color:#2ea043; }
+.series-kim { color:#ffd700; } .series-moc { color:#2ea043; } .series-thuy { color:#58a6ff; } .series-hoa { color:#ff6b6b; } .series-tho { color:#d2a679; }
+.no-data { text-align:center; padding:40px; color:#8b949e; }
+.badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-shop { background:rgba(88,166,255,0.15); color:#58a6ff; }
+.hidden { display:none; }
+#loading { text-align:center; padding:40px; color:#8b949e; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🛒 VLTK1 Shop Radar — Item Viewer</h1>
+  <div class="meta" id="meta">Kéo thả file shops_export.json vào trang hoặc click "Load JSON"</div>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="🔍 Tìm item, shop, giá... (Enter để lọc)">
+  <select id="genreFilter">
+    <option value="">Tất cả loại</option>
+    <option value="0">Vũ Khí</option><option value="1">Ám Khí</option><option value="2">Áo</option>
+    <option value="3">Nhẫn</option><option value="4">Dây Chuyền</option><option value="5">Giày</option>
+    <option value="6">Thắt Lưng</option><option value="7">Mũ</option><option value="8">Bao Tay</option><option value="9">Ngọc Bội</option>
+  </select>
+  <select id="seriesFilter">
+    <option value="">Tất cả hệ</option>
+    <option value="0">Kim</option><option value="1">Mộc</option><option value="2">Thủy</option><option value="3">Hỏa</option><option value="4">Thổ</option>
+  </select>
+  <select id="priceFilter">
+    <option value="">Tất cả giá</option>
+    <option value="free">Miễn phí</option>
+    <option value="gold">Bằng lượng</option>
+    <option value="knb">Bằng KNB</option>
+    <option value="0-10000">0 - 1 Vạn</option>
+    <option value="10000-100000">1 Vạn - 10 Vạn</option>
+    <option value="100000-1000000">10 Vạn - 100 Vạn</option>
+    <option value="1000000-">Trên 100 Vạn</option>
+  </select>
+  <button id="btnLoad" style="background:#238636;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;">📂 Load JSON</button>
+  <button id="btnReset" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;">🔄 Reset Filter</button>
+</div>
+
+<div id="statsBar" class="stats"></div>
+<div id="loading">📂 Vui lòng load file shops_export.json để xem dữ liệu</div>
+<div id="results"></div>
+
+<script>
+let allData = null;
+let fileInput = null;
+
+// File drag & drop
+document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+
+// File input
+function createFileInput() {
+  fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.json';
+  fileInput.style.display = 'none';
+  fileInput.addEventListener('change', e => {
+    const f = e.target.files[0];
+    if (f) loadFile(f);
+  });
+  document.body.appendChild(fileInput);
+}
+createFileInput();
+
+document.getElementById('btnLoad').addEventListener('click', () => fileInput.click());
+
+function loadFile(file) {
+  document.getElementById('loading').textContent = '⏳ Đang đọc file...';
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      allData = JSON.parse(e.target.result);
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('meta').textContent = 
+        `📅 ${allData.timestamp} | 🏪 ${allData.totalShops} shops | 📦 ${allData.totalItems} items | ✅ ${allData.scannedShops} scanned | ⚠️ ${allData.failedShops} failed`;
+      renderAll();
+    } catch(err) {
+      document.getElementById('loading').textContent = '❌ Lỗi parse JSON: ' + err.message;
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  document.getElementById('search').value = '';
+  document.getElementById('genreFilter').value = '';
+  document.getElementById('seriesFilter').value = '';
+  document.getElementById('priceFilter').value = '';
+  renderAll();
+});
+
+document.getElementById('search').addEventListener('keyup', e => { if (e.key === 'Enter') renderAll(); });
+document.getElementById('genreFilter').addEventListener('change', renderAll);
+document.getElementById('seriesFilter').addEventListener('change', renderAll);
+document.getElementById('priceFilter').addEventListener('change', renderAll);
+
+function priceText(money, knb) {
+  if (money > 0 && money < 100000000) return money.toLocaleString() + ' lượng';
+  if (knb > 0 && knb < 10000) return knb + ' KNB';
+  return '?';
+}
+
+function seriesClass(s) {
+  const map = {0:'kim',1:'moc',2:'thuy',3:'hoa',4:'tho'};
+  return 'series-' + (map[s] || '');
+}
+
+function matchItem(item, shop, searchText) {
+  if (!searchText) return true;
+  const txt = searchText.toLowerCase();
+  return (item.name || '').toLowerCase().includes(txt) ||
+         (shop.shopName || '').toLowerCase().includes(txt) ||
+         priceText(item.money, item.knb).toLowerCase().includes(txt) ||
+         (item.genreName || '').toLowerCase().includes(txt) ||
+         (item.seriesName || '').toLowerCase().includes(txt);
+}
+
+function matchGenre(item) {
+  const gf = document.getElementById('genreFilter').value;
+  return !gf || String(item.genre) === gf;
+}
+
+function matchSeries(item) {
+  const sf = document.getElementById('seriesFilter').value;
+  return !sf || String(item.series) === sf;
+}
+
+function matchPrice(item) {
+  const pf = document.getElementById('priceFilter').value;
+  if (!pf) return true;
+  if (pf === 'free') return item.money === 0 && item.knb === 0;
+  if (pf === 'gold') return item.money > 0;
+  if (pf === 'knb') return item.knb > 0;
+  const [lo, hi] = pf.split('-').map(x => x ? parseInt(x) : Infinity);
+  const price = item.money || item.knb || 0;
+  return price >= lo && price <= hi;
+}
+
+function renderAll() {
+  if (!allData) return;
+
+  const searchText = document.getElementById('search').value.trim();
+  let totalItems = 0, totalShops = 0;
+
+  let html = '';
+  for (const shop of allData.shops) {
+    const filtered = (shop.items || []).filter(item => 
+      matchItem(item, shop, searchText) && matchGenre(item) && matchSeries(item) && matchPrice(item)
+    );
+    if (filtered.length === 0) continue;
+    totalShops++;
+    totalItems += filtered.length;
+
+    html += `<div class="shop-card">
+      <div class="shop-header" onclick="this.nextElementSibling.classList.toggle('open')">
+        <div>
+          <span class="name">${escHtml(shop.shopName)}</span>
+          <span class="badge badge-shop">${shop.itemCount} items</span>
+          <span style="font-size:12px;color:#8b949e;margin-left:8px;">CID: ${shop.shopCid} | 📍 ${shop.distance}m</span>
+        </div>
+        <div class="info">${filtered.length} hiển thị ▾</div>
+      </div>
+      <div class="shop-body open">
+        <table class="item-table">
+          <thead><tr>
+            <th>#</th><th>Tên</th><th>Giá</th>
+          </tr></thead>
+          <tbody>`;
+
+    filtered.forEach((item, i) => {
+      html += `<tr>
+        <td>${i+1}</td>
+        <td>${escHtml(item.name || 'Unknown')}</td>
+        <td class="${item.money > 0 && item.money < 100000000 ? 'price-gold' : item.knb > 0 && item.knb < 10000 ? 'price-knb' : 'price-free'}">${priceText(item.money, item.knb)}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div></div>`;
+  }
+
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat"><div class="val">${totalShops}</div><div class="lbl">Shops hiển thị</div></div>
+    <div class="stat"><div class="val">${totalItems}</div><div class="lbl">Items hiển thị</div></div>
+    <div class="stat"><div class="val">${allData.scannedShops || 0}</div><div class="lbl">Shops đã quét</div></div>
+    <div class="stat"><div class="val">${allData.totalItems || 0}</div><div class="lbl">Tổng items</div></div>
+  `;
+
+  document.getElementById('results').innerHTML = html || '<div class="no-data">🔍 Không tìm thấy kết quả phù hợp</div>';
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
