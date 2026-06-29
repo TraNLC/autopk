@@ -102,7 +102,7 @@ class MemoryReader {
    */
   async getShopItems(stallIndex) {
     try {
-      const res = await this.session.callRpc('getShopItems', stallIndex);
+      const res = await this.session.callRpc('getShopItems', [stallIndex]);
       console.log(`[MemoryReader] getShopItems response:`, res);
       if (res && res.ok) {
         return { title: res.title, items: res.items };

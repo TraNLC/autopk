@@ -60,11 +60,14 @@ class FridaSession {
       }
       
       if (!this.deviceId) throw new Error('No active device found');
+      // Assign a unique local port for this device instance to support multi-account
+      this.localPort = 27000 + Math.floor(Math.random() * 5000);
       const { execFileSync } = require('child_process');
-      execFileSync(config.ADB_PATH, ['-s', this.deviceId, 'forward', 'tcp:27042', 'tcp:27042'], { timeout: 5000, windowsHide: true });
-      console.log(`[Frida] ADB forward tcp:27042 OK (${this.deviceId})`);
+      execFileSync(config.ADB_PATH, ['-s', this.deviceId, 'forward', `tcp:${this.localPort}`, 'tcp:27042'], { timeout: 5000, windowsHide: true });
+      console.log(`[Frida] ADB forward tcp:${this.localPort} -> 27042 OK (${this.deviceId})`);
     } catch (e) {
-      // Forward may already exist
+      // Forward may already exist, or adb might complain.
+      if (!this.localPort) this.localPort = 27042;
     }
   }
 
@@ -78,10 +81,17 @@ class FridaSession {
     }
     const deviceManager = frida.getDeviceManager();
     try {
-      this.device = await deviceManager.addRemoteDevice('127.0.0.1:27042');
-      console.log(`[Frida] Remote device connected: ${this.device.name}`);
+      this.device = await Promise.race([
+        deviceManager.addRemoteDevice(`127.0.0.1:${this.localPort}`),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('addRemoteDevice timed out')), 5000))
+      ]);
+      console.log(`[Frida] Remote device connected: ${this.device.name} via port ${this.localPort}`);
     } catch (e) {
-      this.device = await deviceManager.addRemoteDevice('127.0.0.1:27042');
+      console.warn(`[Frida] addRemoteDevice failed or timed out: ${e.message}. Retrying...`);
+      this.device = await Promise.race([
+        deviceManager.addRemoteDevice(`127.0.0.1:${this.localPort}`),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('addRemoteDevice retry timed out')), 5000))
+      ]);
     }
 
     // 2. Discover target PID directly from active Frida processes list (100% ADB-independent)
@@ -106,10 +116,17 @@ class FridaSession {
       throw new Error(`Game package ${this.packageName} (VLTieuNgao) not found or not running. Please start the game.`);
     }
 
-    // 4. Attach by PID
+    // 4. Attach by PID with timeout to prevent GUI hanging
     console.log(`[Frida] Attaching to PID ${pid}...`);
-    this.session = await this.device.attach(pid);
-    console.log('[Frida] Session created OK');
+    try {
+      this.session = await Promise.race([
+        this.device.attach(pid),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Attach timed out after 10s. Game might be frozen or frida-server is stuck.')), 10000))
+      ]);
+      console.log('[Frida] Session created OK');
+    } catch (attachErr) {
+      throw new Error(`Failed to attach: ${attachErr.message}. Try restarting the game or emulator.`);
+    }
     this._connected = true;
     return true;
   }
@@ -167,6 +184,15 @@ class FridaSession {
       }
     } else if (message.type === 'error') {
       console.error('[Frida] Script error:', message.description, '\nStack:', message.stack);
+    } else if (message.type === 'log') {
+      // Forward logs as well
+      for (const handler of this._messageHandlers) {
+        try {
+          handler({ log: message.payload }, data);
+        } catch (e) {
+          console.error('[Frida] Handler error:', e.message);
+        }
+      }
     }
   }
 

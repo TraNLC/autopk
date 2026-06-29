@@ -35,19 +35,22 @@
             }
 
             // Diagnostics (lightweight, all fds)
-            _recvAny++;
-            _fdsSeen[this.fd] = (_fdsSeen[this.fd] || 0) + 1;
+            globalThis._recvAny = (globalThis._recvAny || 0) + 1;
+            if (!globalThis._fdsSeen) globalThis._fdsSeen = {};
+            globalThis._fdsSeen[this.fd] = (globalThis._fdsSeen[this.fd] || 0) + 1;
+            if (!globalThis._lastOps) globalThis._lastOps = [];
             if (opcode >= 0) {
-                _lastOps.push(this.fd + ':' + opcode);
-                if (_lastOps.length > 24) _lastOps.shift();
+                globalThis._lastOps.push(this.fd + ':' + opcode);
+                if (globalThis._lastOps.length > 24) globalThis._lastOps.shift();
             }
-            if (opcode > 0 && GS_OPCODES[opcode] && plen >= 0 && plen <= n) {
-                _fdsGameOps[this.fd] = (_fdsGameOps[this.fd] || 0) + 1;
+            if (opcode > 0 && globalThis.GS_OPCODES && globalThis.GS_OPCODES[opcode] && plen >= 0 && plen <= n) {
+                if (!globalThis._fdsGameOps) globalThis._fdsGameOps = {};
+                globalThis._fdsGameOps[this.fd] = (globalThis._fdsGameOps[this.fd] || 0) + 1;
             }
 
 // Only process game socket OR auto-detect mode
-        var isGameFd = (this.fd === gameFd);
-        var autoDetect = (gameFd === -1);
+        var isGameFd = (this.fd === globalThis.gameFd);
+        var autoDetect = (globalThis.gameFd === -1);
 
         if (!isGameFd && !autoDetect) return;
 
@@ -55,22 +58,28 @@
             try { data = new Uint8Array(this.buf.readByteArray(n)); } catch (e) { return; }
 
             try {
-                var pkt = makePacketRecord(data, n);
-                recvBuffer.push(pkt);
-                _recvTotal++;
-                if (recvBuffer.length > 3000) recvBuffer.shift();
+                if (globalThis.makePacketRecord) {
+                    var pkt = globalThis.makePacketRecord(data, n);
+                    
+                    if (opcode > 0 && opcode <= 30000) {
+                        if (!globalThis.recvBuffer) globalThis.recvBuffer = [];
+                        globalThis.recvBuffer.push(pkt);
+                        globalThis._recvTotal = (globalThis._recvTotal || 0) + 1;
+                        if (globalThis.recvBuffer.length > 3000) globalThis.recvBuffer.shift();
+                    }
 
-                // AUTO-DETECT: lock gameFd when we see a valid game opcode
-                if (autoDetect && opcode >= 0 && GS_OPCODES[opcode] !== undefined) {
-                    gameFd = this.fd;
-                    send({ type: 'game_fd', fd: gameFd, detectedBy: 'recv opcode ' + opcode + ' (' + GS_OPCODES[opcode] + ')' });
+                    // AUTO-DETECT: lock gameFd when we see a valid game opcode
+                    if (autoDetect && opcode > 0 && globalThis.GS_OPCODES && globalThis.GS_OPCODES[opcode] !== undefined) {
+                        globalThis.gameFd = this.fd;
+                        send({ type: 'game_fd', fd: globalThis.gameFd, detectedBy: 'recv opcode ' + opcode + ' (' + globalThis.GS_OPCODES[opcode] + ')' });
+                    }
+                    
+                    // Shop data detection
+                    if (opcode === 119 || opcode === 120 || opcode === 212) {
+                        send({ type: 'shop_data', opcode: opcode, name: pkt.name, hex: pkt.hex });
+                    }
                 }
             } catch (e) {}
-
-            // Shop data detection (also capture opcode 205 = EPlayerStallOpenResponse)
-            if (opcode === 119 || opcode === 120 || opcode === 205 || opcode === 212) {
-                send({ type: 'shop_data', opcode: opcode, name: pkt.name, hex: pkt.hex });
-            }
 
             // Track entity position from opcode 9 (throttled ~0.8s)
             if (opcode === 9 && n > 10 && (Date.now() - (_lastPosition.ts || 0) > 800)) {

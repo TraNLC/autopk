@@ -45,6 +45,44 @@ rpc.exports.sendPacket = function(opcode, hexBody) {
 };
 
 /**
+ * Send a raw packet specifically to the game's TCP socket (used for shop/rpc).
+ */
+rpc.exports.sendTcpPacket = function(opcode, hexBody) {
+    var tcpFd = -1;
+    for(var i=0; i<200; i++) {
+        try {
+            var type = Socket.type(i);
+            if (type === 'tcp' || type === 'tcp6') {
+                var peer = Socket.peerAddress(i);
+                if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
+                    tcpFd = i;
+                    break;
+                }
+            }
+        } catch(e){}
+    }
+    
+    if (tcpFd === -1) return { ok: false, error: 'no tcp socket found' };
+    
+    var body = hexBody ? hexToBytes(hexBody) : [];
+    var protoLen = body.length;
+    var buf = Memory.alloc(6 + protoLen);
+    buf.writeU32(protoLen);
+    buf.add(4).writeU16(opcode);
+    if (protoLen > 0) buf.add(6).writeByteArray(body);
+    
+    if (nativeWrite) {
+        try {
+            var ret = nativeWrite(tcpFd, buf, 6 + protoLen);
+            return { ok: true, method: 'native_write_tcp', sent: ret, opcode: opcode, fd: tcpFd };
+        } catch (e) {
+            return { ok: false, error: 'tcp write failed: ' + e.message };
+        }
+    }
+    return { ok: false, error: 'nativeWrite not available' };
+};
+
+/**
  * Get buffered received packets (oldest first) matching optional opcode filter.
  * Automatically clears returned packets.
  */

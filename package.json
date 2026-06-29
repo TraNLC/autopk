@@ -12,8 +12,6 @@
     "test:frida": "node test/test-frida.js",
     "test:memory": "node test/test-memory.js",
     "test:packet": "node test/test-packet.js",
-    "radar": "node src/shop-radar.js",
-    "radar:watch": "node src/shop-radar.js --watch 300",
     "gui": "electron src/gui/main.js"
   },
   "dependencies": {

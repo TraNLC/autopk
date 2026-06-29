@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>GST VLTK1 Mobile Auto PK</title>
+  <title>GST VLTK1 Mobile Auto PK - Multi-Account</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -15,343 +15,132 @@
     <div class="logo-area">
       <div>
         <h1 class="title-martial">VO LÂM TRUYEN KY</h1>
-        <p class="subtitle-eng">GST AUTO PK BOT v1.0</p>
+        <p class="subtitle-eng">MULTI-ACCOUNT AUTO PK v2.0</p>
       </div>
     </div>
-
     <div class="header-controls">
-      <!-- Device Selector -->
-      <div class="select-wrapper">
-        <select id="device-select">
-          <option value="">-- Dang quet thiet bi... --</option>
-        </select>
-        <button id="btn-scan" class="btn-icon">Quet</button>
-      </div>
-
-      <button id="btn-connect" class="btn-primary">KET NOI</button>
-      <button id="btn-disconnect" class="btn-danger hidden">NGAT KET NOI</button>
-
-      <!-- Global Auto Toggle -->
-      <div class="global-pk-toggle-container">
-        <span class="toggle-label">AUTO PK</span>
-        <label class="switch">
-          <input type="checkbox" id="pk-global-switch" disabled>
-          <span class="slider round"></span>
-        </label>
-      </div>
+      <button id="btn-refresh" class="btn-primary">Lam Moi</button>
+      <button id="btn-restart" class="btn-warning">Khoi Dong Lai</button>
     </div>
   </header>
 
   <!-- BODY WRAPPER -->
   <div class="app-body">
     
-    <!-- SIDEBAR -->
-    <aside class="app-sidebar">
-      <nav class="sidebar-nav">
-        <button class="nav-item active" data-tab="tab-character">
-          Nhan Vat
-        </button>
-        <button class="nav-item" data-tab="tab-combat">
-          Chien Dau / PK
-        </button>
-        <button class="nav-item" data-tab="tab-shops">
-          Shop Xung Quanh
-        </button>
-        <button class="nav-item" data-tab="tab-settings">
-          Cau Hinh
-        </button>
-      </nav>
-      <div class="sidebar-footer">
-        <div class="status-indicator disconnected" id="connection-status-dot"></div>
-        <span id="connection-status-text">Chua ket noi</span>
-      </div>
-    </aside>
-
     <!-- MAIN CONTENT -->
-    <main class="app-content">
-
-      <!-- TAB: CHARACTER -->
-      <section id="tab-character" class="tab-pane active">
-        <div class="grid-layout">
-          
-          <!-- Character Basic Card -->
-          <div class="card card-hero">
-            <h2 class="card-title gold-text">Thong Tin Nhan Vat</h2>
-            <div class="hero-header">
-              <div class="hero-meta">
-                <div class="hero-name" id="char-name">Chua ket noi</div>
-                <div class="hero-subtitle">Mon phai: <span id="char-sect" class="highlight-text">None</span></div>
-              </div>
-            </div>
-
-            <div class="stat-group">
-              <div class="stat-row">
-                <span class="stat-label">Cap Do:</span>
-                <span class="stat-val" id="char-level">0</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Ban Do:</span>
-                <span class="stat-val highlight-text" id="char-map">None</span>
-              </div>
-              <div class="stat-row font-mono">
-                <span class="stat-label">Bac Hanh Trang:</span>
-                <span class="stat-val text-gold" id="char-money">0</span>
-              </div>
-              <div class="stat-row font-mono">
-                <span class="stat-label">Bac Ruong Chua:</span>
-                <span class="stat-val text-gold" id="char-storage-money">0</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Character Stats / HP-MP Bar Card -->
-          <div class="card">
-            <h2 class="card-title">Trang Thai Sinh Menh</h2>
-            <div class="stat-bar-container">
-              <div class="bar-label-row">
-                <span>Sinh Luc (HP)</span>
-                <span id="hp-text">1000 / 1000</span>
-              </div>
-              <div class="progress-bar-bg">
-                <div class="progress-bar hp-bar" id="hp-progress" style="width: 100%"></div>
-              </div>
-            </div>
-
-            <div class="stat-bar-container">
-              <div class="bar-label-row">
-                <span>Noi Luc (MP)</span>
-                <span id="mp-text">1000 / 1000</span>
-              </div>
-              <div class="progress-bar-bg">
-                <div class="progress-bar mp-bar" id="mp-progress" style="width: 100%"></div>
-              </div>
-            </div>
-            
-            <div class="quick-status-grid">
-              <div class="status-cell">
-                <span class="cell-label">Socket FD</span>
-                <span class="cell-val highlight-text" id="status-game-fd">Null</span>
-              </div>
-              <div class="status-cell">
-                <span class="cell-label">Goi Da Nhan</span>
-                <span class="cell-val" id="status-recv-total">0</span>
-              </div>
-              <div class="status-cell">
-                <span class="cell-label">Goi Da Gui</span>
-                <span class="cell-val" id="status-send-total">0</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Remote NPC Dialogue Card -->
-          <div class="card">
-            <h2 class="card-title gold-text">Giao Tiep NPC Tu Xa</h2>
-            <p class="card-subtitle">Tuong tac voi NPC quan trong tai thanh pho hien tai tu xa:</p>
-            <div style="display: flex; gap: 10px; margin-top: 15px;">
-              <button id="btn-call-xaphu" class="btn-primary" style="flex: 1;" disabled>GOI XA PHU</button>
-              <button id="btn-call-lequan" class="btn-primary" style="flex: 1;" disabled>GOI LE QUAN</button>
-            </div>
-          </div>
-
-          <!-- Local Log Console -->
-          <div class="card terminal-card" style="grid-column: 1 / -1; margin-top: 20px;">
-            <div class="terminal-header">
-              <span class="terminal-dot red"></span>
-              <span class="terminal-dot yellow"></span>
-              <span class="terminal-dot green"></span>
-              <span class="terminal-title">Nhat ky Nhan Vat</span>
-              <button class="btn-small btn-clear-local-log" data-target="log-character">Xoa Log</button>
-            </div>
-            <div class="terminal-console" id="log-character" style="height: 120px; max-height: 120px;">
-              [Nhan vat] San sang.
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-      <!-- TAB: COMBAT -->
-      <section id="tab-combat" class="tab-pane">
-        <div class="grid-layout">
-          
-          <!-- Healing Configs -->
-          <div class="card">
-            <h2 class="card-title gold-text">Tu Dong Bom Thuoc</h2>
-            <div class="slider-group">
-              <label for="hp-pot-slider">Bom mau (HP) khi xuong duoi: <span id="hp-slider-val" class="highlight-text">65%</span></label>
-              <input type="range" id="hp-pot-slider" min="10" max="95" value="65" class="slider-bar">
-            </div>
-            
-            <div class="slider-group">
-              <label for="mp-pot-slider">Bom mana (MP) khi xuong duoi: <span id="mp-slider-val" class="highlight-text">30%</span></label>
-              <input type="range" id="mp-pot-slider" min="10" max="95" value="30" class="slider-bar">
-            </div>
-          </div>
-
-          <!-- Skills Combo Configs -->
-          <div class="card">
-            <h2 class="card-title">Ky Nang Tan Cong (Combos)</h2>
-            <p class="card-subtitle">Lua chon cac chieu thuc se tu dong xuat ra khi PK:</p>
-            <div class="checkbox-list">
-              <label class="checkbox-container">Ky nang co ban (Chieu 1)
-                <input type="checkbox" id="chk-skill-1" checked>
-                <span class="checkmark"></span>
-              </label>
-              <label class="checkbox-container">Ky nang dac biet (Chieu 2)
-                <input type="checkbox" id="chk-skill-2" checked>
-                <span class="checkmark"></span>
-              </label>
-              <label class="checkbox-container">Ky nang phu tro (Chieu 3)
-                <input type="checkbox" id="chk-skill-3" checked>
-                <span class="checkmark"></span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Local Log Console -->
-          <div class="card terminal-card" style="grid-column: 1 / -1; margin-top: 20px;">
-            <div class="terminal-header">
-              <span class="terminal-dot red"></span>
-              <span class="terminal-dot yellow"></span>
-              <span class="terminal-dot green"></span>
-              <span class="terminal-title">Nhat ky Chien Dau & PK</span>
-              <button class="btn-small btn-clear-local-log" data-target="log-combat">Xoa Log</button>
-            </div>
-            <div class="terminal-console" id="log-combat" style="height: 120px; max-height: 120px;">
-              [Chien dau] San sang.
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-      <!-- TAB: SHOPS -->
-      <section id="tab-shops" class="tab-pane">
-        <div class="card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h2 class="card-title gold-text" style="margin-bottom: 0;">Sap Hang Nguoi Choi Xung Quanh</h2>
-            <div style="display: flex; gap: 10px;">
-              <button id="btn-scan-shops" class="btn-primary" disabled>QUET CUA HANG</button>
-              <button id="btn-export-shops-json" class="btn-primary" disabled>XUAT JSON HANG LOAT</button>
-              <button id="btn-radar-scan" class="btn-primary" disabled style="background:#238636;">📡 RADAR QUET</button>
-            </div>
-          </div>
-          <p class="card-subtitle">Danh sach nguoi choi dang bay ban sap hang quanh day:</p>
-          
-          <div class="table-container" style="overflow-x: auto; margin-top: 10px;">
-            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+    <main class="app-content-full">
+      <div class="left-col">
+        <!-- TOP PANEL: DEVICE TABLE -->
+        <section class="card device-table-card">
+          <div class="table-responsive">
+            <table class="modern-table">
               <thead>
-                <tr style="border-bottom: 2px solid hsl(220, 10%, 25%); color: hsl(210, 10%, 75%);">
-                  <th style="padding: 10px;">Ten Sap / Nguoi Ban</th>
-                  <th style="padding: 10px;">CID Sap Hang</th>
-                  <th style="padding: 10px; text-align: center;">Cap</th>
-                  <th style="padding: 10px; text-align: center;">Trang Thai</th>
-                  <th style="padding: 10px; text-align: center;">Hanh Dong</th>
+                <tr>
+                  <th width="80" style="text-align: center;">Mo</th>
+                  <th width="200">Ten Nhan Vat</th>
+                  <th width="200">Diem Tong Kim</th>
+                  <th>Thiet Bi</th>
                 </tr>
               </thead>
-              <tbody id="shop-list-body">
-                <tr style="border-bottom: 1px solid hsl(220, 10%, 18%);">
-                  <td colspan="5" style="padding: 20px; text-align: center;" class="text-muted">Vui long ket noi thiet bi va bam nut QUET CUA HANG.</td>
+              <tbody id="device-table-body">
+                <tr>
+                  <td colspan="4" style="text-align: center; color: #888; padding: 20px;">Bam "Lam Moi" de tim thiet bi...</td>
                 </tr>
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
 
-        <!-- Local Log Console -->
-        <div class="card terminal-card" style="margin-top: 20px;">
-          <div class="terminal-header">
-            <span class="terminal-dot red"></span>
-            <span class="terminal-dot yellow"></span>
-            <span class="terminal-dot green"></span>
-            <span class="terminal-title">Nhat ky Quet Shop</span>
-            <button class="btn-small btn-clear-local-log" data-target="log-shops">Xoa Log</button>
+        <!-- BOTTOM PANEL: GLOBAL LOGS -->
+        <section class="card log-card">
+          <div class="log-header">
+            <h2 class="card-subtitle">Global Log</h2>
+            <button id="btn-clear-log" class="btn-small">Clear</button>
           </div>
-          <div class="terminal-console" id="log-shops" style="height: 120px; max-height: 120px;">
-            [Shop] San sang.
+          <div class="log-container" id="global-log-container">
+            <div class="log-entry log-system">[System] Multi-Account Manager Initialized.</div>
           </div>
-        </div>
+        </section>
+      </div>
 
-      </section>
+      <div class="right-col">
+        <!-- MIDDLE PANEL: TONG KIM CONTROLS -->
+        <section class="card controls-card">
+          <div class="control-bar">
+            <div class="toggle-group">
+              <span class="toggle-label gold-text"><strong style="font-size: 1.1em;">TU DONG RA TRAN</strong></span>
+              <label class="switch">
+                <input type="checkbox" id="pk-fight-switch">
+                <span class="slider round"></span>
+              </label>
+            </div>
+            
+            <div class="dropdown-group">
+              <label class="dropdown-label">Phe:</label>
+              <select id="tk-side-select" class="modern-select">
+                <option value="auto">Tu dong</option>
+                <option value="song">Tong</option>
+                <option value="jin">Kim</option>
+              </select>
+            </div>
+          </div>
+        </section>
 
-      <!-- TAB: SETTINGS -->
-      <section id="tab-settings" class="tab-pane">
-        <div class="card max-w-md">
-          <h2 class="card-title gold-text">Cau Hinh Duong Dan</h2>
-          <div class="form-group">
-            <label>Duong dan ADB (Platform Tools):</label>
-            <input type="text" id="cfg-adb-path" value="C:\platform-tools\adb.exe" disabled>
+        <!-- LOWER MIDDLE PANEL: LAC CONTROLS -->
+        <section class="card lac-card">
+          <h2 class="card-subtitle">Tu dung lac Tong Kim</h2>
+          <div class="lac-grid" id="lac-controls-container">
+            <!-- Item 1 -->
+            <div class="lac-row">
+              <span class="lac-label">Su dung</span>
+              <select class="modern-select lac-select" id="lac-1-select">
+                <option value="none">—</option>
+                <option value="45">Phi Toc Hoan</option>
+                <option value="51">Lenh Bai</option>
+                <option value="50">Chien Co</option>
+              </select>
+              <span class="lac-count" id="lac-1-count"></span>
+            </div>
+            <!-- Item 2 -->
+            <div class="lac-row">
+              <span class="lac-label">Su dung</span>
+              <select class="modern-select lac-select" id="lac-2-select">
+                <option value="none">—</option>
+                <option value="45">Phi Toc Hoan</option>
+                <option value="51">Lenh Bai</option>
+                <option value="50">Chien Co</option>
+              </select>
+              <span class="lac-count" id="lac-2-count"></span>
+            </div>
+            <!-- Item 3 -->
+            <div class="lac-row">
+              <span class="lac-label">Su dung</span>
+              <select class="modern-select lac-select" id="lac-3-select">
+                <option value="none">—</option>
+                <option value="45">Phi Toc Hoan</option>
+                <option value="51">Lenh Bai</option>
+                <option value="50">Chien Co</option>
+              </select>
+              <span class="lac-count" id="lac-3-count"></span>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Game Package Name:</label>
-            <input type="text" id="cfg-pkg-name" value="vn.perfingame.jx1mobile" disabled>
+          
+          <!-- TEST CHAT NPC -->
+          <div class="glass-panel" style="margin-top:20px;">
+            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 15px; color: var(--text-primary);">Test Chat NPC</h3>
+            <div style="display: flex; gap: 10px;">
+              <button class="btn-primary" style="flex:1; padding:10px 0; font-size:13px; font-weight:bold;" onclick="window.api.testChatNpc('23')">Chiêu Binh Quân</button>
+              <button class="btn-primary" style="flex:1; padding:10px 0; font-size:13px; font-weight:bold;" onclick="window.api.testChatNpc('2581')">Quân Nhu</button>
+              <button class="btn-primary" style="flex:1; padding:10px 0; font-size:13px; font-weight:bold;" onclick="window.api.testChatNpc('2593')">Trinh Sát</button>
+            </div>
+            <div style="margin-top: 10px;">
+              <button class="btn-primary" style="width:100%; padding:10px 0; font-size:13px; font-weight:bold; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" onclick="window.api.testChatNpc('radar')">📡 Radar Quét NPC Gần Đây</button>
+            </div>
           </div>
-          <p class="notice-info">Duong dan va cau hinh duoc doc tinh tu file config.js de dam bao khop voi cac file thuc thi cua bot.</p>
-        </div>
-
-        <!-- Local Log Console -->
-        <div class="card terminal-card" style="margin-top: 20px;">
-          <div class="terminal-header">
-            <span class="terminal-dot red"></span>
-            <span class="terminal-dot yellow"></span>
-            <span class="terminal-dot green"></span>
-            <span class="terminal-title">Nhat ky Cau Hinh & He Thong</span>
-            <button class="btn-small btn-clear-local-log" data-target="log-settings">Xoa Log</button>
-          </div>
-          <div class="terminal-console" id="log-settings" style="height: 120px; max-height: 120px;">
-            [Cau hinh] San sang.
-          </div>
-        </div>
-
-      </section>
+        </section>
+      </div>
 
     </main>
-
-  </div>
-
-  <!-- Modal: Shop Items Detail -->
-  <div id="modal-shop-items" class="modal" style="display: none;">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 id="modal-shop-title" class="gold-text">Vat Pham Trong Sap</h3>
-        <span class="modal-close" id="btn-close-modal">X</span>
-      </div>
-      <div class="modal-body" style="padding: 20px;">
-        <div class="table-container" style="max-height: 400px; overflow-y: auto;">
-          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
-            <thead>
-              <tr style="border-bottom: 2px solid hsl(220, 10%, 25%); color: hsl(210, 10%, 75%);">
-                <th style="padding: 10px;">Ten Vat Pham</th>
-                <th style="padding: 10px; text-align: center;">Phan Loai</th>
-                <th style="padding: 10px; text-align: right;">Gia Ban</th>
-                <th style="padding: 10px; text-align: center;">He Ngu Hanh</th>
-                <th style="padding: 10px;">Thuoc Tinh / Dong Option</th>
-              </tr>
-            </thead>
-            <tbody id="shop-items-body">
-              <tr>
-                <td colspan="5" style="padding: 20px; text-align: center;" class="text-muted">Dang tai vat pham...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      
-      <!-- Real-time Scan Logs inside the Modal -->
-      <div class="card terminal-card" style="margin: 0 20px 20px 20px; border-radius: 8px;">
-        <div class="terminal-header" style="padding: 8px 12px; font-size: 11px;">
-          <span class="terminal-dot red"></span>
-          <span class="terminal-dot yellow"></span>
-          <span class="terminal-dot green"></span>
-          <span class="terminal-title">Nhat ky Quet Shop (Real-time)</span>
-          <button class="btn-small btn-clear-local-log" data-target="log-shops-modal" style="font-size: 9px; padding: 2px 6px;">Xoa Log</button>
-        </div>
-        <div class="terminal-console" id="log-shops-modal" style="height: 100px; max-height: 100px; font-size: 11px; padding: 8px;">
-          [Shop] Bat dau doc du lieu sap hang.
-        </div>
-      </div>
-
-    </div>
   </div>
 
   <script src="app.js"></script>

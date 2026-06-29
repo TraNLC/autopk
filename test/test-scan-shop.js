@@ -2,7 +2,6 @@
 // Chay bang lenh: node test/test-scan-shop.js
 
 const { FridaSession } = require('../src/frida-session');
-const { lookupByGdpl, getGenreName, getSeriesName, getMagicInfo } = require('../src/item-db');
 const config = require('../config');
 const path = require('path');
 
@@ -66,8 +65,52 @@ async function main() {
       return;
     }
 
+    if (targetShop.distance > 10) {
+      console.log(`Moving to shop position: (${targetShop.x}, ${targetShop.y})...`);
+      
+      // Wake up the emulator display to ensure main thread runs
+      try {
+        const { execFileSync } = require('child_process');
+        execFileSync(config.ADB_PATH, ['-s', 'emulator-5554', 'shell', 'input', 'tap', '10', '10']);
+      } catch (e) {}
+
+      await frida.callRpc('gotoHooked', targetShop.x, targetShop.y, 10);
+      const walkWait = Math.min(10000, Math.max(1000, Math.floor(targetShop.distance * 100)));
+      console.log(`Waiting ${walkWait}ms for character to reach the shop...`);
+      await new Promise(r => setTimeout(r, walkWait));
+    }
+
     console.log(`Querying items inside shop (Stall Index: ${stallIndex})...`);
-    const itemsRes = await frida.callRpc('getShopItems', stallIndex);
+    // Keep game active while waiting
+    try {
+      const { execFileSync } = require('child_process');
+      execFileSync(config.ADB_PATH, ['-s', 'emulator-5554', 'shell', 'input', 'keyevent', '224']); // WAKEUP
+      execFileSync(config.ADB_PATH, ['-s', 'emulator-5554', 'shell', 'input', 'keyevent', '82']);  // UNLOCK
+      execFileSync(config.ADB_PATH, ['-s', 'emulator-5554', 'shell', 'input', 'swipe', '500', '1000', '500', '200']); 
+    } catch(e) {}
+    console.log(`Sending EPlayerTalk (48) for ${targetShop.cid}...`);
+    let talkReqHex = "0a" + targetShop.cid.length.toString(16).padStart(2, '0');
+    for (let i = 0; i < targetShop.cid.length; i++) {
+      talkReqHex += targetShop.cid.charCodeAt(i).toString(16).padStart(2, '0');
+    }
+    const talkRes = await frida.callRpc('sendPacket', 48, talkReqHex);
+    console.log("EPlayerTalk send result:", talkRes);
+    
+    // Also send the EPlayerStallOpenRequest (204) because EPlayerTalk alone might just talk, not open the shop
+    console.log(`Sending EPlayerStallOpenRequest (204) for ${targetShop.cid}...`);
+    const stallStr = targetShop.cid;
+    let stallReqHex = "0a" + stallStr.length.toString(16).padStart(2, '0');
+    for (let i = 0; i < stallStr.length; i++) {
+      stallReqHex += stallStr.charCodeAt(i).toString(16).padStart(2, '0');
+    }
+    const sendRes = await frida.callRpc('sendPacket', 204, stallReqHex);
+    console.log("EPlayerStallOpenRequest send result:", sendRes);
+
+    // Wait a bit to see if the game sends the stall request and receives response
+    await new Promise(r => setTimeout(r, 2000));
+    
+    console.log(`Waiting for UI update in getShopItems...`);
+    const itemsRes = await frida.callRpc('getShopItems', stallIndex, targetShop.name, targetShop.namePtrStr, targetShop.cidPtrStr, targetShop.controllerPtrStr);
     
     if (!itemsRes.ok) {
       console.error('❌ Failed to query shop items:', itemsRes.error);
@@ -77,47 +120,27 @@ async function main() {
       const items = itemsRes.items || [];
       console.log(`Items count: ${items.length}\n`);
 
+      const { ItemDB } = require('../src/utils/item-db');
+
       items.forEach((item, idx) => {
-        let priceText = 'Mien phi';
-        if (item.money > 0) {
-          priceText = `${item.money.toLocaleString()} luong`;
-        } else if (item.knb > 0) {
-          priceText = `${item.knb.toLocaleString()} KNB`;
-        }
+        const parsedItem = ItemDB.parseItem(item);
 
-        // Resolve item name from DB if needed
-        let itemName = item.name || '';
-        if (!itemName || (itemName.startsWith('G') && itemName.includes('D'))) {
-          const dbName = lookupByGdpl(item.genre, item.detail, item.particular, item.level);
-          if (dbName) itemName = dbName;
+        console.log(`tên item: ${parsedItem.name}`);
+        console.log(`cấp: ${parsedItem.level}`);
+        if (parsedItem.priceVan > 0) {
+          console.log(`giá vạn: ${parsedItem.priceVan}`);
         }
-        if (!itemName) itemName = '#' + (idx + 1);
-
-        console.log(`[Item #${idx + 1}]`);
-        console.log(`  Name: ${itemName}`);
-        console.log(`  Price: ${priceText}`);
-        console.log(`  Genre: ${item.genre} (${getGenreName(item.genre)}) | Detail: ${item.detail} | Particular: ${item.particular} | Level: ${item.level}`);
-        console.log(`  Series: ${item.series} (${getSeriesName(item.series)})`);
+        if (parsedItem.priceKnb > 0) {
+          console.log(`giá KNB: ${parsedItem.priceKnb}`);
+        }
+        console.log(`giới tính: ${parsedItem.gender}`);
+        console.log(`ngũ hành: ${parsedItem.series}`);
         
-        // Print Magics/Options with name lookup
-        if (item.magics && item.magics.length > 0) {
-          console.log(`  Attributes (${Math.floor(item.magics.length / 2)}):`);
-          for (let m = 0; m + 1 < item.magics.length; m += 2) {
-            const magicId = item.magics[m];
-            const magicVal = item.magics[m + 1];
-            if (magicId > 0) {
-              const info = getMagicInfo(magicId);
-              console.log(`    - [ID ${magicId}] ${info.name} +${magicVal} | ${info.desc} (Lv.${info.level})`);
-            }
-          }
-          // Handle odd count (unpaired IDs)
-          if (item.magics.length % 2 !== 0) {
-            const lastId = item.magics[item.magics.length - 1];
-            const info = getMagicInfo(lastId);
-            console.log(`    - [ID ${lastId}] ${info.name} (no value) | ${info.desc}`);
-          }
+        if (parsedItem.magicLines.length > 0) {
+          console.log(`thuộc tính từng dòng như hình (có tối đa 6 dòng):`);
+          parsedItem.magicLines.forEach(line => console.log(`- ${line}`));
         } else {
-          console.log(`  Attributes: None`);
+          console.log(`thuộc tính từng dòng như hình (có tối đa 6 dòng): Không có`);
         }
         console.log('---------------------------------------');
       });

@@ -1,19 +1,22 @@
 // frida-scripts/core/il2cpp-init.js — Il2Cpp base detection + PlayerMain reading
+globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+globalThis.npcCache = globalThis.npcCache || {};
 
 /**
  * Find libil2cpp.so base address from /proc/self/maps.
  */
 function getIl2CppBase() {
+    var mod = Process.findModuleByName('libil2cpp.so');
+    if (mod) return mod.base;
+
     var base = null;
     var lines = File.readAllText('/proc/self/maps').split('\n');
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
-        if (line.indexOf('libil2cpp.so') !== -1) {
+        if (line.indexOf('libil2cpp.so') !== -1 && line.indexOf('r--p') !== -1) {
             var parts = line.trim().split(/\s+/);
-            if (parts[2] === '00000000') {
-                base = ptr('0x' + parts[0].split('-')[0]);
-                break;
-            }
+            base = ptr('0x' + parts[0].split('-')[0]);
+            break;
         }
     }
     return base;
@@ -36,9 +39,6 @@ function readPlayerMainDirect() {
     }
     
     var now = Date.now();
-    if (now - _lastPlayerMainScanTime < 5000) {
-        return { ok: false, error: 'PlayerMain scan throttled (retry in ' + Math.ceil((5000 - (now - _lastPlayerMainScanTime)) / 1000) + 's)' };
-    }
     _lastPlayerMainScanTime = now;
     
     // Resolve dynamically!
@@ -113,6 +113,27 @@ function readPlayerMainDirect() {
     if (il2cppBase) {
         send({ type: 'il2cpp_ready', lib: 'libil2cpp.so', base: il2cppBase });
         try {
+            // Hook Controller.Update at 0xFB6994 for reliable tick
+            globalThis._tickCount = 0;
+            Interceptor.attach(il2cppBase.add(0xFB6994), {
+                onEnter: function(args) {
+                    globalThis._tickCount++;
+                    if (globalThis._tickCount % 600 === 0) {
+                        // send({ type: 'log', message: '[Controller.Update] Firing, tick: ' + globalThis._tickCount });
+                    }
+                    if (globalThis._mainThreadActions && globalThis._mainThreadActions.length > 0) {
+                        var action = globalThis._mainThreadActions.shift();
+                        try {
+                            action();
+                        } catch (e) {
+                            console.log("[MainThread] Exception executing action: " + e.message + "\\n" + e.stack);
+                        }
+                    }
+                }
+            });
+
+            // libc recv hook removed. Waiting for World.Update to run on main thread.
+
             // Hook World.Update at 0xF2B3B8
             Interceptor.attach(il2cppBase.add(0xF2B3B8), {
                 onEnter: function(args) {
@@ -120,7 +141,12 @@ function readPlayerMainDirect() {
                         var worldPtr = args[0];
                         if (worldPtr.isNull()) return;
 
-                        // World + 0x40 points to playerMain (PlayerMain)
+                        if (globalThis._mainThreadActions && globalThis._mainThreadActions.length > 0) {
+                            var action = globalThis._mainThreadActions.shift();
+                            try { action(); } catch(e) { console.log("MainThread Action Error: " + e.message); }
+                        }
+
+                    // World + 0x40 points to playerMain (PlayerMain)
                         var playerMainPtr = worldPtr.add(0x40).readPointer();
                         
                         // World + 0x50 points to mainPlayer (NpcRes.Special)
@@ -138,37 +164,23 @@ function readPlayerMainDirect() {
                 }
             });
             
-            // Hook Controller.Update at 0xFB6994 (actual entry point)
-            Interceptor.attach(il2cppBase.add(0xFB6994), {
-                onEnter: function(args) {
-                    try {
-                        var controllerPtr = args[0];
-                        if (controllerPtr.isNull()) return;
-                        
-                        // Controller + 0x30 points to Datafield
-                        var dataPtr = controllerPtr.add(0x30).readPointer();
-                        if (dataPtr.isNull()) return;
-                        
-                        // Datafield + 0x10 is C# String 'cid'
-                        var cidStrPtr = dataPtr.add(0x10).readPointer();
-                        if (cidStrPtr.isNull()) return;
-                        
-                        // Read C# string length and characters
-                        var len = cidStrPtr.add(0x10).readU32();
-                        if (len > 0 && len < 64) {
-                            var chars = cidStrPtr.add(0x14).readUtf16String(len);
-                            if (chars && chars.length > 0) {
-                                send({ type: 'il2cpp_event', event: 'Controller found', ptr: controllerPtr.toString(), cid: chars });
-                            }
-                        }
-                    } catch(e) {
-                        // Ignore read errors
-                    }
-                }
-            });
+            // We will do another script to find the correct offset for Controller.Update or similar.
             send({ type: 'il2cpp_event', event: 'Hooks attached successfully!' });
+            
+            // Poll nearNpcs safely
+            setInterval(function() {
+                try {
+                    if (!_playerMainInstance || _playerMainInstance.isNull()) return;
+                    
+                    var nearNpcsPtr = _playerMainInstance.add(0x60).readPointer(); // Just guessing offset for nearNpcs, usually around 0x50-0x80
+                    // Let's actually find the real offset from test_dict5.js output:
+                    // We need to parse nearNpcs dictionary.
+                    // Wait, earlier we ran test_dict5 and we will read the log.
+                } catch(e) {}
+            }, 2000);
+
         } catch (e) {
-            send({ type: 'il2cpp_error', msg: 'hooks failed: ' + e.message });
+            send({ type: 'il2cpp_error', msg: 'hooks failed: ' + e.message + '\\n' + e.stack });
         }
     } else {
         send({ type: 'il2cpp_ready', msg: 'libil2cpp.so not found in maps' });

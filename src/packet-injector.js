@@ -55,9 +55,7 @@ class PacketInjector {
   }
 
   /**
-   * Send eNpcDialogue (opcode 33) - RAW packet, no il2cpp dependency.
-   * This works REMOTELY (different map) because server doesn't check distance.
-   * Use this instead of remoteNpcDialogue (il2cpp) for cross-map NPC calls.
+   * Send eNpcDialogue (opcode 33)
    */
   async sendNpcDialogue(npcId) {
     const body = encodeField(1, 'string', npcId);
@@ -65,114 +63,7 @@ class PacketInjector {
   }
 
   /**
-   * Open NPC dialog remotely (raw op33) and read response options.
-   * Returns array of dialog option strings from op34/124.
-   * This is the KEY to making buttons 2/3 work from different maps.
-   */
-  async talkNpcAndGetOptions(npcId, timeoutMs = 2000) {
-    // 1. Send raw op33 (NO il2cpp - works cross-map)
-    await this.sendNpcDialogue(npcId);
-    await this._sleep(400);
-
-    // 2. Poll for dialog response
-    const start = Date.now();
-    let opts = [];
-    while (Date.now() - start < timeoutMs) {
-      try {
-        const res = await this.session.callRpc('getRecvPackets');
-        if (res && res.ok && res.packets) {
-          for (const p of res.packets) {
-            if (p.opcode === 34 || p.opcode === 124 || p.opcode === 166) {
-              const found = this._parseDialogOptions(p.hex || '');
-              if (found.length > 0) opts = found;
-            }
-          }
-        }
-      } catch (e) { /* retry */ }
-      if (opts.length > 0) break;
-      await this._sleep(150);
-    }
-    return opts;
-  }
-
-  /**
-   * Parse dialog option strings from protobuf hex (op34/124/166).
-   * Field 2 = repeated string selections.
-   */
-  _parseDialogOptions(hex) {
-    try {
-      const b = Buffer.from(hex, 'hex').slice(6); // skip 6-byte header
-      const out = [];
-      let o = 0;
-      while (o < b.length) {
-        // Read varint tag
-        let tag = 0, shift = 0;
-        while (o < b.length) {
-          const x = b[o]; o++;
-          tag |= (x & 0x7f) << shift;
-          if (!(x & 0x80)) break;
-          shift += 7;
-        }
-        const fieldNum = tag >> 3;
-        const wireType = tag & 0x7;
-        if (wireType === 0) {
-          // varint - skip
-          while (o < b.length && (b[o] & 0x80)) o++;
-          o++;
-        } else if (wireType === 2) {
-          // length-delimited
-          let ln = 0, s = 0;
-          while (o < b.length) {
-            const x = b[o]; o++;
-            ln |= (x & 0x7f) << s;
-            if (!(x & 0x80)) break;
-            s += 7;
-          }
-          const raw = b.slice(o, o + ln);
-          o += ln;
-          if (fieldNum === 2) {
-            // selections field
-            try {
-              const txt = raw.toString('utf-8').replace(/[^\x20-\x7e\u00C0-\u1EF9]/g, '').trim();
-              if (txt.length >= 2) out.push(txt);
-            } catch (e) { /* skip */ }
-          }
-        } else {
-          break; // unknown wire type
-        }
-      }
-      return out;
-    } catch (e) {
-      return [];
-    }
-  }
-
-  /**
-   * Find dialog option index by keyword (no-accent matching, like Python _HEAL_KW / _WAR_KW).
-   * Returns the index (0-based) or -1 if not found.
-   */
-  findOptionIndex(options, keywords) {
-    if (!options || options.length === 0) return -1;
-    const noAccent = (s) => (s || '').toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const kwLower = keywords.map(k => noAccent(k));
-    for (let i = 0; i < options.length; i++) {
-      const optNorm = noAccent(options[i]);
-      if (kwLower.some(k => optNorm.includes(k))) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  _sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /**
    * Send eNpcSelect (opcode 35)
-   * selectIndex = 0-based position in dialog menu
-   * For Tong Kim war NPC: 1=Tong, 2=Kim, 3=Cancel
    */
   async sendNpcSelect(selectIndex) {
     const body = encodeField(1, 'int32', selectIndex);
@@ -241,24 +132,6 @@ class PacketInjector {
   async sendPlayerUserItem(itemIndex) {
     const body = encodeField(1, 'int32', itemIndex);
     return await this.sendRaw(49, body.toString('hex'));
-  }
-
-  /**
-   * Send eClientCompleted (opcode 232) - Kim faction heal accept
-   */
-  async sendClientCompleted() {
-    return await this.sendRaw(232, '');
-  }
-
-  /**
-   * Close in-game dialog/popup via RPC
-   */
-  async closePopups() {
-    try {
-      return await this.session.callRpc('closeDialogPopups');
-    } catch (e) {
-      return { ok: false, error: e.message };
-    }
   }
 }
 

@@ -1,4 +1,4 @@
-// src/index.js — Main orchestrator entry point
+// src/index.js — Main orchestrator entry point (Step 6)
 const { FridaSession } = require('./frida-session');
 const { PacketSniffer } = require('./packet-sniffer');
 const { PacketInjector } = require('./packet-injector');
@@ -7,93 +7,94 @@ const { AutoPK } = require('./auto-pk');
 const config = require('../config');
 const path = require('path');
 
-const DEVICE_ID = null; // Auto-detect
+const DEVICE_ID = null; // Auto-detect the active device
 
 async function main() {
-  console.log('======================================================================');
-  console.log('              VLTK1 MOBILE AUTO PK BOT (NODE.JS)');
-  console.log('======================================================================\n');
+  console.log('═════════════════════════════════════════════════════════');
+  console.log('         VLTK1 MOBILE AUTO PK BOT (NODE.JS)');
+  console.log('═════════════════════════════════════════════════════════\n');
 
   const session = new FridaSession(DEVICE_ID, config.GAME_PACKAGE);
 
-  console.log('[1/4] Connecting Frida to game process...');
+  console.log('Connecting to Frida and attaching to game...');
   try {
     await session.connect();
-    console.log('  [OK] Connected to device + game process.');
+    console.log('  [SUCCESS] Connected successfully to device.');
   } catch (err) {
-    console.error(`  [FAIL] Connection failed: ${err.message}`);
+    console.error(`  [ERROR] Connection failed: ${err.message}`);
     process.exit(1);
   }
 
   const bundlePath = path.join(config.FRIDA_SCRIPTS_DIR, 'bot.bundle.js');
-  console.log(`[2/4] Injecting Frida bundle: ${path.basename(bundlePath)}...`);
+  console.log(`Injecting Frida script bundle: ${path.basename(bundlePath)}...`);
   try {
     await session.loadScript(bundlePath);
-    console.log('  [OK] Script injected and initialized.');
+    console.log('  [SUCCESS] Script injected & initialized.');
   } catch (err) {
-    console.error(`  [FAIL] Injection failed: ${err.message}`);
+    console.error(`  [ERROR] Injection failed: ${err.message}`);
     await session.disconnect();
     process.exit(1);
   }
 
-  // Instantiate layers
+  // Instantiate controller layers
   const sniffer = new PacketSniffer(session);
   const injector = new PacketInjector(session);
   const memory = new MemoryReader(session);
-  const autoPK = new AutoPK(session, memory, injector, sniffer, DEVICE_ID, config);
+  const autoPK = new AutoPK(session, memory, injector, sniffer, DEVICE_ID);
 
-  // Handle Frida messages
+  // Setup message handlers for diagnostics
   session.onMessage((payload) => {
     if (payload.type === 'game_fd') {
-      console.log(`[FRIDA] Socket fd locked: ${payload.fd} (via ${payload.detectedBy || 'traffic'})`);
+      console.log(`[FRIDA] Game socket fd locked: ${payload.fd} via ${payload.detectedBy || 'traffic'}`);
       sniffer.gameFd = payload.fd;
     } else if (payload.type === 'error') {
       console.error(`[FRIDA ERROR] ${payload.description || payload.msg || JSON.stringify(payload)}`);
-    } else if (payload.type === 'log') {
-      // Forward Frida script logs
-      console.log(`[FRIDA] ${payload.msg}`);
     }
   });
 
-  // Start packet sniffer
-  console.log('[3/4] Starting packet sniffer (200ms interval)...');
+  // Start packet sniffing and auto-reheal
+  console.log('Starting packet sniffer...');
   sniffer.start(200);
 
-  // Read player info
+  // Let the user know the target details
+  console.log(`Target Info: Process ${session.pkg} (PID: ${session.pid})`);
+
   const sect = await memory.getMySect();
-  console.log(`  Player Sect: ${sect}`);
+  console.log(`Player Sect: ${sect}`);
 
   // Start Auto PK loop
-  console.log('[4/4] Starting Auto PK loop...');
+  console.log('Starting PK loop...');
   await autoPK.start();
 
-  // Status display interval
+  // Periodically print player info status
   const infoInterval = setInterval(async () => {
     try {
       const info = await session.callRpc('getPlayerInfo');
-      const state = autoPK.getState();
       if (info && info.ok) {
-        const hpPct = info.maxHp ? (info.hp / info.maxHp * 100).toFixed(0) : '?';
-        const mpPct = info.maxMp ? (info.mp / info.maxMp * 100).toFixed(0) : '?';
-        console.log(`[STATUS] ${info.name || '?'} | Lv${info.level || 0} | Map ${info.mapId || '?'} | ` +
-          `HP ${hpPct}% MP ${mpPct}% | Camp:${state.campLabel} | ` +
-          `${state.atCamp ? 'AT CAMP' : 'WAR ZONE'}${state.dead ? ' | DEAD' : ''}`);
+        console.log(`[CHAR-INFO] Name: ${info.name || 'Loading'} | Level: ${info.level || 0} | Map ID: ${info.mapId || 0} | Money: ${info.money || 0}`);
       } else {
-        console.log('[STATUS] Waiting for character... (move character in emulator)');
+        console.log(`[CHAR-INFO] Waiting for character capture... (Please walk/move character in emulator to trigger)`);
       }
-    } catch (e) { /* skip */ }
-  }, 5000);
+    } catch (e) {
+      // Ignore
+    }
+  }, 3000);
 
-  console.log('\nRunning... Press Ctrl+C to stop.\n');
+  console.log('\nRunning... Press Ctrl+C to terminate cleanly.\n');
 
-  // Graceful shutdown
+  // Handle graceful exits
   const shutdown = async () => {
-    console.log('\nShutting down...');
+    console.log('\nGracefully shutting down...');
     clearInterval(infoInterval);
     sniffer.stop();
     await autoPK.stop();
-    try { await session.disconnect(); console.log('Frida disconnected.'); } catch (e) { /* skip */ }
-    console.log('Bye.');
+    try {
+      await session.disconnect();
+      console.log('Disconnected Frida session.');
+    } catch (e) {
+      // Ignore
+    }
+    console.log('Bye!');
     process.exit(0);
   };
 
@@ -102,6 +103,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[FATAL] Fatal error:', err);
+  console.error('[FATAL] FATAL ERROR IN MAIN RUNTIME:', err);
   process.exit(1);
 });

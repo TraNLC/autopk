@@ -9,12 +9,14 @@ const { execSync } = require('child_process');
 
 const ROOT = __dirname;
 const WITH_BRIDGE = process.argv.includes('--bridge');
-const VENDOR_BRIDGE = path.join(ROOT, '..', 'node_modules', 'frida-il2cpp-bridge', 'dist', 'index.js');
+const VENDOR_BRIDGE = path.join(ROOT, '..', '..', 'GSTAuto_PK_Windows', 'vendor', 'il2cpp-bridge.js');
 
 const MODULES = [
   'core/globals.js', 'core/helpers.js', 'core/opcodes.js', 'core/il2cpp-init.js',
   'hooks/native-funcs.js', 'hooks/anti-detection.js', 'hooks/connect.js', 'hooks/recv.js', 'hooks/send.js',
-  'rpc/packet-io.js', 'rpc/player-info.js', 'rpc/movement.js', 'rpc/combat.js',
+  'rpc/packet-io.js', 
+  'rpc/core/Il2CppUtils.js', 'rpc/core/PlayerManager.js', 'rpc/core/DialogManager.js', 'rpc/shop/ShopScanner.js',
+  'rpc/movement.js', 'rpc/combat.js',
   'rpc/ui-control.js', 'rpc/diagnostics.js', 'ready.js',
 ];
 
