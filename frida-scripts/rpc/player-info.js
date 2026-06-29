@@ -310,6 +310,49 @@ rpc.exports.getPlayerInfo = function() {
                     Il2Cpp.perform(function() {
                         try {
                             var ctrl = new Il2Cpp.Object(npcontroller);
+                            
+                            // Get Faction
+                            try {
+                                res.sect = ctrl.method('GetFaction').invoke();
+                            } catch(e) {
+                                try {
+                                    var img = Il2Cpp.domain.assembly("Assembly-CSharp").image;
+                                    var CtrlCls = img.class('game.resource.settings.npcres.Controller');
+                                    res.sect = CtrlCls.method('GetFaction').bind(ctrl).invoke();
+                                } catch (e2) {}
+                            }
+                            var SECT_NAMES = {
+                                0: "Thieu Lam", 1: "Thien Vuong", 2: "Duong Mon", 3: "Ngu Doc",
+                                4: "Nga My", 5: "Thuy Yen", 6: "Cai Bang", 7: "Thien Nhan",
+                                8: "Vo Dang", 9: "Con Lon", 10: "Minh Giao", 11: "Doan Thi"
+                            };
+                            if (res.sect !== undefined && res.sect !== null) {
+                                res.sectName = SECT_NAMES[res.sect] || "None";
+                            }
+                            
+                            // Get Name and Level
+                            var data = null;
+                            try { data = ctrl.field('data').value; } catch(e) {
+                                try { data = ctrl.field('m_data').value; } catch(e2) {}
+                            }
+                            if (data && !data.isNull()) {
+                                try {
+                                    var nv = data.field('name').value;
+                                    if (nv) {
+                                        if (typeof nv.content !== 'undefined' && nv.content !== null) {
+                                            res.name = nv.content;
+                                        } else {
+                                            var ptr = nv.handle ? nv.handle : new NativePointer(nv);
+                                            if (!ptr.isNull()) {
+                                                var len = ptr.add(0x10).readS32();
+                                                if (len > 0 && len < 100) res.name = ptr.add(0x14).readUtf16String(len);
+                                            }
+                                        }
+                                    }
+                                } catch(e) {}
+                                try { res.level = data.field('level').value; } catch(e) {}
+                            }
+
                             var idn = ctrl.field('identify').value;
                             if (idn && !idn.isNull()) {
                                 res.hp = idn.field('healthCurrent').value;

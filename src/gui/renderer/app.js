@@ -90,7 +90,12 @@ function renderTable() {
       dev.connected = connect;
       if (!connect) dev.info = null; // reset info on disconnect
       renderTable();
-      await window.api.toggleDevice(id, connect);
+      const res = await window.api.toggleDevice(id, connect);
+      if (connect && res && !res.ok) {
+        dev.connected = false;
+        dev.info = { error: res.error };
+        renderTable();
+      }
     });
     const span = document.createElement('span');
     span.className = 'slider round';
@@ -102,6 +107,8 @@ function renderTable() {
     const tdName = document.createElement('td');
     if (dev.info && dev.info.name) {
       tdName.innerHTML = `<strong>${dev.info.name}</strong> <br><small style="color: #888;">Lv.${dev.info.level || '?'} &bull; ${dev.info.sectName || 'Chưa rõ'}</small>`;
+    } else if (dev.info && dev.info.error) {
+      tdName.innerHTML = `<span style="color: red;" title="${dev.info.error}">Lỗi (xem log)</span>`;
     } else {
       tdName.innerText = dev.connected ? 'Dang doc...' : '—';
     }

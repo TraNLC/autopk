@@ -93,18 +93,115 @@ rpc.exports.getMySect = function() {
 };
 
 rpc.exports.getNearNpcsDetail = function() {
-    var res = { ok: true, npcs: [] };
     try {
-        if (globalThis.npcCache) {
+        var npcs = [];
+        
+        // 1. Try to read from global npcCache if we hooked it
+        if (typeof globalThis.npcCache !== 'undefined' && globalThis.npcCache) {
             for (var cid in globalThis.npcCache) {
-                res.npcs.push({ id: cid, name: globalThis.npcCache[cid] });
+                npcs.push({ id: cid, name: globalThis.npcCache[cid], source: 'hook_cache' });
+            }
+            if (npcs.length > 0) return { ok: true, npcs: npcs };
+        }
+        
+        // 2. Try to read from CharManager.NpcRes (Memory Scan)
+        if (typeof Il2Cpp !== 'undefined' && !_charManagerClass) {
+            // Read CharManager class like in getNearbyShops
+            var maps = File.readAllText('/proc/self/maps').split('\n');
+            var metaRange = null;
+            for (var i = 0; i < maps.length; i++) {
+                if (maps[i].indexOf('global-metadata.dat') !== -1) {
+                    var parts = maps[i].split(' ')[0].split('-');
+                    metaRange = { base: ptr('0x' + parts[0]), size: parseInt('0x' + parts[1]) - parseInt('0x' + parts[0]) };
+                    break;
+                }
+            }
+            if (metaRange) {
+                var pattern = '43 68 61 72 4d 61 6e 61 67 65 72'; // "CharManager"
+                var results = Memory.scanSync(metaRange.base, metaRange.size, pattern);
+                var nameStrAddr = null;
+                for (var rIdx = 0; rIdx < results.length; rIdx++) {
+                    if (results[rIdx].address.readUtf8String() === "CharManager") {
+                        nameStrAddr = results[rIdx].address;
+                        break;
+                    }
+                }
+                
+                if (nameStrAddr) {
+                    var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+                    var hex = nameStrAddr.toString(16);
+                    while (hex.length < 16) hex = '0' + hex;
+                    var parts = [];
+                    for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
+                    var ptrPattern = parts.join(' ');
+                    
+                    for (var k = 0; k < allRanges.length; k++) {
+                        try {
+                            var matches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
+                            if (matches.length > 0) {
+                                for (var m = 0; m < matches.length; m++) {
+                                    var cand = matches[m].address.sub(0x10);
+                                    var checkNamePtr = cand.add(0x10).readPointer();
+                                    if (checkNamePtr.toString() === nameStrAddr.toString()) {
+                                        _charManagerClass = cand;
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                        if (_charManagerClass) break;
+                    }
+                }
             }
         }
+        
+        if (_charManagerClass) {
+            var staticFields = _charManagerClass.add(0xB8).readPointer();
+            if (!staticFields.isNull()) {
+                var charManagerInstance = staticFields.readPointer();
+                if (!charManagerInstance.isNull()) {
+                    // CharManager fields: 0x58 = Salesmans, 0x50 = Npcs
+                    var npcDict = charManagerInstance.add(0x50).readPointer(); 
+                    if (!npcDict.isNull()) {
+                        var entriesArray = npcDict.add(0x18).readPointer();
+                        if (!entriesArray.isNull()) {
+                            var maxLength = entriesArray.add(0x18).readU32();
+                            for (var idx = 0; idx < maxLength; idx++) {
+                                var entryAddr = entriesArray.add(0x20).add(idx * 24);
+                                var valuePtr = entryAddr.add(16).readPointer();
+                                if (!valuePtr.isNull() && parseInt(valuePtr.toString()) > 0x10000) {
+                                    var dataPtr = valuePtr.add(0x30).readPointer();
+                                    if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
+                                        var name = '', cid = '';
+                                        
+                                        var namePtr = dataPtr.add(0x40).readPointer();
+                                        if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
+                                            var strLen = namePtr.add(0x10).readU32();
+                                            if (strLen > 0 && strLen < 100) name = namePtr.add(0x14).readUtf16String(strLen);
+                                        }
+                                        
+                                        var cidPtr = dataPtr.add(0x10).readPointer();
+                                        if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
+                                            var cidLen = cidPtr.add(0x10).readInt();
+                                            if (cidLen > 0 && cidLen < 100) cid = cidPtr.add(0x14).readUtf16String(cidLen);
+                                        }
+                                        
+                                        if (cid && name) {
+                                            npcs.push({ id: cid, name: name, source: 'memory_scan' });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return { ok: true, npcs: npcs };
     } catch (e) {
-        res.ok = false;
-        res.error = e.message;
+        return { ok: false, error: e.message };
     }
-    return res;
 };
 
 rpc.exports.getMySkills = function() {

@@ -162,7 +162,14 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
   sendLog(`[${deviceId}] Đang gắn kết (attach) Frida...`, 'info');
   
   const session = new FridaSession(deviceId);
-  const ok = await session.connect(PKG);
+  let ok = false;
+  try {
+    ok = await session.connect(PKG);
+  } catch (err) {
+    sendLog(`[${deviceId}] Lỗi kết nối Frida: ${err.message}`, 'error');
+    return { ok: false, error: err.message };
+  }
+  
   if (!ok) {
     sendLog(`[${deviceId}] Lỗi kết nối (game chưa mở?).`, 'error');
     return { ok: false, error: 'Connection failed' };
@@ -189,12 +196,23 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
       if (infoStr) {
         const info = infoStr;
         state.info = info;
+        
+        if (info.error && info.error !== state.lastLoggedError) {
+          sendLog(`[${deviceId}] Lỗi đọc thông tin: ${info.error}`, 'error');
+          state.lastLoggedError = info.error;
+        } else if (!info.error && state.lastLoggedError) {
+          state.lastLoggedError = null; // Clear error if reading succeeds
+        }
+        
         if (mainWindow) {
           mainWindow.webContents.send('player-info-update', { deviceId, info });
         }
       }
     } catch(e) {
-      // transient read errors
+      if (e.message !== state.lastLoggedError) {
+        sendLog(`[${deviceId}] Lỗi RPC đọc dữ liệu: ${e.message}`, 'error');
+        state.lastLoggedError = e.message;
+      }
     }
   }, 2000);
 
