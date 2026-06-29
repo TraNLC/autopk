@@ -9,7 +9,7 @@ const { execSync } = require('child_process');
 
 const ROOT = __dirname;
 const WITH_BRIDGE = process.argv.includes('--bridge');
-const VENDOR_BRIDGE = path.join(ROOT, '..', '..', 'GSTAuto_PK_Windows', 'vendor', 'il2cpp-bridge.js');
+const VENDOR_BRIDGE = path.join(ROOT, '..', 'node_modules', 'frida-il2cpp-bridge', 'dist', 'index.js');
 
 const MODULES = [
   'core/globals.js', 'core/helpers.js', 'core/opcodes.js', 'core/il2cpp-init.js',

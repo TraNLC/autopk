@@ -180,7 +180,7 @@ ipcMain.handle('connect-device', async (event, deviceId) => {
     const bundlePath = path.join(__dirname, '..', '..', 'frida-scripts', 'bot.bundle.js');
     if (!fs.existsSync(bundlePath)) {
       sendTabLog('system', 'Building Frida bundle...');
-      execSync('npm run build:frida');
+      execSync('npm run build:frida:bridge');
     }
     
     sendTabLog('system', `Loading bot.bundle.js (${fs.statSync(bundlePath).size} bytes)...`);
