@@ -357,8 +357,17 @@ rpc.exports.getShopItems = function(stallIndex, nameStr, namePtrStr, cidPtrStr, 
             // ----------------------------------------------------
             var cidLen = cidPtrStr ? ptr(cidPtrStr).add(0x10).readInt() : 0;
             if (cidLen > 0 && cidLen < 100) {
-                var cid = ptr(cidPtrStr).add(0x14).readUtf16String(cidLen);
-                var str = "salesman." + cid + ".0";
+                var cidRaw = ptr(cidPtrStr).add(0x14).readUtf16String(cidLen);
+                
+                // XÓA KÝ TỰ NULL (\0) NẾU CÓ ĐỂ TRÁNH DƯ BYTE TRONG GÓI TIN!
+                cidRaw = cidRaw.replace(/\0/g, '');
+                console.log("[Shop] Original cidRaw from memory (cleaned): " + cidRaw);
+                
+                var str = cidRaw;
+                if (!str.startsWith("salesman.")) {
+                    str = "salesman." + cidRaw + ".0";
+                }
+                
                 var strLen = str.length;
                 var payloadLen = 2 + strLen;
                 var hexBody = [];
@@ -480,61 +489,22 @@ rpc.exports.getShopItems = function(stallIndex, nameStr, namePtrStr, cidPtrStr, 
                             var GetItemName = new NativeFunction(il2cppBase.add(0xFEB4A0), 'pointer', ['pointer', 'int', 'bool', 'pointer']);
                             var items = [];
                             var mapField = currentStall.add(0x28).readPointer();
-                            if (!mapField.isNull()) {
-                                var listPtr = mapField.add(0x18).readPointer();
-                                if (!listPtr.isNull()) {
-                                    var head = listPtr.add(0x10).readPointer();
-                                    var count = listPtr.add(0x18).readU32();
-                                    
-                                    var curr = head.add(0x18).readPointer();
-                                    for (var idx = 0; idx < count; idx++) {
-                                        if (curr.isNull() || curr.toString() === head.toString()) break;
-                                        
-                                        var salesmanItemPtr = curr.add(0x30).readPointer();
-                                        if (!salesmanItemPtr.isNull()) {
-                                            var itemPtr = salesmanItemPtr.add(0x18).readPointer();
-                                            var money = salesmanItemPtr.add(0x20).readU32();
-                                            var knb = salesmanItemPtr.add(0x24).readU32();
-                                            
-                                            if (!itemPtr.isNull()) {
-                                                var namePtr = GetItemName(itemPtr, 0, 0, ptr(0));
-                                                var itemName = namePtr.isNull() ? 'Vat pham chua ro' : namePtr.add(0x14).readUtf16String();
-                                                
-                                                var identify = itemPtr.add(0x18).readU32();
-                                                var rowIdxAndType = itemPtr.add(0x1C).readU32();
-                                                var detailAndGenre = itemPtr.add(0x20).readU32();
-                                                var particularAndLevel = itemPtr.add(0x24).readU32();
-                                                var stackAndSeries = itemPtr.add(0x28).readU32();
-                                                
-                                                var magics = [];
-                                                var magicPtr = itemPtr.add(0x50).readPointer();
-                                                if (!magicPtr.isNull()) {
-                                                    var magicArrayPtr = magicPtr.add(0x10).readPointer();
-                                                    var magicCount = magicPtr.add(0x18).readU32();
-                                                    if (!magicArrayPtr.isNull()) {
-                                                        for (var mIdx = 0; mIdx < magicCount; mIdx++) {
-                                                            var val = magicArrayPtr.add(0x20 + mIdx * 4).readS32();
-                                                            magics.push(val);
-                                                        }
-                                                    }
-                                                }
-                                                
-                                                items.push({
-                                                    name: itemName,
-                                                    money: money,
-                                                    knb: knb,
-                                                    identify: identify,
-                                                    rowIndexAndType: rowIdxAndType,
-                                                    detailAndGenre: detailAndGenre,
-                                                    particularAndLevel: particularAndLevel,
-                                                    stackAndSeries: stackAndSeries,
-                                                    magics: magics
-                                                });
-                                            }
-                                        }
-                                        curr = curr.add(0x18).readPointer();
-                                    }
+                            
+                            console.log("[Dump] currentStall: " + currentStall + ", mapField: " + mapField);
+                            
+                            try {
+                                if (!currentStall.isNull()) {
+                                    var currentStallClass = currentStall.readPointer();
+                                    var currentStallClassName = currentStallClass.add(0x10).readPointer().readUtf8String();
+                                    console.log("[Dump] currentStall Class Name: " + currentStallClassName);
                                 }
+                                if (!mapField.isNull()) {
+                                    var mapFieldClass = mapField.readPointer();
+                                    var mapFieldClassName = mapFieldClass.add(0x10).readPointer().readUtf8String();
+                                    console.log("[Dump] mapField Class Name: " + mapFieldClassName);
+                                }
+                            } catch (e) {
+                                console.log("[Dump] Error reading class names: " + e.message);
                             }
                             resolve({ ok: true, title: title, items: items });
                         } catch(err) {

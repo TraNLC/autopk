@@ -76,6 +76,10 @@ class FridaSession {
     // Always ensure ADB forward is set up correctly first (dynamic/self-healing)
     this._setupForward();
     
+    // Ensure frida-server is running on the device
+    const adb = require('./adb');
+    adb.startFridaServer(this.deviceId);
+    
     if (!frida) {
       frida = await import('frida');
     }

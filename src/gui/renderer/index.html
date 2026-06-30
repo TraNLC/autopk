@@ -2,145 +2,172 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>GST VLTK1 Mobile Auto PK - Multi-Account</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <title>GST Auto TK ver 1.0</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <!-- HEADER -->
-  <header class="app-header">
-    <div class="logo-area">
-      <div>
-        <h1 class="title-martial">VO LÂM TRUYEN KY</h1>
-        <p class="subtitle-eng">MULTI-ACCOUNT AUTO PK v2.0</p>
-      </div>
-    </div>
-    <div class="header-controls">
-      <button id="btn-refresh" class="btn-primary">Lam Moi</button>
-      <button id="btn-restart" class="btn-warning">Khoi Dong Lai</button>
-    </div>
-  </header>
+  <!-- TOP: DataGridView (Table) -->
+  <div class="datagrid-container">
+    <table class="datagrid">
+      <thead>
+        <tr>
+          <th width="30">#</th>
+          <th width="110">Nhân vật</th>
+          <th width="40">Cấp</th>
+          <th width="80">Môn phái</th>
+          <th>Trạng thái</th>
+        </tr>
+      </thead>
+      <tbody id="device-table-body">
+        <tr>
+          <td colspan="4" style="text-align: center; color: #888;">Đang làm mới...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
-  <!-- BODY WRAPPER -->
-  <div class="app-body">
+  <!-- MIDDLE: TabControl -->
+  <div class="tab-control">
+    <div class="tab-headers">
+      <button class="tab-btn active" data-tab="tab-tongkim">Tống Kim</button>
+      <button class="tab-btn" data-tab="tab-datau">Tìm Dã Tẩu</button>
+      <button class="tab-btn" data-tab="tab-tuydinh">Tùy chỉnh</button>
+    </div>
     
-    <!-- MAIN CONTENT -->
-    <main class="app-content-full">
-      <div class="left-col">
-        <!-- TOP PANEL: DEVICE TABLE -->
-        <section class="card device-table-card">
-          <div class="table-responsive">
-            <table class="modern-table">
-              <thead>
-                <tr>
-                  <th width="80" style="text-align: center;">Mo</th>
-                  <th width="200">Ten Nhan Vat</th>
-                  <th width="200">Diem Tong Kim</th>
-                  <th>Thiet Bi</th>
-                </tr>
-              </thead>
-              <tbody id="device-table-body">
-                <tr>
-                  <td colspan="4" style="text-align: center; color: #888; padding: 20px;">Bam "Lam Moi" de tim thiet bi...</td>
-                </tr>
-              </tbody>
-            </table>
+    <div class="tab-content">
+      <!-- TAB: Tống Kim -->
+      <div id="tab-tongkim" class="tab-pane active">
+        <div class="tab-pane-header">
+          <span class="tab-title">Cấu hình Tống Kim</span>
+        </div>
+        
+        <div class="groupbox" style="margin-top: 15px;">
+          <span class="groupbox-title">Tự động Ra Trận (Toàn cục)</span>
+          <div class="groupbox-content">
+            <label><input type="checkbox" id="pk-fight-switch"> Bật Auto Tống Kim</label>
+            <div style="font-size: 10px; color: #666; margin-top: 4px;">Tick vào Nhân vật ở bảng trên để bật/tắt Auto riêng lẻ. Bấm vào Tên để cài Lắc.</div>
           </div>
-        </section>
+        </div>
 
-        <!-- BOTTOM PANEL: GLOBAL LOGS -->
-        <section class="card log-card">
-          <div class="log-header">
-            <h2 class="card-subtitle">Global Log</h2>
-            <button id="btn-clear-log" class="btn-small">Clear</button>
+        <div class="groupbox" style="margin-top: 15px;">
+          <span class="groupbox-title">Cài đặt Cụ thể (Chọn NV ở trên)</span>
+          <div class="groupbox-content">
+            <div style="margin-bottom: 5px;">Nhân vật: <strong id="lbl-selected-acc" style="color: blue;">Chưa chọn</strong></div>
+            <div id="acc-settings-panel" style="display: none; padding-top: 5px; border-top: 1px solid #ccc;">
+              <div style="margin-bottom: 5px;">
+                <label style="display:inline-block; width:40px;">Phe:</label>
+                <select id="sel-side" style="width: 100px;">
+                  <option value="auto">Tự động</option>
+                  <option value="song">Tống</option>
+                  <option value="jin">Kim</option>
+                </select>
+              </div>
+              <div>
+                <label><input type="checkbox" id="chk-lac1" value="45"> Phi Tốc Hoàn</label><br>
+                <label><input type="checkbox" id="chk-lac2" value="51"> Lệnh Bài</label><br>
+                <label><input type="checkbox" id="chk-lac3" value="50"> Chiến Cổ</label>
+                <br>
+                <button id="btn-save-acc" style="width:100%; margin-top:5px;">Lưu</button>
+                <div style="margin-top: 10px; display: flex; gap: 5px;">
+                  <button id="btn-test-npc1" style="flex: 1; font-size: 11px;">Test NPC 1</button>
+                  <button id="btn-test-npc2" style="flex: 1; font-size: 11px;">Test NPC 2</button>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="log-container" id="global-log-container">
-            <div class="log-entry log-system">[System] Multi-Account Manager Initialized.</div>
-          </div>
-        </section>
+        </div>
+        <!-- Log box inside Tống Kim tab -->
+        <div class="log-container" id="global-log-container" style="margin-top: 15px;"></div>
       </div>
 
-      <div class="right-col">
-        <!-- MIDDLE PANEL: TONG KIM CONTROLS -->
-        <section class="card controls-card">
-          <div class="control-bar">
-            <div class="toggle-group">
-              <span class="toggle-label gold-text"><strong style="font-size: 1.1em;">TU DONG RA TRAN</strong></span>
-              <label class="switch">
-                <input type="checkbox" id="pk-fight-switch">
-                <span class="slider round"></span>
-              </label>
-            </div>
-            
-            <div class="dropdown-group">
-              <label class="dropdown-label">Phe:</label>
-              <select id="tk-side-select" class="modern-select">
-                <option value="auto">Tu dong</option>
-                <option value="song">Tong</option>
-                <option value="jin">Kim</option>
-              </select>
-            </div>
+      <!-- TAB: Tùy chỉnh -->
+      <div id="tab-tuydinh" class="tab-pane">
+        <div class="tab-pane-header">
+          <span class="tab-title">Kiểm tra (Test)</span>
+        </div>
+        <div class="groupbox" style="margin-top: 15px;">
+          <span class="groupbox-title">Lệnh RPC</span>
+          <div class="groupbox-content" style="display: flex; flex-direction: column; gap: 5px;">
+            <button id="btn-test-custom-1" class="classic-btn">Test gọi NPC đã học (1)</button>
+            <button id="btn-test-custom-2" class="classic-btn">Test gọi NPC đã học (2)</button>
+            <button class="classic-btn" disabled style="color: gray;">Radar Quét (Đã tắt)</button>
           </div>
-        </section>
-
-        <!-- LOWER MIDDLE PANEL: LAC CONTROLS -->
-        <section class="card lac-card">
-          <h2 class="card-subtitle">Tu dung lac Tong Kim</h2>
-          <div class="lac-grid" id="lac-controls-container">
-            <!-- Item 1 -->
-            <div class="lac-row">
-              <span class="lac-label">Su dung</span>
-              <select class="modern-select lac-select" id="lac-1-select">
-                <option value="none">—</option>
-                <option value="45">Phi Toc Hoan</option>
-                <option value="51">Lenh Bai</option>
-                <option value="50">Chien Co</option>
-              </select>
-              <span class="lac-count" id="lac-1-count"></span>
-            </div>
-            <!-- Item 2 -->
-            <div class="lac-row">
-              <span class="lac-label">Su dung</span>
-              <select class="modern-select lac-select" id="lac-2-select">
-                <option value="none">—</option>
-                <option value="45">Phi Toc Hoan</option>
-                <option value="51">Lenh Bai</option>
-                <option value="50">Chien Co</option>
-              </select>
-              <span class="lac-count" id="lac-2-count"></span>
-            </div>
-            <!-- Item 3 -->
-            <div class="lac-row">
-              <span class="lac-label">Su dung</span>
-              <select class="modern-select lac-select" id="lac-3-select">
-                <option value="none">—</option>
-                <option value="45">Phi Toc Hoan</option>
-                <option value="51">Lenh Bai</option>
-                <option value="50">Chien Co</option>
-              </select>
-              <span class="lac-count" id="lac-3-count"></span>
-            </div>
+        </div>
+    </div>
+      
+      <!-- TAB: Tìm Dã Tẩu -->
+      <div id="tab-datau" class="tab-pane">
+        <div class="tab-pane-header">
+          <span class="tab-title">Quét Sạp Người Chơi (Tìm đồ Dã Tẩu)</span>
+        </div>
+        
+        <div class="groupbox" style="margin-top: 10px;">
+          <div class="groupbox-content" style="display: flex; gap: 5px;">
+            <input type="text" id="txt-datau-keyword" placeholder="Nhập tên đồ cần tìm..." style="flex: 1; padding: 4px;">
+            <button id="btn-scan-datau" class="classic-btn" style="width: 80px;">Quét Tìm</button>
           </div>
-          
-          <!-- TEST CHAT NPC -->
-          <div class="glass-panel" style="margin-top:20px;">
-            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 15px; color: var(--text-primary);">Test Chat NPC</h3>
-            <div style="display: flex; gap: 10px;">
-              <button class="btn-primary" style="flex:1; padding:10px 0; font-size:13px; font-weight:bold;" onclick="window.api.testChatNpc('23')">Chiêu Binh Quân</button>
-              <button class="btn-primary" style="flex:1; padding:10px 0; font-size:13px; font-weight:bold;" onclick="window.api.testChatNpc('2581')">Quân Nhu</button>
-              <button class="btn-primary" style="flex:1; padding:10px 0; font-size:13px; font-weight:bold;" onclick="window.api.testChatNpc('2593')">Trinh Sát</button>
-            </div>
-            <div style="margin-top: 10px;">
-              <button class="btn-primary" style="width:100%; padding:10px 0; font-size:13px; font-weight:bold; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" onclick="window.api.testChatNpc('radar')">📡 Radar Quét NPC Gần Đây</button>
-            </div>
+          <div class="groupbox-content" style="display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap;">
+            <select id="sel-datau-series" style="padding: 2px;">
+              <option value="-1">Tất cả hệ</option>
+              <option value="1">Kim</option>
+              <option value="2">Mộc</option>
+              <option value="3">Thủy</option>
+              <option value="4">Hỏa</option>
+              <option value="5">Thổ</option>
+            </select>
+            <input type="number" id="txt-datau-level" placeholder="Cấp (VD: 3)" style="width: 70px; padding: 2px;">
+            <select id="sel-datau-type" style="padding: 2px;">
+              <option value="-1">Mọi loại</option>
+              <option value="0">Vũ khí</option>
+              <option value="1">Áo</option>
+              <option value="2">Mũ</option>
+              <option value="3">Giày</option>
+              <option value="4">Đai</option>
+              <option value="5">Bao tay</option>
+              <option value="6">Nhẫn</option>
+              <option value="7">Dây chuyền</option>
+              <option value="8">Ngọc bội</option>
+            </select>
+            <select id="sel-datau-gender" style="padding: 2px;">
+              <option value="all">Nam/Nữ</option>
+              <option value="nam">Nam</option>
+              <option value="nu">Nữ</option>
+            </select>
           </div>
-        </section>
+        </div>
+        
+        <div class="datagrid-container" style="height: 150px; margin-top: 10px; border: 1px solid #ccc; overflow-y: auto;">
+          <table class="datagrid" style="font-size: 11px;">
+            <thead>
+              <tr>
+                <th width="80">Chủ Sạp</th>
+                <th width="100">Vật Phẩm</th>
+                <th width="60">Giá Bạc</th>
+                <th width="50">Tọa độ</th>
+              </tr>
+            </thead>
+            <tbody id="datau-results-body">
+              <tr>
+                <td colspan="4" style="text-align: center; color: #888;">Chưa có dữ liệu. Nhấn Quét để tìm kiếm...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
+    </div>
+  </div>
 
-    </main>
+  <!-- BOTTOM: StatusBar -->
+  <div class="status-bar">
+    <div class="status-left">
+      👤 Auto Account
+    </div>
+    <div class="status-right">
+      <button id="btn-refresh" class="icon-btn" title="Làm mới list">🔄</button>
+      <button id="btn-restart" class="icon-btn" title="Khởi động lại kết nối">🔌</button>
+      <button class="icon-btn" title="Lưu">💾</button>
+    </div>
   </div>
 
   <script src="app.js"></script>

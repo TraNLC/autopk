@@ -104,8 +104,12 @@ rpc.exports.getNearNpcsDetail = function() {
             if (npcs.length > 0) return { ok: true, npcs: npcs };
         }
         
+        // 2. Không quét Memory hay Il2Cpp nữa để đảm bảo 100% không đơ game.
+        // Chỉ dựa vào việc HỌC ID bằng cách bắt gói tin.
+        return { ok: true, npcs: npcs };
+        
         // 2. Try to read from CharManager.NpcRes (Memory Scan)
-        if (typeof Il2Cpp !== 'undefined' && !_charManagerClass) {
+        if (!_charManagerClass) {
             // Read CharManager class like in getNearbyShops
             var maps = File.readAllText('/proc/self/maps').split('\n');
             var metaRange = null;
@@ -129,10 +133,12 @@ rpc.exports.getNearNpcsDetail = function() {
                 
                 if (nameStrAddr) {
                     var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+                    var ptrSize = Process.pointerSize;
                     var hex = nameStrAddr.toString(16);
-                    while (hex.length < 16) hex = '0' + hex;
+                    var padLen = (ptrSize === 8) ? 16 : 8;
+                    while (hex.length < padLen) hex = '0' + hex;
                     var parts = [];
-                    for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
+                    for (var j = padLen - 2; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
                     var ptrPattern = parts.join(' ');
                     
                     for (var k = 0; k < allRanges.length; k++) {
@@ -154,46 +160,138 @@ rpc.exports.getNearNpcsDetail = function() {
                 }
             }
         }
+        if (!_charManagerClass) {
+            send({ type: 'log', message: 'ERROR: _charManagerClass is null after scanning! metaRange: ' + JSON.stringify(metaRange) });
+        }
         
         if (_charManagerClass) {
+            send({ type: 'log', message: 'Using CharManager class: ' + _charManagerClass });
             var staticFields = _charManagerClass.add(0xB8).readPointer();
             if (!staticFields.isNull()) {
                 var charManagerInstance = staticFields.readPointer();
                 if (!charManagerInstance.isNull()) {
-                    // CharManager fields: 0x58 = Salesmans, 0x50 = Npcs
-                    var npcDict = charManagerInstance.add(0x50).readPointer(); 
-                    if (!npcDict.isNull()) {
-                        var entriesArray = npcDict.add(0x18).readPointer();
-                        if (!entriesArray.isNull()) {
-                            var maxLength = entriesArray.add(0x18).readU32();
+                    send({ type: 'log', message: 'Found CharManager instance: ' + charManagerInstance });
+                    var ptrSize = Process.pointerSize;
+                    var entriesOffset = (ptrSize === 8) ? 0x18 : 0x0C;
+                    var countOffset = (ptrSize === 8) ? 0x20 : 0x10;
+                    
+                    // Dynamically scan for valid dictionaries
+                    for (var offset = 0x20; offset < 0xa0; offset += ptrSize) {
+                        try {
+                            var dict = charManagerInstance.add(offset).readPointer();
+                            if (dict.isNull() || parseInt(dict.toString()) < 0x1000) continue;
+                            
+                            var entriesArray = dict.add(entriesOffset).readPointer();
+                            if (entriesArray.isNull() || parseInt(entriesArray.toString()) < 0x1000) continue;
+                            
+                            var count = dict.add(countOffset).readU32();
+                            var arrayLenOffset = (ptrSize === 8) ? 0x18 : 0x0C;
+                            var maxLength = entriesArray.add(arrayLenOffset).readU32();
+                            send({ type: 'log', message: 'Offset 0x' + offset.toString(16) + ' | dict=' + dict + ' | entries=' + entriesArray + ' | count=' + count + ' | max=' + maxLength });
+                            if (count > 0 && count < 5000) {
+                                if (maxLength >= count && maxLength < 5000) {
+                                    send({ type: 'log', message: 'Scanning dict at offset 0x' + offset.toString(16) + ' with ' + count + ' items' });
+                                    var dictNpcs = [];
                             for (var idx = 0; idx < maxLength; idx++) {
-                                var entryAddr = entriesArray.add(0x20).add(idx * 24);
-                                var valuePtr = entryAddr.add(16).readPointer();
-                                if (!valuePtr.isNull() && parseInt(valuePtr.toString()) > 0x10000) {
-                                    var dataPtr = valuePtr.add(0x30).readPointer();
-                                    if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
-                                        var name = '', cid = '';
-                                        
-                                        var namePtr = dataPtr.add(0x40).readPointer();
-                                        if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
-                                            var strLen = namePtr.add(0x10).readU32();
-                                            if (strLen > 0 && strLen < 100) name = namePtr.add(0x14).readUtf16String(strLen);
+                                try {
+                                    var arrayStartOffset = (ptrSize === 8) ? 0x20 : 0x10;
+                                    var entrySize = (ptrSize === 8) ? 24 : 16;
+                                    var entryAddr = entriesArray.add(arrayStartOffset).add(idx * entrySize);
+                                    var key = entryAddr.add(8).readU32(); // The runtime ID is the dictionary key!
+                                    var valueOffset = (ptrSize === 8) ? 16 : 12;
+                                    var valuePtr = entryAddr.add(valueOffset).readPointer();
+                                    if (!valuePtr.isNull() && parseInt(valuePtr.toString()) > 0x1000) {
+                                        var dataOffset = (ptrSize === 8) ? 0x30 : 0x18; // NpcRes.Special->data? Let's check pointer
+                                        var dataPtr = valuePtr.add(dataOffset).readPointer();
+                                        if (dataPtr.isNull() || parseInt(dataPtr.toString()) < 0x1000) {
+                                            // Fallback for 32-bit offset 0x1C maybe?
+                                            dataOffset = (ptrSize === 8) ? 0x30 : 0x1C;
+                                            dataPtr = valuePtr.add(dataOffset).readPointer();
                                         }
-                                        
-                                        var cidPtr = dataPtr.add(0x10).readPointer();
-                                        if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
-                                            var cidLen = cidPtr.add(0x10).readInt();
-                                            if (cidLen > 0 && cidLen < 100) cid = cidPtr.add(0x14).readUtf16String(cidLen);
+                                        if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x1000) {
+                                            var name = '';
+                                            var nameOffset = (ptrSize === 8) ? 0x40 : 0x28; // NpcData->name pointer
+                                            var namePtr = dataPtr.add(nameOffset).readPointer();
+                                            if (namePtr.isNull() || parseInt(namePtr.toString()) < 0x1000) {
+                                                // Fallback 
+                                                nameOffset = (ptrSize === 8) ? 0x40 : 0x24;
+                                                namePtr = dataPtr.add(nameOffset).readPointer();
+                                            }
+                                            if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x1000) {
+                                                var strLenOffset = (ptrSize === 8) ? 0x10 : 0x08;
+                                                var strLen = namePtr.add(strLenOffset).readU32();
+                                                var strCharsOffset = (ptrSize === 8) ? 0x14 : 0x0C;
+                                                if (strLen > 0 && strLen < 100) name = namePtr.add(strCharsOffset).readUtf16String(strLen);
+                                            }
+                                            
+                                            if (key > 0 && name) {
+                                                npcs.push({ id: key.toString(), name: name, source: 'memory_scan' });
+                                            }
                                         }
-                                        
-                                        if (cid && name) {
-                                            npcs.push({ id: cid, name: name, source: 'memory_scan' });
+                                    }
+                                        } catch (e) {
+                                            // Skip invalid entry
                                         }
                                     }
                                 }
                             }
-                        }
+                        } catch (e) {}
                     }
+                }
+            }
+        }
+
+        if (npcs.length === 0) {
+            send({ type: 'log', message: 'CharManager dict empty. Using Direct String Memory Scan fallback...' });
+            var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+            var targets = [
+                { name: "Quân Nhu", pattern: '51 00 75 00 e2 00 6e 00 20 00 4e 00 68 00 75 00' },
+                { name: "Trinh Sát", pattern: '54 00 72 00 69 00 6e 00 68 00 20 00 53 00' },
+                { name: "Mã binh quan", pattern: '4d 00 e3 00 20 00 62 00 69 00 6e 00 68 00' },
+                { name: "Chiêu Binh Quân", pattern: '43 00 68 00 69 00 ea 00 75 00 20 00 42 00 69 00' }
+            ];
+            
+            for (var t = 0; t < targets.length; t++) {
+                var target = targets[t];
+                var foundId = null;
+                for (var i = 0; i < allRanges.length && !foundId; i++) {
+                    try {
+                        var matches = Memory.scanSync(allRanges[i].base, allRanges[i].size, target.pattern);
+                        for (var m = 0; m < matches.length && !foundId; m++) {
+                            var strAddr = matches[m].address;
+                            var strObj = strAddr.sub(0x14); 
+                            
+                            var hex = strObj.toString(16);
+                            while(hex.length < 16) hex = '0' + hex;
+                            var parts = [];
+                            for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
+                            var ptrPattern = parts.join(' ');
+                            
+                            for (var k = 0; k < allRanges.length && !foundId; k++) {
+                                try {
+                                    var ptrMatches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
+                                    for (var pm = 0; pm < ptrMatches.length && !foundId; pm++) {
+                                        var objAddr = ptrMatches[pm].address;
+                                        try {
+                                            for(var offset = -0x50; offset <= -0x10; offset += 4) {
+                                                var val = objAddr.add(offset).readU32();
+                                                if (val > 10000 && val < 90000) {
+                                                    // This is a high probability runtime ID
+                                                    var checkNext = objAddr.add(offset - 4).readU32();
+                                                    var checkPrev = objAddr.add(offset + 4).readU32();
+                                                    // In our dump, we saw multiple IDs clumped. 
+                                                    foundId = val.toString();
+                                                    npcs.push({ id: foundId, name: "Tống Kim " + target.name, source: 'deep_scan' });
+                                                    send({ type: 'log', message: 'Deep Scan found ' + target.name + ' -> ID: ' + foundId });
+                                                    break;
+                                                }
+                                            }
+                                        } catch(e){}
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    } catch(e) {}
                 }
             }
         }

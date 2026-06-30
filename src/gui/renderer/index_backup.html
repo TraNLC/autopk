@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>GST VLTK1 Mobile Auto PK - Multi-Account</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="logo-area">
+      <div>
+        <h1 class="title-martial">VO LÂM TRUYEN KY</h1>
+        <p class="subtitle-eng">MULTI-ACCOUNT AUTO PK v2.0</p>
+      </div>
+    </div>
+    <div class="header-controls">
+      <button id="btn-refresh" class="btn-primary">Lam Moi</button>
+      <button id="btn-restart" class="btn-warning">Khoi Dong Lai</button>
+    </div>
+  </header>
+
+  <!-- BODY WRAPPER -->
+  <div class="app-body">
+    
+    <!-- MAIN CONTENT -->
+    <main class="app-content-full">
+      <div class="left-col">
+        <!-- TOP PANEL: DEVICE TABLE -->
+        <section class="card device-table-card">
+          <div class="table-responsive">
+            <table class="modern-table">
+              <thead>
+                <tr>
+                  <th width="80" style="text-align: center;">Mo</th>
+                  <th width="200">Ten Nhan Vat</th>
+                  <th width="200">Diem Tong Kim</th>
+                  <th width="100" style="text-align: center;">Cấu Hình</th>
+                  <th>Thiet Bi</th>
+                </tr>
+              </thead>
+              <tbody id="device-table-body">
+                <tr>
+                  <td colspan="4" style="text-align: center; color: #888; padding: 20px;">Bam "Lam Moi" de tim thiet bi...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- BOTTOM PANEL: GLOBAL LOGS -->
+        <section class="card log-card">
+          <div class="log-header">
+            <h2 class="card-subtitle">Global Log</h2>
+            <button id="btn-clear-log" class="btn-small">Clear</button>
+          </div>
+          <div class="log-container" id="global-log-container">
+            <div class="log-entry log-system">[System] Multi-Account Manager Initialized.</div>
+          </div>
+        </section>
+      </div>
+
+      <div class="right-col">
+        <!-- MIDDLE PANEL: TONG KIM CONTROLS -->
+        <section class="card controls-card">
+          <div class="control-bar">
+            <div class="toggle-group">
+              <span class="toggle-label gold-text"><strong style="font-size: 1.1em;">TU DONG RA TRAN</strong></span>
+              <label class="switch">
+                <input type="checkbox" id="pk-fight-switch">
+                <span class="slider round"></span>
+              </label>
+            </div>
+            
+          </div>
+        </section>
+
+          
+          <!-- TEST CHAT NPC -->
+          <div class="glass-panel" style="margin-top:20px;">
+            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 15px; color: var(--text-primary);">Test Chat NPC</h3>
+            <div style="display: flex; gap: 10px;">
+              <button class="btn-primary" style="flex:1; padding:10px 0; font-size:13px; font-weight:bold;" onclick="window.api.testChatNpc('23')">Đăng ký vào TK</button>
+              <button class="btn-primary" style="flex:1; padding:10px 0; font-size:13px; font-weight:bold;" onclick="window.api.testChatNpc('2581')">Quân Nhu</button>
+              <button class="btn-primary" style="flex:1; padding:10px 0; font-size:13px; font-weight:bold;" onclick="window.api.testChatNpc('2593')">Trinh Sát</button>
+            </div>
+            <div style="margin-top: 10px;">
+              <button class="btn-primary" style="width:100%; padding:10px 0; font-size:13px; font-weight:bold; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" onclick="window.api.testChatNpc('radar')">📡 Radar Quét NPC Gần Đây</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- PER ACCOUNT SETTINGS MODAL -->
+  <div id="tk-settings-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content card">
+      <h2 class="card-subtitle" style="margin-top:0; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px;">⚙️ Cài đặt Tống Kim</h2>
+      <div style="margin-bottom: 15px;">
+        <label class="dropdown-label" style="display:block; margin-bottom:5px;">Phe (Ra Trận):</label>
+        <select id="modal-side-select" class="modern-select" style="width:100%;">
+          <option value="auto">Tự động (Theo phái)</option>
+          <option value="song">Tống</option>
+          <option value="jin">Kim</option>
+        </select>
+      </div>
+      
+      <div style="margin-bottom: 15px;">
+        <label class="dropdown-label" style="display:block; margin-bottom:5px;">Tự dùng lắc trước khi ra trận:</label>
+        <div class="lac-row" style="margin-bottom:5px;">
+          <select class="modern-select lac-select" id="modal-lac-1" style="width:100%;">
+            <option value="none">—</option>
+            <option value="45">Phi Tốc Hoàn</option>
+            <option value="51">Lệnh Bài</option>
+            <option value="50">Chiến Cổ</option>
+          </select>
+        </div>
+        <div class="lac-row" style="margin-bottom:5px;">
+          <select class="modern-select lac-select" id="modal-lac-2" style="width:100%;">
+            <option value="none">—</option>
+            <option value="45">Phi Tốc Hoàn</option>
+            <option value="51">Lệnh Bài</option>
+            <option value="50">Chiến Cổ</option>
+          </select>
+        </div>
+        <div class="lac-row" style="margin-bottom:5px;">
+          <select class="modern-select lac-select" id="modal-lac-3" style="width:100%;">
+            <option value="none">—</option>
+            <option value="45">Phi Tốc Hoàn</option>
+            <option value="51">Lệnh Bài</option>
+            <option value="50">Chiến Cổ</option>
+          </select>
+        </div>
+      </div>
+      
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+        <button id="modal-btn-cancel" class="btn-primary" style="background:var(--card-bg); border:1px solid var(--border-color);">Hủy</button>
+        <button id="modal-btn-save" class="btn-primary" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">Lưu Cấu Hình</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex; justify-content: center; align-items: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      width: 320px;
+      max-width: 90%;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .action-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-primary);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    .action-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      border-color: var(--primary-color);
+    }
+  </style>
+
+  <script src="app.js"></script>
+</body>
+</html>

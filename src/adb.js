@@ -161,6 +161,32 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/** Khởi động frida-server trên thiết bị */
+function startFridaServer(deviceId) {
+  try {
+    const psOut = adbDeviceShell(deviceId, 'ps');
+    if (psOut.includes('frida-server')) {
+      console.log(`[ADB] frida-server is already running on ${deviceId}`);
+      return true;
+    }
+    console.log(`[ADB] Starting frida-server on ${deviceId}...`);
+    // Cấp quyền thực thi
+    adbDeviceShell(deviceId, 'su -c "chmod +x /data/local/tmp/frida-server*"', 2000);
+    // Thử chạy bản x86_64 trước
+    adbDeviceShell(deviceId, 'su -c "/data/local/tmp/frida-server-x86_64 -D"', 2000);
+    let check = adbDeviceShell(deviceId, 'ps');
+    if (check.includes('frida-server')) return true;
+
+    // Thử bản arm64/arm
+    adbDeviceShell(deviceId, 'su -c "/data/local/tmp/frida-server -D"', 2000);
+    check = adbDeviceShell(deviceId, 'ps');
+    return check.includes('frida-server');
+  } catch (e) {
+    console.error(`[ADB] Lỗi khi start frida-server: ${e.message}`);
+    return false;
+  }
+}
+
 // ==================== EXPORT ====================
 
 module.exports = {
@@ -178,4 +204,5 @@ module.exports = {
   keyEvent,
   adbShell,
   adbDeviceShell,
+  startFridaServer,
 };

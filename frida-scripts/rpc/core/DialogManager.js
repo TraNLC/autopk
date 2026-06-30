@@ -16,18 +16,20 @@ rpc.exports.remoteNpcDialogue = function(npcId) {
             // Let's implement the TCP send directly here, or call the global sendTcpPacket if available.
             // Actually, we can just use sendTcpPacket implementation directly here to be safe!
             
-            var tcpFd = -1;
-            for(var i=0; i<200; i++) {
-                try {
-                    var type = Socket.type(i);
-                    if (type === 'tcp' || type === 'tcp6') {
-                        var peer = Socket.peerAddress(i);
-                        if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
-                            tcpFd = i;
-                            break;
+            var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
+            if (tcpFd === -1) {
+                for(var i=0; i<1024; i++) {
+                    try {
+                        var type = Socket.type(i);
+                        if (type === 'tcp' || type === 'tcp6') {
+                            var peer = Socket.peerAddress(i);
+                            if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
+                                tcpFd = i;
+                                break;
+                            }
                         }
-                    }
-                } catch(e){}
+                    } catch(e){}
+                }
             }
             
             if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
@@ -52,6 +54,43 @@ rpc.exports.remoteNpcDialogue = function(npcId) {
             }
         } catch(e) {
             resolve({ ok: false, error: 'Talk packet failed: ' + e.message });
+        }
+    });
+};
+
+rpc.exports.selectDialogOption = function(index) {
+    return new Promise(function(resolve) {
+        try {
+            var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
+            if (tcpFd === -1) {
+                for(var i=0; i<1024; i++) {
+                    try {
+                        var type = Socket.type(i);
+                        if (type === 'tcp' || type === 'tcp6') {
+                            var peer = Socket.peerAddress(i);
+                            if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
+                                tcpFd = i; break;
+                            }
+                        }
+                    } catch(e){}
+                }
+            }
+            if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
+            
+            // opcode 34 (eNpcSelect), body: int32 index
+            var buf = Memory.alloc(6 + 4);
+            buf.writeU32(4);
+            buf.add(4).writeU16(34); // opcode 34
+            buf.add(6).writeS32(index); // option index
+            
+            if (typeof nativeWrite !== 'undefined') {
+                var ret = nativeWrite(tcpFd, buf, 6 + 4);
+                return resolve({ ok: true, sent: ret });
+            } else {
+                return resolve({ ok: false, error: 'nativeWrite not available globally' });
+            }
+        } catch(e) {
+            resolve({ ok: false, error: 'Select option failed: ' + e.message });
         }
     });
 };
