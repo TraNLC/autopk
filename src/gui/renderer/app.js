@@ -291,12 +291,12 @@ if (btnScanDatau) {
       gender: selDatauGender.value || 'all'
     };
     
-    datauResultsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: blue;">Đang quét các sạp hàng xung quanh... Vui lòng chờ...</td></tr>';
+    datauResultsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: blue;">Đang quét các sạp hàng xung quanh... Vui lòng chờ...</td></tr>';
     btnScanDatau.disabled = true;
     
     // Đăng ký nghe progress
     window.api.onScanDatauProgress((msg) => {
-      datauResultsBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: blue;">${msg}</td></tr>`;
+      datauResultsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: blue;">${msg}</td></tr>`;
     });
     
     try {
@@ -314,18 +314,19 @@ if (btnScanDatau) {
                 <span style="font-size: 9px; color: gray;">[Cấp ${item.level} | ${seriesStr}]</span>
               </td>
               <td style="color: #d35400;">${item.money}</td>
+              <td style="color: #27ae60;">${item.knb}</td>
               <td>${item.shopLocation}</td>
             `;
             datauResultsBody.appendChild(tr);
           });
         } else {
-          datauResultsBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #888;">Không tìm thấy vật phẩm nào khớp với "${keyword}".</td></tr>`;
+          datauResultsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #888;">Không tìm thấy vật phẩm nào khớp với "${keyword}".</td></tr>`;
         }
       } else {
-        datauResultsBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: red;">Lỗi quét: ${res ? res.error : 'Unknown'}</td></tr>`;
+        datauResultsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: red;">Lỗi quét: ${res ? res.error : 'Unknown'}</td></tr>`;
       }
     } catch(e) {
-      datauResultsBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: red;">Ngoại lệ: ${e.message}</td></tr>`;
+      datauResultsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: red;">Ngoại lệ: ${e.message}</td></tr>`;
     }
     btnScanDatau.disabled = false;
   });

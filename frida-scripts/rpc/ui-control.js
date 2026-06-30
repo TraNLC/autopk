@@ -17,6 +17,30 @@ rpc.exports.closeDialogPopups = function() {
         closeStorageBoxFn(_playerMainInstance);
 
         globalThis._closePopupResult = { closed: { dialog: 1, shop: 1, bag: 1, storage: 1 }, found: {}, ts: Date.now() };
+
+        // Attempt to close PlayerDie (Về thành dưỡng sức) via Il2Cpp
+        if (typeof Il2Cpp !== 'undefined') {
+            try {
+                Il2Cpp.perform(function() {
+                    var playerDieClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerDie");
+                    if (playerDieClass) {
+                        var instances = Il2Cpp.api.Object.FindObjectsOfType(playerDieClass.type, false);
+                        if (instances && instances.length > 0) {
+                            var closeMethod = playerDieClass.method("Close");
+                            for (var i = 0; i < instances.length; i++) {
+                                var pd = new Il2Cpp.Object(instances[i]);
+                                if (pd && !pd.isNull()) {
+                                    closeMethod.invoke(pd);
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch(ex) {
+                // Ignore Il2Cpp errors
+            }
+        }
+
         return { ok: true, closed: true };
     } catch (e) {
         return { ok: false, error: 'Close dialogs native failed: ' + e };

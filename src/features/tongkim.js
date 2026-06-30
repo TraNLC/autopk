@@ -21,9 +21,15 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
 
   const injector = new PacketInjector(session);
   const mapId = info.mapId;
-  const isStagingArea = [323, 324, 325, 379, 972].includes(mapId);
   const isBattlefield = [44, 375, 376, 377, 580].includes(mapId);
-  const isCity = !isStagingArea && !isBattlefield; // Tương Dương, etc.
+  const isCity = [1, 11, 37, 78, 162, 176].includes(mapId); // Explicitly check Phượng Tường, Thành Đô, Biện Kinh, Tương Dương, Đại Lý, Dương Châu
+  
+  let isStagingArea = [323, 324, 325, 379, 972].includes(mapId);
+  // Fallback: Nếu không phải thành và không phải chiến trường, nhưng tool được bật -> Coi như khu chờ (Khu An Toàn Tống Kim)
+  if (!isStagingArea && !isCity && !isBattlefield) {
+      isStagingArea = true;
+      sendLog(`[${deviceId}] 🗺️ Bản đồ hiện tại là (${mapId}) - Hệ thống tự động nhận diện đây là Khu Chờ Tống Kim.`, 'info');
+  }
 
   // 1. Tự dùng lắc (Phi tốc, Chiến cổ, Lệnh bài)
   if (lacs && lacs.length > 0) {
@@ -58,26 +64,36 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
 
   // 2. Báo Danh (Ngoại thành -> Điểm báo danh)
   if (isCity) {
-    sendLog(`[${deviceId}] Đang ở ngoài thành. Đang gọi Chiêu Binh Quân để đăng ký...`, 'info');
+    sendLog(`[${deviceId}] Đang ở ngoài thành. Đang tìm Chiêu Binh Quân / Mộ Binh Quan để đăng ký...`, 'info');
     try {
-      const NPC_BAODANH = 23; 
-      const talkRes = await session.callRpc('remoteNpcDialogue', NPC_BAODANH);
-      if (talkRes && talkRes.ok) {
-        await new Promise(r => setTimeout(r, 400));
-        
-        // Mặc định chọn dòng đầu tiên (0) vì server có thể đang báo danh ngẫu nhiên
-        let optionIndex = 0; 
-        // Nếu server CÓ cho chọn phe ở ngoài thành, anh em có thể tùy biến lại index chỗ này (vd 0 là Tống, 1 là Kim)
-        // Nhưng tạm thời cứ ép lấy dòng 0 để vào được bên trong.
+      let cache = npcCacheMap.get(deviceId);
+      
+      // Fallback: Lấy ID báo danh đầu tiên trong mảng
+      let npcBaodanh = (cache && cache.learnedIds && cache.learnedIds.length > 0) ? cache.learnedIds[0] : null;
 
-        await session.callRpc('selectDialogOption', optionIndex);
-        await new Promise(r => setTimeout(r, 400));
-        await session.callRpc('sendPacket', 232, ''); // eClientCompleted
-        sendLog(`[${deviceId}] Đã gửi lệnh đăng ký báo danh (Option Index: ${optionIndex}).`, 'success');
-      } else {
-        sendLog(`[${deviceId}] Lỗi gọi NPC báo danh: ${talkRes ? talkRes.error : 'Unknown'}`, 'error');
+      if (!npcBaodanh) {
+          sendLog(`[${deviceId}] ⚠️ CHƯA CÓ ID NPC BÁO DANH! Hãy click tay vào Chiêu Binh Quân/Mộ Binh Quan 1 lần để tool ghi nhớ!`, 'warn');
+          return; // Dừng lại chờ user click
       }
-    } catch (e) {}
+      
+      sendLog(`[${deviceId}] Đang gọi NPC Báo Danh đã lưu (ID: ${npcBaodanh})...`, 'info');
+      const talkRes = await session.callRpc('remoteNpcDialogue', npcBaodanh);
+      
+      // Chờ 1 chút để server phản hồi
+      await new Promise(r => setTimeout(r, 400));
+      
+      // Lựa chọn vào chiến trường (Dòng 1 hoặc 2)
+      sendLog(`[${deviceId}] Đang chọn tùy chọn vào chiến trường...`, 'info');
+      await session.callRpc('selectDialogOption', 0); // Thường dòng đầu tiên là vào chiến trường
+      
+      // Đóng popup
+      await new Promise(r => setTimeout(r, 500));
+      await session.callRpc('closeDialogPopups').catch(() => {});
+      
+      sendLog(`[${deviceId}] Đã gửi lệnh vào khu chờ Tống Kim!`, 'success');
+    } catch (e) {
+      sendLog(`[${deviceId}] Lỗi khi báo danh: ${e.message}`, 'error');
+    }
     return;
   }
 
@@ -85,19 +101,41 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
   if (isStagingArea) {
     try {
       let cache = npcCacheMap.get(deviceId);
+      let stagingNpcs = (cache && cache.learnedIds) ? [...cache.learnedIds] : [];
       
-      // Ưu tiên dùng ID đã HỌC được từ thao tác click của người dùng
-      if (cache && cache.learnedIds && cache.learnedIds.length > 0) {
-        // Tương tác tuần tự với tất cả các NPC đã lưu (Tối đa 2)
-        for (const npcId of cache.learnedIds) {
-          sendLog(`[${deviceId}] Đang tương tác NPC đã học (${npcId})...`, 'info');
+      if (stagingNpcs.length > 0) {
+        // Tương tác tuần tự với tất cả các NPC đã lưu
+        for (let i = 0; i < stagingNpcs.length; i++) {
+          const npcId = stagingNpcs[i];
+          sendLog(`[${deviceId}] Đang tương tác NPC đã học trong khu chờ (${npcId})...`, 'info');
           await session.callRpc('remoteNpcDialogue', npcId);
           await new Promise(r => setTimeout(r, 800));
           
-          // Gửi chọn Option 0 (Nhận máu hoặc Ra trận tùy NPC)
-          sendLog(`[${deviceId}] Gửi lệnh chọn Option 0 cho NPC (${npcId})...`, 'info');
-          await session.callRpc('selectDialogOption', 0);
-          await new Promise(r => setTimeout(r, 800));
+          let optionIndex = 0;
+          // Xác định nếu đây là NPC Trinh Sát (thường là NPC cuối cùng được học)
+          const isTrinhSat = (i === stagingNpcs.length - 1);
+          
+          if (isTrinhSat) {
+             if (side === 'jin') {
+                 optionIndex = 1; // Chọn phe Kim (Dòng 2)
+             } else if (side === 'auto') {
+                 // Đọc từ campValue của nhân vật (1: Tống, 2: Kim)
+                 if (info && info.campValue === 2) {
+                     optionIndex = 1;
+                 }
+             }
+             // Tống thì vẫn giữ optionIndex = 0
+          }
+          
+          sendLog(`[${deviceId}] Gửi lệnh chọn Option ${optionIndex} cho NPC (${npcId})...`, 'info');
+          await session.callRpc('selectDialogOption', optionIndex);
+          await new Promise(r => setTimeout(r, 400));
+          
+          if (!isTrinhSat) {
+             // Fallback: Gửi thêm eClientCompleted cho Quân Nhu vì một số NPC phe Kim yêu cầu gói này để nhận máu
+             await session.callRpc('sendPacket', 232, '');
+             await new Promise(r => setTimeout(r, 400));
+          }
         }
 
         // Bồi thêm Opcode ngầm định (dự phòng)
@@ -112,7 +150,7 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
         await session.callRpc('closeDialogPopups').catch(() => {});
 
       } else {
-        sendLog(`[${deviceId}] ⚠️ CHƯA CÓ ID NPC! Hãy click tay vào "Mã binh quan" và "Quân Nhu" 1 lần để tool ghi nhớ (Học ID)!`, 'warn');
+        sendLog(`[${deviceId}] ⚠️ CHƯA CÓ ID NPC RA TRẬN! Hãy click tay vào "Mã binh quan" và "Quân Nhu" 1 lần để tool ghi nhớ!`, 'warn');
         return; // Dừng lại chờ người dùng click
       }
     } catch(e) {

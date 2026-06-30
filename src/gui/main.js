@@ -29,9 +29,9 @@ const PKG = config.GAME_PACKAGE || 'vn.perfingame.jx1mobile';
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 380,
+    width: 450,
     height: 720,
-    minWidth: 350,
+    minWidth: 400,
     minHeight: 500,
     resizable: true,
     frame: true,
@@ -186,28 +186,42 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
     session.onMessage((payload, data) => {
       if (payload && payload.type === 'send_out' && payload.opcode === 33 && payload.hex) {
         // Phân tích ID NPC từ body của gói tin eNpcDialogue (Opcode 33)
+        // Định dạng Protobuf: tag 1, type string -> 0x0a <len> <ascii chars>
         const hexStr = payload.hex.replace(/\s+/g, '');
-        let asciiStr = '';
-        for (let i = 0; i < hexStr.length; i += 2) {
-          const byte = parseInt(hexStr.substr(i, 2), 16);
-          if (byte >= 48 && byte <= 57) asciiStr += String.fromCharCode(byte);
-          else asciiStr += ' ';
+        const bytes = Buffer.from(hexStr, 'hex');
+        let dynamicId = null;
+        
+        if (bytes.length >= 2 && bytes[0] === 0x0a) {
+          const len = bytes[1];
+          if (bytes.length >= 2 + len) {
+            dynamicId = bytes.slice(2, 2 + len).toString('ascii');
+          }
         }
-        const numbers = asciiStr.split(' ').filter(s => s.length >= 4 && s.length <= 6);
-        if (numbers.length > 0) {
-          const dynamicId = numbers[0];
+        
+        // Fallback nếu không khớp Protobuf chuẩn
+        if (!dynamicId) {
+          let asciiStr = '';
+          for (let i = 0; i < bytes.length; i++) {
+            if (bytes[i] >= 48 && bytes[i] <= 57) asciiStr += String.fromCharCode(bytes[i]);
+            else asciiStr += ' ';
+          }
+          const numbers = asciiStr.split(' ').filter(s => s.length > 0);
+          if (numbers.length > 0) dynamicId = numbers[0];
+        }
+
+        if (dynamicId) {
           if (!npcCacheMap.has(deviceId)) npcCacheMap.set(deviceId, {});
           let cache = npcCacheMap.get(deviceId);
           
           if (!cache.learnedIds) cache.learnedIds = [];
           if (!cache.learnedIds.includes(dynamicId)) {
             cache.learnedIds.push(dynamicId);
-            if (cache.learnedIds.length > 2) cache.learnedIds.shift(); // Giữ tối đa 2 ID
+            if (cache.learnedIds.length > 2) cache.learnedIds.shift(); // Giữ tối đa 2 ID gần nhất
           }
           
           if (state.info && state.info.mapId) cache.mapId = state.info.mapId;
           
-          sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID: Ghi nhận ID NPC ${dynamicId}. (Đã nhớ ${cache.learnedIds.length}/2 NPC)`, 'success');
+          sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC: ${dynamicId}. (Đã nhớ ${cache.learnedIds.length}/2 NPC)`, 'success');
         }
       }
     });

@@ -77,14 +77,23 @@ rpc.exports.selectDialogOption = function(index) {
             }
             if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
             
-            // opcode 34 (eNpcSelect), body: int32 index
-            var buf = Memory.alloc(6 + 4);
-            buf.writeU32(4);
-            buf.add(4).writeU16(34); // opcode 34
-            buf.add(6).writeS32(index); // option index
+            // opcode 35 (eNpcSelect), body: Protobuf
+            var bodyBytes = [];
+            if (index > 0) {
+                bodyBytes.push(0x08); // Field 1, varint
+                bodyBytes.push(index);
+            }
+            
+            var protoLen = bodyBytes.length;
+            var buf = Memory.alloc(6 + protoLen);
+            buf.writeU32(protoLen);
+            buf.add(4).writeU16(35); // opcode 35
+            if (protoLen > 0) {
+                buf.add(6).writeByteArray(bodyBytes);
+            }
             
             if (typeof nativeWrite !== 'undefined') {
-                var ret = nativeWrite(tcpFd, buf, 6 + 4);
+                var ret = nativeWrite(tcpFd, buf, 6 + protoLen);
                 return resolve({ ok: true, sent: ret });
             } else {
                 return resolve({ ok: false, error: 'nativeWrite not available globally' });

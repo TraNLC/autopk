@@ -493,19 +493,86 @@ rpc.exports.getShopItems = function(stallIndex, nameStr, namePtrStr, cidPtrStr, 
                             console.log("[Dump] currentStall: " + currentStall + ", mapField: " + mapField);
                             
                             try {
-                                if (!currentStall.isNull()) {
-                                    var currentStallClass = currentStall.readPointer();
-                                    var currentStallClassName = currentStallClass.add(0x10).readPointer().readUtf8String();
-                                    console.log("[Dump] currentStall Class Name: " + currentStallClassName);
-                                }
                                 if (!mapField.isNull()) {
-                                    var mapFieldClass = mapField.readPointer();
-                                    var mapFieldClassName = mapFieldClass.add(0x10).readPointer().readUtf8String();
-                                    console.log("[Dump] mapField Class Name: " + mapFieldClassName);
+                                    var linkedList = mapField.add(0x18).readPointer();
+                                    if (!linkedList.isNull()) {
+                                        var head = linkedList.add(0x10).readPointer();
+                                        var count = linkedList.add(0x18).readU32();
+                                        
+                                        // Attach thread to il2cpp to safely call NativeFunction
+                                        try {
+                                            var il2cpp_domain_get_ptr = Module.findExportByName("libil2cpp.so", "il2cpp_domain_get");
+                                            var il2cpp_thread_attach_ptr = Module.findExportByName("libil2cpp.so", "il2cpp_thread_attach");
+                                            if (il2cpp_domain_get_ptr && il2cpp_thread_attach_ptr) {
+                                                var domain = new NativeFunction(il2cpp_domain_get_ptr, 'pointer', [])();
+                                                new NativeFunction(il2cpp_thread_attach_ptr, 'pointer', ['pointer'])(domain);
+                                            }
+                                        } catch(e) {}
+                                        
+                                        if (!head.isNull() && count > 0 && count < 200) {
+                                            var node = head;
+                                            var idx = 0;
+                                            while (!node.isNull() && idx < count) {
+                                                try {
+                                                    var kvpAddr = node.add(0x28);
+                                                    var smPtr = kvpAddr.add(0x08).readPointer();
+                                                    
+                                                    if (!smPtr.isNull() && parseInt(smPtr.toString()) > 0x10000) {
+                                                        var itemPtr = smPtr.add(0x18).readPointer();
+                                                        var money = smPtr.add(0x20).readS32() || 0;
+                                                        var knb = smPtr.add(0x24).readS32() || 0;
+                                                        
+                                                        var genre = 0, detail = 0, particular = 0, level = 0, series = 0;
+                                                        var name = '';
+                                                        
+                                                        if (!itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
+                                                            var detailAndGenre = itemPtr.add(0x20).readS32();
+                                                            genre = detailAndGenre & 0xFFFF;
+                                                            detail = (detailAndGenre >> 16) & 0xFFFF;
+                                                            
+                                                            var particularAndLevel = itemPtr.add(0x24).readS32();
+                                                            level = particularAndLevel & 0xFFFF;
+                                                            particular = (particularAndLevel >> 16) & 0xFFFF;
+                                                            
+                                                            var stackAndSeries = itemPtr.add(0x28).readS32();
+                                                            series = stackAndSeries & 0xFFFF;
+                                                            
+                                                            name = 'Item_' + genre + '_' + detail + '_' + particular;
+                                                            
+                                                            try {
+                                                                var il2cppStrPtr = GetItemName(itemPtr, 0, 0, ptr(0));
+                                                                if (!il2cppStrPtr.isNull()) {
+                                                                    var strLen = il2cppStrPtr.add(0x10).readU32();
+                                                                    if (strLen > 0 && strLen < 100) {
+                                                                        name = il2cppStrPtr.add(0x14).readUtf16String(strLen);
+                                                                    }
+                                                                }
+                                                            } catch(e3) {
+                                                                // fallback string
+                                                            }
+                                                        }
+                                                        
+                                                        items.push({
+                                                            name: name,
+                                                            detailAndGenre: (detail << 16) | genre,
+                                                            particularAndLevel: (particular << 16) | level,
+                                                            stackAndSeries: series, // simplified
+                                                            money: money,
+                                                            knb: knb
+                                                        });
+                                                    }
+                                                } catch(e2) {}
+                                                
+                                                node = node.add(0x18).readPointer();
+                                                idx++;
+                                            }
+                                        }
+                                    }
                                 }
                             } catch (e) {
-                                console.log("[Dump] Error reading class names: " + e.message);
+                                console.log("[Dump] Error reading stall mapField: " + e.message);
                             }
+                            
                             resolve({ ok: true, title: title, items: items });
                         } catch(err) {
                             resolve({ ok: false, error: 'Read stall data error: ' + err.message + ' | ' + err.stack });
