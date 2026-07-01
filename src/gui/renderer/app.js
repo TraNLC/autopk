@@ -177,11 +177,11 @@ function selectDevice(id) {
   accSettingsPanel.style.display = 'block';
   
   // Load config
-  const cfg = dev.tkConfig;
+  const cfg = dev.tkConfig || { side: 'auto', lacs: [], delay: 0 };
   selSide.value = cfg.side || 'auto';
-  chkLac1.checked = cfg.lacs.includes('45');
-  chkLac2.checked = cfg.lacs.includes('51');
-  chkLac3.checked = cfg.lacs.includes('50');
+  chkLac1.checked = cfg.lacs ? cfg.lacs.includes('45') : false;
+  chkLac2.checked = cfg.lacs ? cfg.lacs.includes('51') : false;
+  chkLac3.checked = cfg.lacs ? cfg.lacs.includes('50') : false;
   
   const selDelay = document.getElementById('sel-delay');
   if (selDelay) {

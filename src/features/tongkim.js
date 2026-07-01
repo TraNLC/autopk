@@ -31,21 +31,7 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
 
   // 1. Tự dùng lắc (Phi tốc, Chiến cổ, Lệnh bài)
   if (lacs && lacs.length > 0) {
-    try {
-      const bagResStr = await session.callRpc('dumpBagItems');
-      if (bagResStr) {
-        const bag = bagResStr;
-        if (bag.items && bag.items.length > 0) {
-          for (const lac of lacs) {
-            const item = bag.items.find(i => i.location === 2 && i.particular == lac);
-            if (item && item.slot !== undefined) {
-              await injector.sendPlayerUserItem(item.slot);
-              sendLog(`[${deviceId}] Đã dùng lắc (Particular: ${lac}) tại ô ${item.slot}`, 'success');
-            }
-          }
-        }
-      }
-    } catch(e) {}
+    sendLog(`[${deviceId}] ⚠️ Tính năng cắn lắc tự động đang bị khóa do thiếu hàm đọc túi đồ (để tránh văng game).`, 'warn');
   }
 
   // 1.5. Kiểm tra trạng thái chết (HP <= 0)
@@ -121,6 +107,9 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
           const isTrinhSat = (i === stagingNpcs.length - 1);
           
           if (isTrinhSat) {
+             // Tắt auto để clear target cũ (tránh vừa hồi sinh chạy ra đã lao đầu vào chỗ cũ chết tiếp)
+             await injector.sendApplyAutoplayProfile(false, "");
+             
              if (delay > 0) {
                  sendLog(`[${deviceId}] Chờ ${delay/1000} giây trước khi ra trận...`, 'info');
                  await new Promise(r => setTimeout(r, delay));
