@@ -182,6 +182,11 @@ function selectDevice(id) {
   chkLac1.checked = cfg.lacs.includes('45');
   chkLac2.checked = cfg.lacs.includes('51');
   chkLac3.checked = cfg.lacs.includes('50');
+  
+  const selDelay = document.getElementById('sel-delay');
+  if (selDelay) {
+    selDelay.value = (cfg.delay !== undefined) ? cfg.delay.toString() : '0';
+  }
 }
 
 // Save Acc Settings
@@ -197,45 +202,15 @@ btnSaveAcc.addEventListener('click', () => {
   
   dev.tkConfig = {
     side: selSide.value,
-    lacs: lacs
+    lacs: lacs,
+    delay: parseInt(document.getElementById('sel-delay').value, 10) || 0
   };
   
   updateGlobalTK();
   addLog(`[${currentSelectedDeviceId}] Đã lưu cấu hình Tống Kim.`, 'info');
 });
 
-document.getElementById('btn-test-npc1').addEventListener('click', () => {
-  const devId = getTestDeviceId();
-  if (devId) window.api.testNpc(devId, 0);
-});
 
-document.getElementById('btn-test-npc2').addEventListener('click', () => {
-  const devId = getTestDeviceId();
-  if (devId) window.api.testNpc(devId, 1);
-});
-
-function getTestDeviceId() {
-  if (currentSelectedDeviceId) return currentSelectedDeviceId;
-  const keys = Array.from(devicesMap.keys());
-  if (keys.length > 0) return keys[0];
-  addLog('[System] Vui lòng kết nối ít nhất 1 thiết bị để test.', 'error');
-  return null;
-}
-
-const btnCustom1 = document.getElementById('btn-test-custom-1');
-if (btnCustom1) {
-  btnCustom1.addEventListener('click', () => {
-    const devId = getTestDeviceId();
-    if (devId) window.api.testNpc(devId, 0);
-  });
-}
-const btnCustom2 = document.getElementById('btn-test-custom-2');
-if (btnCustom2) {
-  btnCustom2.addEventListener('click', () => {
-    const devId = getTestDeviceId();
-    if (devId) window.api.testNpc(devId, 1);
-  });
-}
 
 // Auto TK Logic
 function updateGlobalTK() {
@@ -296,8 +271,10 @@ if (btnScanDatau) {
     });
     
     try {
+      const limitInput = document.getElementById('num-shops-to-scan');
+      const limit = limitInput ? (parseInt(limitInput.value, 10) || 50) : 50;
       // Scan without filters (wildcard)
-      const res = await window.api.scanDatau(devId, '', { series: -1, level: -1, itemType: -1, gender: 'all' });
+      const res = await window.api.scanDatau(devId, '', { series: -1, level: -1, itemType: -1, gender: 'all', limit });
       if (res && res.ok) {
         if (loadingText) {
           loadingText.innerText = `Quét xong! Tìm thấy ${res.items ? res.items.length : 0} vật phẩm. Mở cửa sổ chi tiết...`;

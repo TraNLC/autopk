@@ -45,12 +45,19 @@ async function scanDatauItems(deviceId, session, mapId, itemNameQuery, filters, 
     let foundItems = [];
     if (!shopCache[mapId]) shopCache[mapId] = {};
     
-    for (let i = 0; i < shops.length; i++) {
+    const limit = filters.limit > 0 ? filters.limit : 9999;
+    const maxShops = Math.min(shops.length, limit);
+    
+    if (limit < shops.length) {
+       sendLog(`[${deviceId}] Giới hạn quét: Chọn ${maxShops} sạp gần nhất trong ${shops.length} sạp.`, 'info');
+    }
+    
+    for (let i = 0; i < maxShops; i++) {
       const shop = shops[i];
-      sendLog(`[${deviceId}] Đang mở sạp "${shop.name}" (${i+1}/${shops.length})...`, 'info');
+      sendLog(`[${deviceId}] Đang mở sạp "${shop.name}" (${i+1}/${maxShops})...`, 'info');
       
       if (event) {
-        event.sender.send('datau-progress', `Đang quét sạp của "${shop.name}" (${i+1}/${shops.length})...`);
+        event.sender.send('datau-progress', `Đang quét sạp của "${shop.name}" (${i+1}/${maxShops})...`);
       }
       
       const itemsRes = await session.callRpc('getShopItems', 0, shop.name, shop.namePtrStr, shop.cidPtrStr, shop.controllerPtrStr);

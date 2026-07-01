@@ -12,6 +12,7 @@ function execAsync(cmd, options = {}) {
 const { FridaSession } = require('../frida-session');
 const config = require('../../config');
 const { autoTongKimLoop, npcCacheMap } = require('../features/tongkim');
+const { TongKimMapData } = require('../features/tongkim-data');
 const { scanDatauItems, buyDatauItem, getShopDetails } = require('../features/datau');
 const { getMapName } = require('../item-db');
 
@@ -149,7 +150,11 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
     const state = sessions.get(deviceId);
     if (state) {
       if (state.interval) clearInterval(state.interval);
-      if (state.session) await state.session.disconnect();
+      try {
+        if (state.session) await state.session.disconnect();
+      } catch (e) {
+        // Ignore disconnect errors (script already destroyed, etc.)
+      }
       sessions.delete(deviceId);
       npcCacheMap.delete(deviceId);
       sendLog(`[${deviceId}] Đã ngắt kết nối.`, 'warn');
@@ -227,9 +232,16 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
           }
           
           if (!cache.learnedIds) cache.learnedIds = [];
+          
+          if (TongKimMapData && currentMapId && TongKimMapData[currentMapId]) {
+              return; // Đã có trong DB cứng, không cần học tay
+          }
+          if (cache.learnedIds.length >= 2) {
+              return; // Đã học đủ 2 NPC cho map này, không ghi đè nếu click nhầm
+          }
+          
           if (!cache.learnedIds.includes(dynamicId)) {
             cache.learnedIds.push(dynamicId);
-            if (cache.learnedIds.length > 2) cache.learnedIds.shift(); // Giữ tối đa 2 ID gần nhất
             sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC: ${dynamicId}. (Đã nhớ ${cache.learnedIds.length}/2 NPC tại map ${currentMapId})`, 'success');
           }
         }
@@ -365,8 +377,8 @@ ipcMain.handle('toggle-auto-tk', (event, enable, tkConfigs) => {
         // Run Tong Kim loop for all connected sessions sequentially
         for (const [deviceId, state] of sessions.entries()) {
           try {
-            const devCfg = globalTkConfigs[deviceId] || { side: 'auto', lacs: [] };
-            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog);
+            const devCfg = globalTkConfigs[deviceId] || { side: 'auto', lacs: [], delay: 0 };
+            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, devCfg.delay, sendLog);
           } catch(e) {
             sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');
           }
@@ -383,40 +395,4 @@ ipcMain.handle('toggle-auto-tk', (event, enable, tkConfigs) => {
   return { ok: true };
 });
 
-// IPC Handler: Test Chat NPC (Sử dụng ID đã học)
-ipcMain.handle('test-npc', async (event, deviceId, index) => {
-  const state = sessions.get(deviceId);
-  if (!state || !state.session) {
-    sendLog(`[${deviceId}] Lỗi: Máy chưa kết nối.`, 'error');
-    return { ok: false };
-  }
-  
-  let cache = npcCacheMap.get(deviceId);
-  if (!cache) {
-    cache = { learnedIds: [] };
-    npcCacheMap.set(deviceId, cache);
-  }
-  
-  // Nạp sẵn ID cũ (5567, 5555) nếu user lười click lại sau khi restart app
-  if (!cache.learnedIds || cache.learnedIds.length === 0) {
-    cache.learnedIds = ["5567", "5555"];
-    sendLog(`[${deviceId}] Đã tự động nạp lại 2 ID (5567, 5555) từ phiên trước để test!`, 'info');
-  }
-  
-  if (cache.learnedIds.length <= index) {
-    sendLog(`[${deviceId}] ⚠️ Lỗi: Chưa học đủ NPC. Bạn cần click tay vào NPC trên màn hình game trước. (Hiện đang có ${cache.learnedIds.length}/2 NPC)`, 'warn');
-    return { ok: false };
-  }
-  
-  const targetId = cache.learnedIds[index];
-  sendLog(`[${deviceId}] TEST: Gọi NPC ${targetId} (Option 0)...`, 'info');
-  try {
-    await state.session.callRpc('remoteNpcDialogue', targetId);
-    await new Promise(r => setTimeout(r, 800));
-    await state.session.callRpc('selectDialogOption', 0);
-    sendLog(`[${deviceId}] TEST THÀNH CÔNG! Đã gửi lệnh cho NPC ${targetId}.`, 'success');
-  } catch(e) {
-    sendLog(`[${deviceId}] Lỗi Test NPC: ${e.message}`, 'error');
-  }
-  return { ok: true };
-});
+

@@ -1,5 +1,6 @@
 const { PacketInjector } = require('../packet-injector');
 const { exec } = require('child_process');
+const { TongKimMapData, getNpcName } = require('./tongkim-data');
 
 function removeAccents(str) {
   if (!str) return '';
@@ -15,9 +16,10 @@ const npcCacheMap = new Map(); // deviceId -> { mapId, healId, warId }
  * @param {object} info 
  * @param {string} side 'auto' | 'song' | 'jin'
  * @param {string[]} lacs Array of particular ids (e.g. ['45', '50'])
+ * @param {number} delay
  * @param {function} sendLog
  */
-async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
+async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendLog) {
   if (!session || !info) return;
 
   const injector = new PacketInjector(session);
@@ -25,12 +27,7 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
   const isBattlefield = [44, 375, 376, 377, 580].includes(mapId);
   const isCity = [1, 11, 37, 78, 162, 176].includes(mapId); // Explicitly check Phượng Tường, Thành Đô, Biện Kinh, Tương Dương, Đại Lý, Dương Châu
   
-  let isStagingArea = [323, 324, 325, 379, 972].includes(mapId);
-  // Fallback: Nếu không phải thành và không phải chiến trường, nhưng tool được bật -> Coi như khu chờ (Khu An Toàn Tống Kim)
-  if (!isStagingArea && !isCity && !isBattlefield) {
-      isStagingArea = true;
-      sendLog(`[${deviceId}] 🗺️ Bản đồ hiện tại là (${mapId}) - Hệ thống tự động nhận diện đây là Khu Chờ Tống Kim.`, 'info');
-  }
+  let isStagingArea = [323, 324, 325, 379, 382, 972].includes(mapId);
 
   // 1. Tự dùng lắc (Phi tốc, Chiến cổ, Lệnh bài)
   if (lacs && lacs.length > 0) {
@@ -102,13 +99,20 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
   if (isStagingArea) {
     try {
       let cache = npcCacheMap.get(deviceId);
-      let stagingNpcs = (cache && cache.learnedIds) ? [...cache.learnedIds] : [];
+      let stagingNpcs = (cache && cache.learnedIds && cache.learnedIds.length > 0) ? [...cache.learnedIds] : [];
+      
+      // Fallback hardcode từ DB
+      if (stagingNpcs.length === 0 && TongKimMapData[mapId]) {
+          stagingNpcs = [...TongKimMapData[mapId].ids];
+          sendLog(`[${deviceId}] Đã tự động nạp NPC chuẩn cho map ${mapId} từ Database!`, 'info');
+      }
       
       if (stagingNpcs.length > 0) {
         // Tương tác tuần tự với tất cả các NPC đã lưu
         for (let i = 0; i < stagingNpcs.length; i++) {
           const npcId = stagingNpcs[i];
-          sendLog(`[${deviceId}] Đang tương tác NPC đã học trong khu chờ (${npcId})...`, 'info');
+          const npcName = getNpcName(npcId) ? ` - ${getNpcName(npcId)}` : "";
+          sendLog(`[${deviceId}] Đang tương tác NPC đã học trong khu chờ (${npcId}${npcName})...`, 'info');
           await session.callRpc('remoteNpcDialogue', npcId);
           await new Promise(r => setTimeout(r, 800));
           
@@ -117,6 +121,10 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
           const isTrinhSat = (i === stagingNpcs.length - 1);
           
           if (isTrinhSat) {
+             if (delay > 0) {
+                 sendLog(`[${deviceId}] Chờ ${delay/1000} giây trước khi ra trận...`, 'info');
+                 await new Promise(r => setTimeout(r, delay));
+             }
              if (side === 'jin') {
                  optionIndex = 1; // Chọn phe Kim (Dòng 2)
              } else if (side === 'auto') {
@@ -128,7 +136,7 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
              // Tống thì vẫn giữ optionIndex = 0
           }
           
-          sendLog(`[${deviceId}] Gửi lệnh chọn Option ${optionIndex} cho NPC (${npcId})...`, 'info');
+          sendLog(`[${deviceId}] Gửi lệnh chọn Option ${optionIndex} cho NPC (${npcId}${npcName})...`, 'info');
           await session.callRpc('selectDialogOption', optionIndex);
           await new Promise(r => setTimeout(r, 400));
           
