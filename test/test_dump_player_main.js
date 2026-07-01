@@ -1,4 +1,4 @@
-const { FridaSession } = require('./src/frida-session');
+const { FridaSession } = require('../src/frida-session');
 async function run() {
     const session = new FridaSession('127.0.0.1:5555');
     await session.connect('vn.perfingame.jx1mobile');

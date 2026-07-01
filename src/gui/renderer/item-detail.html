@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chi tiết sạp</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 10px;
+      background-color: #f5f6fa;
+    }
+    h3 {
+      margin-top: 0;
+      color: #2c3e50;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 5px;
+    }
+    .item-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 8px;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .buy-btn {
+      background: #e74c3c;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .buy-btn:hover { background: #c0392b; }
+    .item-stats {
+      font-size: 12px;
+      color: #555;
+    }
+    .item-prices {
+      float: right;
+      font-size: 12px;
+    }
+    .magic-attrs {
+      font-size: 11px;
+      color: #333;
+      margin-top: 5px;
+      background: #fdfdfd;
+      padding: 4px;
+      border: 1px dashed #ccc;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <h3 id="shop-name">Sạp: Đang tải...</h3>
+  <div id="items-container"></div>
+  
+  <script>
+    const SERIES_ICONS = ['⭕', '🟡 Kim', '🟢 Mộc', '🔵 Thủy', '🔴 Hỏa', '🟤 Thổ'];
+    const SERIES_COLORS = ['#888', '#d4af37', '#27ae60', '#3498db', '#e74c3c', '#95a5a6'];
+    
+    window.api.onShopDetailData((data) => {
+      document.getElementById('shop-name').innerText = `Sạp: ${data.shopName}`;
+      const container = document.getElementById('items-container');
+      container.innerHTML = '';
+      
+      if (!data.items || data.items.length === 0) {
+        container.innerHTML = '<i>Không có vật phẩm nào.</i>';
+        return;
+      }
+      
+      data.items.forEach(item => {
+        const seriesStr = SERIES_ICONS[item.series] || '?';
+        const seriesColor = SERIES_COLORS[item.series] || '#888';
+        const genderStr = item.reqGender === 0 ? 'Nam' : (item.reqGender === 1 ? 'Nữ' : 'Tất cả');
+        
+        let magicsHtml = '';
+        if (item.magics && item.magics.length > 0) {
+          magicsHtml = `<div class="magic-attrs">${item.magics.join('<br/>')}</div>`;
+        }
+        
+        const card = document.createElement('div');
+        card.className = 'item-card';
+        card.innerHTML = `
+          <div class="item-header">
+            <b style="color: ${seriesColor}; font-size: 14px;">${item.itemName}</b>
+            <button class="buy-btn" data-idx="${item.idx}">Mua</button>
+          </div>
+          <div>
+            <span class="item-stats">Cấp ${item.level} | ${seriesStr} | Giới tính: ${genderStr}</span>
+            <div class="item-prices">
+              Bạc: <span style="color: #d35400; font-weight: bold;">${item.money}</span> | 
+              KNB: <span style="color: #27ae60; font-weight: bold;">${item.knb}</span>
+            </div>
+          </div>
+          ${magicsHtml}
+        `;
+        
+        const btn = card.querySelector('.buy-btn');
+        btn.onclick = async () => {
+          btn.disabled = true;
+          btn.innerText = '...';
+          try {
+            const res = await window.api.buyItemFromDetail(data.devId, data.sellerId, item.idx);
+            if (res && res.ok) {
+              btn.innerText = 'Xong';
+              btn.style.background = '#27ae60';
+            } else {
+              btn.innerText = 'Lỗi';
+              alert('Lỗi: ' + (res ? res.error : 'Unknown'));
+            }
+          } catch(e) {
+            btn.innerText = 'Lỗi';
+            alert('Ngoại lệ: ' + e.message);
+          }
+        };
+        
+        container.appendChild(card);
+      });
+    });
+  </script>
+</body>
+</html>

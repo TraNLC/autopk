@@ -182,6 +182,77 @@ rpc.exports.getNearbyShops = function() {
     }
 };
 
+rpc.exports.buyOtherStallItem = function(sellerId, itemIndex, price) {
+    return new Promise(function(resolve) {
+        try {
+            var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
+            if (tcpFd === -1) {
+                for(var i=0; i<1024; i++) {
+                    try {
+                        var type = Socket.type(i);
+                        if (type === 'tcp' || type === 'tcp6') {
+                            var peer = Socket.peerAddress(i);
+                            if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
+                                tcpFd = i; break;
+                            }
+                        }
+                    } catch(e){}
+                }
+            }
+            if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
+            
+            var strId = sellerId.toString();
+            // In Opcode 206, the server expects ONLY the numeric ID, e.g., "107429", not "salesman.107429.0"
+            var match = strId.match(/\d+/);
+            if (match) {
+                strId = match[0];
+            }
+            
+            var bodyBytes = [];
+            
+            bodyBytes.push(0x0a);
+            bodyBytes.push(strId.length);
+            for (var j = 0; j < strId.length; j++) {
+                bodyBytes.push(strId.charCodeAt(j));
+            }
+            
+            bodyBytes.push(0x18);
+            var val = parseInt(itemIndex);
+            while (val >= 0x80) {
+                bodyBytes.push((val & 0x7F) | 0x80);
+                val >>>= 7;
+            }
+            bodyBytes.push(val);
+            
+            bodyBytes.push(0x20);
+            var pVal = parseInt(price) || 0;
+            if (pVal === 0) pVal = 1;
+            while (pVal >= 0x80) {
+                bodyBytes.push((pVal & 0x7F) | 0x80);
+                pVal >>>= 7;
+            }
+            bodyBytes.push(pVal);
+            
+            var protoLen = bodyBytes.length;
+            var buf = Memory.alloc(6 + protoLen);
+            buf.writeU32(protoLen);
+            buf.add(4).writeU16(206);
+            if (protoLen > 0) {
+                buf.add(6).writeByteArray(bodyBytes);
+            }
+            
+            if (typeof nativeWrite !== 'undefined') {
+                var ret = nativeWrite(tcpFd, buf, 6 + protoLen);
+                return resolve({ ok: true, sent: ret, method: 'native_write_tcp' });
+            } else {
+                return resolve({ ok: false, error: 'nativeWrite not available globally' });
+            }
+        } catch (e) {
+            return resolve({ ok: false, error: e.message });
+        }
+    });
+};
+
 var _netCoreManagerClass = null;
 var _lastNetCoreScanTime = 0;
 function getNetCoreManagerInstance() {
@@ -515,6 +586,7 @@ rpc.exports.getShopItems = function(stallIndex, nameStr, namePtrStr, cidPtrStr, 
                                             while (!node.isNull() && idx < count) {
                                                 try {
                                                     var kvpAddr = node.add(0x28);
+                                                    var key = kvpAddr.add(0x00).readS32();
                                                     var smPtr = kvpAddr.add(0x08).readPointer();
                                                     
                                                     if (!smPtr.isNull() && parseInt(smPtr.toString()) > 0x10000) {
@@ -536,8 +608,7 @@ rpc.exports.getShopItems = function(stallIndex, nameStr, namePtrStr, cidPtrStr, 
                                                             
                                                             var stackAndSeries = itemPtr.add(0x28).readS32();
                                                             series = stackAndSeries & 0xFFFF;
-                                                            
-                                                            name = 'Item_' + genre + '_' + detail + '_' + particular;
+                                                            name = 'Item_' + genre + '_' + detail + '_' + particular + '_' + level;
                                                             
                                                             try {
                                                                 var il2cppStrPtr = GetItemName(itemPtr, 0, 0, ptr(0));
@@ -550,15 +621,30 @@ rpc.exports.getShopItems = function(stallIndex, nameStr, namePtrStr, cidPtrStr, 
                                                             } catch(e3) {
                                                                 // fallback string
                                                             }
+                                                            var magics = [];
+                                                            try {
+                                                                var magicField = itemPtr.add(0x50).readPointer();
+                                                                if (!magicField.isNull()) {
+                                                                    var magicItems = magicField.add(0x10).readPointer();
+                                                                    var magicCount = magicField.add(0x18).readU32();
+                                                                    if (!magicItems.isNull() && magicCount > 0 && magicCount < 50) {
+                                                                        for (var mi = 0; mi < magicCount; mi++) {
+                                                                            magics.push(magicItems.add(0x20 + mi * 4).readS32());
+                                                                        }
+                                                                    }
+                                                                }
+                                                            } catch(e) {}
                                                         }
                                                         
                                                         items.push({
+                                                            idx: key,
                                                             name: name,
                                                             detailAndGenre: (detail << 16) | genre,
                                                             particularAndLevel: (particular << 16) | level,
-                                                            stackAndSeries: series, // simplified
+                                                            stackAndSeries: series,
                                                             money: money,
-                                                            knb: knb
+                                                            knb: knb,
+                                                            magics: magics
                                                         });
                                                     }
                                                 } catch(e2) {}

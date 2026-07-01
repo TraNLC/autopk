@@ -1,4 +1,5 @@
 const { PacketInjector } = require('../packet-injector');
+const { exec } = require('child_process');
 
 function removeAccents(str) {
   if (!str) return '';
@@ -55,7 +56,7 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, sendLog) {
     sendLog(`[${deviceId}] 💀 Phát hiện nhân vật đã chết (HP = 0). Gửi Packet Hồi Sinh (Opcode 232)...`, 'warn');
     try {
         await session.callRpc('sendPacket', 232, ''); // Gửi opcode 232 (0xe8) để hồi sinh
-        await session.callRpc('closeDialogPopups').catch(() => {}); // Giữ lại đóng UI phòng hờ
+        await session.callRpc('closeDialogPopups').catch(() => {}); // Gọi hàm đóng UI từ memory qua Frida
         // Chờ một chút để game kịp dịch chuyển nhân vật về Khu An Toàn (đổi mapId)
         await new Promise(r => setTimeout(r, 1500));
     } catch(e) {}

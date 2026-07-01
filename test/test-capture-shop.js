@@ -95,7 +95,13 @@ async function run() {
     }
 
     console.log('\n=======================================');
-    console.log('Hoàn thành! Bạn có thể copy log gửi lại cho mình.');
+    console.log('Hoàn thành! Kết quả đã được lưu vào capture_shop.json');
+    
+    fs.writeFileSync('capture_shop.json', JSON.stringify({
+        sent: sent ? sent.packets : [],
+        recv: recv ? recv.packets : []
+    }, null, 2));
+
     frida.disconnect();
 }
 

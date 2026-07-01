@@ -32,6 +32,7 @@
     <div class="tab-headers">
       <button class="tab-btn active" data-tab="tab-tongkim">Tống Kim</button>
       <button class="tab-btn" data-tab="tab-datau">Tìm Dã Tẩu</button>
+      <button class="tab-btn" data-tab="tab-5hanh">Phối Đồ Ngũ Hành</button>
       <button class="tab-btn" data-tab="tab-tuydinh">Tùy chỉnh</button>
     </div>
     
@@ -102,58 +103,29 @@
           <span class="tab-title">Quét Sạp Người Chơi (Tìm đồ Dã Tẩu)</span>
         </div>
         
-        <div class="groupbox" style="margin-top: 10px;">
-          <div class="groupbox-content" style="display: flex; gap: 5px;">
-            <input type="text" id="txt-datau-keyword" placeholder="Nhập tên đồ cần tìm..." style="flex: 1; padding: 4px;">
-            <button id="btn-scan-datau" class="classic-btn" style="width: 80px;">Quét Tìm</button>
-          </div>
-          <div class="groupbox-content" style="display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap;">
-            <select id="sel-datau-series" style="padding: 2px;">
-              <option value="-1">Tất cả hệ</option>
-              <option value="1">Kim</option>
-              <option value="2">Mộc</option>
-              <option value="3">Thủy</option>
-              <option value="4">Hỏa</option>
-              <option value="5">Thổ</option>
-            </select>
-            <input type="number" id="txt-datau-level" placeholder="Cấp (VD: 3)" style="width: 70px; padding: 2px;">
-            <select id="sel-datau-type" style="padding: 2px;">
-              <option value="-1">Mọi loại</option>
-              <option value="0">Vũ khí</option>
-              <option value="1">Áo</option>
-              <option value="2">Mũ</option>
-              <option value="3">Giày</option>
-              <option value="4">Đai</option>
-              <option value="5">Bao tay</option>
-              <option value="6">Nhẫn</option>
-              <option value="7">Dây chuyền</option>
-              <option value="8">Ngọc bội</option>
-            </select>
-            <select id="sel-datau-gender" style="padding: 2px;">
-              <option value="all">Nam/Nữ</option>
-              <option value="nam">Nam</option>
-              <option value="nu">Nữ</option>
-            </select>
-          </div>
+        <div style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
+          <p style="margin-bottom: 10px; color: #555;">Nhấn nút bên dưới để quét toàn bộ sạp hàng xung quanh. Dữ liệu sẽ hiển thị trong một cửa sổ chi tiết mới.</p>
+          <button id="btn-scan-datau" style="padding: 8px 30px; font-weight: bold; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Quét Tìm Tất Cả Sạp</button>
         </div>
         
-        <div class="datagrid-container" style="height: 150px; margin-top: 10px; border: 1px solid #ccc; overflow-y: auto;">
-          <table class="datagrid" style="font-size: 11px;">
-            <thead>
-              <tr>
-                <th width="80">Chủ Sạp</th>
-                <th>Vật Phẩm</th>
-                <th width="60">Giá Bạc</th>
-                <th width="60">Giá KNB</th>
-                <th width="50">Tọa độ</th>
-              </tr>
-            </thead>
-            <tbody id="datau-results-body">
-              <tr>
-                <td colspan="5" style="text-align: center; color: #888;">Chưa có dữ liệu. Nhấn Quét để tìm kiếm...</td>
-              </tr>
-            </tbody>
-          </table>
+        <div id="datau-status-container" style="height: 50px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
+          <span id="datau-loading-text" style="color: #888; font-style: italic;">Sẵn sàng quét...</span>
+        </div>
+      </div>
+      
+      <!-- TAB: Phối Đồ Ngũ Hành -->
+      <div id="tab-5hanh" class="tab-pane">
+        <div class="tab-pane-header">
+          <span class="tab-title">Xây Dựng Đồ Ngũ Hành (Lọc Trang Bị)</span>
+        </div>
+        
+        <div style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
+          <p style="margin-bottom: 10px; color: #555;">Quét toàn bộ sạp hàng để phân loại trang bị thành bộ Ngũ Hành 5 món hoàn chỉnh.</p>
+          <button id="btn-scan-5hanh" style="padding: 8px 30px; font-weight: bold; background-color: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Quét & Phối Đồ Ngũ Hành</button>
+        </div>
+        
+        <div id="5hanh-status-container" style="height: 50px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
+          <span id="5hanh-loading-text" style="color: #888; font-style: italic;">Sẵn sàng phối đồ...</span>
         </div>
       </div>
     </div>

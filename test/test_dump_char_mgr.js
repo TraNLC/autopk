@@ -1,4 +1,4 @@
-const { FridaSession } = require('./src/frida-session');
+const { FridaSession } = require('../src/frida-session');
 async function run() {
     const session = new FridaSession('127.0.0.1:5555');
     await session.connect('vn.perfingame.jx1mobile');
@@ -41,18 +41,23 @@ async function run() {
                 var classPtr = null;
                 for (var k = 0; k < allRanges.length; k++) {
                     try {
-                        var matches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
-                        if (matches.length > 0) {
-                            for (var m = 0; m < matches.length; m++) {
-                                var cand = matches[m].address.sub(0x10);
-                                var nsPtr = cand.add(0x18).readPointer();
-                                var nsName = nsPtr.isNull() ? '' : nsPtr.readUtf8String();
+        Il2Cpp.perform(() => {
+          const klass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerDie");
+          if (!klass) {
+            send({type: "log", data: "PlayerDie not found"});
+            return;
+          }
+          const methods = klass.methods.map(m => m.name);
+          send({type: "log", data: "Methods: " + methods.join(', ')});
+        });
+      } catch (e) {
+        send({type: "log", data: "Error: " + e.message});
+      }                          var nsName = nsPtr.isNull() ? '' : nsPtr.readUtf8String();
                                 var checkNamePtr = cand.add(0x10).readPointer();
                                 if (checkNamePtr.toString() === nameStrAddr.toString() && nsName === '') {
                                     classPtr = cand;
                                     break;
                                 }
-                            }
                         }
                     } catch(e) {}
                     if (classPtr) break;

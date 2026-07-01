@@ -1,4 +1,4 @@
-const { FridaSession } = require('./src/frida-session');
+const { FridaSession } = require('../src/frida-session');
 async function run() {
     const session = new FridaSession(null, 'vn.perfingame.jx1mobile');
     try {
@@ -11,7 +11,7 @@ async function run() {
         });
         console.log("✅ Kết nối Frida thành công!");
         console.log("Đang gọi getNearNpcsDetail...");
-        
+
         const res = await session.callRpc('getNearNpcsDetail');
         if (res && res.ok && res.npcs) {
             console.log(`\n📡 RADAR TÌM THẤY ${res.npcs.length} NPC xung quanh:`);
@@ -21,7 +21,7 @@ async function run() {
         } else {
             console.error("Lỗi:", res ? res.error : "Unknown");
         }
-        
+
         await session.disconnect();
         process.exit(0);
     } catch (e) {

@@ -12,7 +12,8 @@ function execAsync(cmd, options = {}) {
 const { FridaSession } = require('../frida-session');
 const config = require('../../config');
 const { autoTongKimLoop, npcCacheMap } = require('../features/tongkim');
-const { scanDatauItems } = require('../features/datau');
+const { scanDatauItems, buyDatauItem, getShopDetails } = require('../features/datau');
+const { getMapName } = require('../item-db');
 
 let mainWindow = null;
 
@@ -184,7 +185,13 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
     
     // TÍNH NĂNG "HỌC ID" NPC QUA GÓI TIN (CHỐNG VĂNG GAME)
     session.onMessage((payload, data) => {
-      if (payload && payload.type === 'send_out' && payload.opcode === 33 && payload.hex) {
+      if (payload && payload.type === 'send_out') {
+        // Debug
+        if ([33, 231, 35, 204, 71, 48].includes(payload.opcode)) {
+          console.log(`[DEBUG_OPCODE] Sent ${payload.opcode}: ${payload.hex}`);
+        }
+        
+        if (payload.opcode === 33 && payload.hex) {
         // Phân tích ID NPC từ body của gói tin eNpcDialogue (Opcode 33)
         // Định dạng Protobuf: tag 1, type string -> 0x0a <len> <ascii chars>
         const hexStr = payload.hex.replace(/\s+/g, '');
@@ -213,17 +220,21 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
           if (!npcCacheMap.has(deviceId)) npcCacheMap.set(deviceId, {});
           let cache = npcCacheMap.get(deviceId);
           
+          let currentMapId = state.info ? state.info.mapId : null;
+          if (cache.mapId !== currentMapId) {
+            cache.mapId = currentMapId;
+            cache.learnedIds = [];
+          }
+          
           if (!cache.learnedIds) cache.learnedIds = [];
           if (!cache.learnedIds.includes(dynamicId)) {
             cache.learnedIds.push(dynamicId);
             if (cache.learnedIds.length > 2) cache.learnedIds.shift(); // Giữ tối đa 2 ID gần nhất
+            sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC: ${dynamicId}. (Đã nhớ ${cache.learnedIds.length}/2 NPC tại map ${currentMapId})`, 'success');
           }
-          
-          if (state.info && state.info.mapId) cache.mapId = state.info.mapId;
-          
-          sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC: ${dynamicId}. (Đã nhớ ${cache.learnedIds.length}/2 NPC)`, 'success');
         }
-      }
+        } // End of if (payload.opcode === 33)
+      } // End of if (payload.type === 'send_out')
     });
 
   } catch(e) {
@@ -240,6 +251,9 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
       const infoStr = await session.callRpc('getPlayerInfo');
       if (infoStr) {
         const info = infoStr;
+        if (info.mapId) {
+          info.mapName = getMapName(info.mapId);
+        }
         state.info = info;
         
         if (info.error && info.error !== state.lastLoggedError) {
@@ -270,7 +284,71 @@ ipcMain.handle('scan-datau', async (event, deviceId, keyword, filters) => {
     sendLog(`[${deviceId}] Lỗi: Máy chưa kết nối.`, 'error');
     return { ok: false, error: 'Máy chưa kết nối Frida. Hãy nhấn Kết Nối ở menu trái trước!' };
   }
-  return await scanDatauItems(deviceId, state.session, keyword, filters, event, sendLog);
+  const mapId = state.info ? state.info.mapId : 0;
+  return await scanDatauItems(deviceId, state.session, mapId, keyword, filters, event, sendLog);
+});
+
+ipcMain.handle('buy-datau', async (event, deviceId, sellerId, itemIdx, price) => {
+  const state = sessions.get(deviceId);
+  if (!state || !state.session) {
+    return { ok: false, error: 'Máy chưa kết nối Frida.' };
+  }
+  return await buyDatauItem(deviceId, state.session, sellerId, itemIdx, price, sendLog);
+});
+
+ipcMain.handle('get-shop-details', (event, mapId, sellerId) => {
+  return getShopDetails(mapId, sellerId);
+});
+
+ipcMain.on('show-shop-detail', (event, shopData) => {
+  const detailWin = new BrowserWindow({
+    width: 650,
+    height: 700,
+    title: `Chi Tiết Sạp: ${shopData.shopName}`,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+  detailWin.setMenuBarVisibility(false);
+  detailWin.loadFile(path.join(__dirname, 'renderer', 'shop-detail.html'));
+  detailWin.webContents.on('did-finish-load', () => {
+    detailWin.webContents.send('load-shop-data', shopData);
+  });
+});
+
+ipcMain.on('show-all-shops-detail', (event, globalData) => {
+  const detailWin = new BrowserWindow({
+    width: 800,
+    height: 700,
+    title: `Tất Cả Sạp Hàng`,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+  detailWin.setMenuBarVisibility(false);
+  detailWin.loadFile(path.join(__dirname, 'renderer', 'shop-detail.html'));
+  detailWin.webContents.on('did-finish-load', () => {
+    detailWin.webContents.send('load-all-shops-data', globalData);
+  });
+});
+
+ipcMain.on('show-5hanh-detail', (event, globalData) => {
+  const detailWin = new BrowserWindow({
+    width: 900,
+    height: 750,
+    title: `Phối Đồ Ngũ Hành`,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+  detailWin.setMenuBarVisibility(false);
+  detailWin.loadFile(path.join(__dirname, 'renderer', '5hanh-detail.html'));
+  detailWin.webContents.on('did-finish-load', () => {
+    detailWin.webContents.send('load-5hanh-data', globalData);
+  });
 });
 
 let globalTkConfigs = {};

@@ -145,7 +145,7 @@ function renderTable() {
       statusSpan.style.color = 'red';
       statusSpan.innerText = 'Lỗi';
     } else if (dev.info && dev.info.mapId) {
-      statusSpan.innerText = `Bản đồ (${dev.info.mapId})`;
+      statusSpan.innerText = dev.info.mapName ? dev.info.mapName : `Bản đồ (${dev.info.mapId})`;
     } else {
       statusSpan.innerText = dev.connected ? 'Đang đọc...' : 'Chờ';
     }
@@ -283,52 +283,106 @@ if (btnScanDatau) {
     const devId = getTestDeviceId();
     if (!devId) return;
     
-    const keyword = txtDatauKeyword.value.trim();
-    const filters = {
-      series: parseInt(selDatauSeries.value) || -1,
-      level: txtDatauLevel.value ? parseInt(txtDatauLevel.value) : -1,
-      itemType: parseInt(selDatauType.value) || -1,
-      gender: selDatauGender.value || 'all'
-    };
-    
-    datauResultsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: blue;">Đang quét các sạp hàng xung quanh... Vui lòng chờ...</td></tr>';
+    const loadingText = document.getElementById('datau-loading-text');
+    if (loadingText) {
+      loadingText.innerText = 'Đang quét các sạp hàng xung quanh... Vui lòng chờ...';
+      loadingText.style.color = 'blue';
+    }
     btnScanDatau.disabled = true;
     
     // Đăng ký nghe progress
     window.api.onScanDatauProgress((msg) => {
-      datauResultsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: blue;">${msg}</td></tr>`;
+      if (loadingText) loadingText.innerText = msg;
     });
     
     try {
-      const res = await window.api.scanDatau(devId, keyword, filters);
+      // Scan without filters (wildcard)
+      const res = await window.api.scanDatau(devId, '', { series: -1, level: -1, itemType: -1, gender: 'all' });
       if (res && res.ok) {
+        if (loadingText) {
+          loadingText.innerText = `Quét xong! Tìm thấy ${res.items ? res.items.length : 0} vật phẩm. Mở cửa sổ chi tiết...`;
+          loadingText.style.color = 'green';
+        }
+        
         if (res.items && res.items.length > 0) {
-          datauResultsBody.innerHTML = '';
-          res.items.forEach(item => {
-            const tr = document.createElement('tr');
-            const seriesStr = SERIES_ICONS[item.series] || '?';
-            tr.innerHTML = `
-              <td>${item.shopName}</td>
-              <td style="color: purple; font-weight: bold;">
-                ${item.itemName} <br/>
-                <span style="font-size: 9px; color: gray;">[Cấp ${item.level} | ${seriesStr}]</span>
-              </td>
-              <td style="color: #d35400;">${item.money}</td>
-              <td style="color: #27ae60;">${item.knb}</td>
-              <td>${item.shopLocation}</td>
-            `;
-            datauResultsBody.appendChild(tr);
+          // Send to main process to open the global shop detail window
+          window.api.showAllShopsDetail({
+            devId: devId,
+            items: res.items,
+            mapId: devicesMap.has(devId) && devicesMap.get(devId).info ? devicesMap.get(devId).info.mapId : 0
           });
         } else {
-          datauResultsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #888;">Không tìm thấy vật phẩm nào khớp với "${keyword}".</td></tr>`;
+          if (loadingText) {
+            loadingText.innerText = 'Không tìm thấy vật phẩm nào xung quanh.';
+            loadingText.style.color = '#888';
+          }
         }
       } else {
-        datauResultsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: red;">Lỗi quét: ${res ? res.error : 'Unknown'}</td></tr>`;
+        if (loadingText) {
+          loadingText.innerText = `Lỗi quét: ${res ? res.error : 'Unknown'}`;
+          loadingText.style.color = 'red';
+        }
       }
     } catch(e) {
-      datauResultsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: red;">Ngoại lệ: ${e.message}</td></tr>`;
+      if (loadingText) {
+        loadingText.innerText = `Ngoại lệ: ${e.message}`;
+        loadingText.style.color = 'red';
+      }
     }
     btnScanDatau.disabled = false;
+  });
+}
+
+const btnScan5Hanh = document.getElementById('btn-scan-5hanh');
+if (btnScan5Hanh) {
+  btnScan5Hanh.addEventListener('click', async () => {
+    const devId = getTestDeviceId();
+    if (!devId) return;
+    
+    const loadingText = document.getElementById('5hanh-loading-text');
+    if (loadingText) {
+      loadingText.innerText = 'Đang quét sạp hàng xung quanh để lọc Ngũ Hành... Vui lòng chờ...';
+      loadingText.style.color = 'blue';
+    }
+    btnScan5Hanh.disabled = true;
+    
+    window.api.onScanDatauProgress((msg) => {
+      if (loadingText) loadingText.innerText = msg;
+    });
+    
+    try {
+      const res = await window.api.scanDatau(devId, '', { series: -1, level: -1, itemType: -1, gender: 'all' });
+      if (res && res.ok) {
+        if (loadingText) {
+          loadingText.innerText = `Quét xong! Lọc được ${res.items ? res.items.length : 0} trang bị. Đang hiển thị bảng Ngũ Hành...`;
+          loadingText.style.color = 'green';
+        }
+        
+        if (res.items && res.items.length > 0) {
+          window.api.show5HanhDetail({
+            devId: devId,
+            items: res.items,
+            mapId: devicesMap.has(devId) && devicesMap.get(devId).info ? devicesMap.get(devId).info.mapId : 0
+          });
+        } else {
+          if (loadingText) {
+            loadingText.innerText = 'Không tìm thấy trang bị nào xung quanh.';
+            loadingText.style.color = '#888';
+          }
+        }
+      } else {
+        if (loadingText) {
+          loadingText.innerText = `Lỗi quét: ${res ? res.error : 'Unknown'}`;
+          loadingText.style.color = 'red';
+        }
+      }
+    } catch(e) {
+      if (loadingText) {
+        loadingText.innerText = `Ngoại lệ: ${e.message}`;
+        loadingText.style.color = 'red';
+      }
+    }
+    btnScan5Hanh.disabled = false;
   });
 }
 

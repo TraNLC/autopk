@@ -1,4 +1,4 @@
-const { FridaSession } = require('./src/frida-session');
+const { FridaSession } = require('../src/frida-session');
 const path = require('path');
 
 async function run() {
@@ -9,11 +9,11 @@ async function run() {
         console.error("Lỗi kết nối:", e.message);
         process.exit(1);
     }
-    
+
     // Tải bundle gốc
     const scriptPath = path.join(__dirname, 'frida-scripts/bot.bundle.js');
     await session.loadScript(scriptPath);
-    
+
     console.log("=========================================");
     console.log("Đã kết nối! Bắt đầu ghi log các gói tin (Packet) gửi đi...");
     console.log("Anh hãy cho nhân vật CHẾT, sau đó bấm nút VỀ THÀNH nhé!");
@@ -21,7 +21,7 @@ async function run() {
 
     // Bật cờ bắt tất cả các gói tin gửi ra
     await session.callRpc('setCaptureAllSends', true);
-    
+
     // Set để lọc tránh in trùng lặp
     const printedKeys = new Set();
 
@@ -32,7 +32,7 @@ async function run() {
             if (res && res.ok && res.packets && res.packets.length > 0) {
                 // Loại trừ các packet di chuyển (opcode 9, 248) và ping (opcode 1, 0, v.v...) để đỡ rối mắt
                 const filtered = res.packets.filter(p => p.opcode !== 9 && p.opcode !== 248 && p.opcode !== 1 && p.opcode !== 0);
-                
+
                 filtered.forEach(p => {
                     const key = `${p.opcode}_${p.hex}`;
                     if (!printedKeys.has(key)) {
@@ -41,7 +41,7 @@ async function run() {
                     }
                 });
             }
-        } catch(e) {}
+        } catch (e) { }
     }, 1000);
 }
 

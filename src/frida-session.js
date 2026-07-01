@@ -72,7 +72,8 @@ class FridaSession {
   }
 
   /** Kết nối đến game qua Frida */
-  async connect() {
+  async connect(packageName) {
+    this.packageName = packageName;
     // Always ensure ADB forward is set up correctly first (dynamic/self-healing)
     this._setupForward();
     
@@ -101,7 +102,10 @@ class FridaSession {
     // 2. Discover target PID directly from active Frida processes list (100% ADB-independent)
     let pid = null;
     try {
-      const processes = await this.device.enumerateProcesses();
+      const processes = await Promise.race([
+        this.device.enumerateProcesses(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('enumerateProcesses timed out')), 5000))
+      ]);
       const gameProc = processes.find(p => p.name === 'VLTieuNgao' || p.name === 'vn.perfingame.jx1mobile');
       if (gameProc) {
         pid = gameProc.pid;

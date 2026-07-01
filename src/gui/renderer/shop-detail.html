@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chi Tiết Sạp Hàng</title>
+  <style>
+    body { font-family: Tahoma, sans-serif; font-size: 13px; background: #f5f6fa; color: #333; margin: 0; padding: 15px; }
+    .header { font-size: 18px; font-weight: bold; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 10px; }
+    .filter-bar { background: #fff; padding: 10px; border: 1px solid #dcdde1; border-radius: 5px; margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .filter-bar input, .filter-bar select { padding: 4px; border: 1px solid #ccc; border-radius: 3px; outline: none; }
+    
+    .shop-section { background: #fff; border: 1px solid #dcdde1; border-radius: 5px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .shop-header { background: #ecf0f1; padding: 10px; font-weight: bold; font-size: 14px; border-bottom: 1px solid #dcdde1; display: flex; justify-content: space-between; }
+    .shop-header span { color: #e67e22; }
+    .shop-items { padding: 10px; display: flex; flex-wrap: wrap; gap: 10px; }
+    
+    .item-card { border: 1px solid #dcdde1; border-radius: 5px; width: calc(50% - 5px); box-sizing: border-box; padding: 10px; background: #fdfdfd; }
+    .item-header { font-size: 14px; font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px; }
+    .item-prop { margin-bottom: 4px; font-size: 12px; }
+    .item-prop .lbl { color: #7f8fa6; display: inline-block; width: 80px; }
+    .magics { margin-top: 8px; background: #f9f9f9; border: 1px dashed #dcdde1; padding: 6px; border-radius: 4px; font-size: 12px; }
+    .magic-lbl { font-weight: bold; color: #8e44ad; margin-bottom: 4px; }
+    .magic-item { color: #2c3e50; padding: 2px 0; }
+  </style>
+</head>
+<body>
+  <div class="header">Kết Quả Quét Sạp</div>
+  
+  <div class="filter-bar">
+    <input type="text" id="flt-keyword" placeholder="Nhập tên vật phẩm..." style="flex: 1;">
+    <select id="flt-series">
+      <option value="-1">Tất cả hệ</option>
+      <option value="0">Kim</option>
+      <option value="1">Mộc</option>
+      <option value="2">Thủy</option>
+      <option value="3">Hỏa</option>
+      <option value="4">Thổ</option>
+    </select>
+    <select id="flt-level">
+      <option value="-1">Tất cả cấp</option>
+      <option value="1">Cấp 1</option>
+      <option value="2">Cấp 2</option>
+      <option value="3">Cấp 3</option>
+      <option value="4">Cấp 4</option>
+      <option value="5">Cấp 5</option>
+      <option value="6">Cấp 6</option>
+      <option value="7">Cấp 7</option>
+      <option value="8">Cấp 8</option>
+      <option value="9">Cấp 9</option>
+      <option value="10">Cấp 10</option>
+    </select>
+    <select id="flt-item-type">
+      <option value="-1">Tất cả loại</option>
+      <option value="0">Vũ Khí</option>
+      <option value="2">Áo</option>
+      <option value="7">Mũ</option>
+      <option value="5">Giày</option>
+      <option value="3">Nhẫn</option>
+      <option value="4">Dây Chuyền</option>
+      <option value="8">Bao Tay</option>
+      <option value="9">Ngọc Bội</option>
+      <option value="6">Thắt Lưng</option>
+      <option value="10006">Khác (Tiêu hao, Bí kíp...)</option>
+    </select>
+    <select id="flt-gender">
+      <option value="all">Nam/Nữ</option>
+      <option value="nam">Nam</option>
+      <option value="nu">Nữ</option>
+    </select>
+    </select>
+  </div>
+
+  <div style="background: white; padding: 10px 20px; border-bottom: 1px solid #ddd; margin-bottom: 15px;">
+    <div style="font-weight: bold; font-size: 13px; color: #555; margin-bottom: 5px;">Lọc theo thuộc tính (Magic Attributes):</div>
+    <div id="magic-filters-container" style="display: flex; flex-direction: column; gap: 8px;">
+      <!-- Magic filter rows will be added here -->
+    </div>
+    <button id="btn-add-magic-filter" style="margin-top: 8px; padding: 4px 10px; background: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">+ Thêm thuộc tính</button>
+  </div>
+  
+  <div id="content" style="overflow-y: auto; max-height: calc(100vh - 180px); padding-right: 5px;">Đang tải...</div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    let allItems = [];
+    let currentDevId = '';
+    let availableMagics = [];
+
+    const seriesColors = ['#d4af37', '#27ae60', '#3498db', '#e74c3c', '#e67e22'];
+    const seriesNames = ['Kim', 'Mộc', 'Thủy', 'Hỏa', 'Thổ'];
+
+    function formatMoney(amount) {
+      let van = Math.floor(amount / 10000);
+      return van + ' vạn';
+    }
+
+    function renderItems() {
+      try {
+        const kw = document.getElementById('flt-keyword').value.toLowerCase().trim();
+        const ser = parseInt(document.getElementById('flt-series').value);
+        const lvl = parseInt(document.getElementById('flt-level').value);
+        const gen = document.getElementById('flt-gender').value;
+        const itype = parseInt(document.getElementById('flt-item-type').value);
+
+        const magicRows = document.querySelectorAll('#magic-filters-container > div');
+        const activeMagics = [];
+        magicRows.forEach(row => {
+          const mName = row.querySelector('.magic-name').value;
+          const mVal = parseFloat(row.querySelector('.magic-val').value) || 0;
+          if (mName) activeMagics.push({ name: mName, val: mVal });
+        });
+
+        // Filter and Group items by shop
+        const shops = {};
+        
+        allItems.forEach(item => {
+          // Filter logic
+          if (kw && !item.name.toLowerCase().includes(kw) && !(item.realName && item.realName.toLowerCase().includes(kw))) return;
+          if (ser !== -1 && item.series !== ser) return;
+          if (lvl !== -1 && item.level !== lvl) return;
+          
+          if (gen === 'nam' && item.gender !== 0) return;
+          if (gen === 'nu' && item.gender !== 1) return;
+          
+          if (itype !== -1) {
+            if (itype === 0 && item.genre !== 0 && item.genre !== 1) return; // vũ khí
+            else if (itype === 10006 && item.genre !== 6 && item.genre !== 10006) return; // khác
+            else if (itype !== 0 && itype !== 10006 && item.genre !== itype) return; // áo, mũ, giày... match exactly genre
+          }
+
+          if (activeMagics.length > 0) {
+            let passed = true;
+            for (let am of activeMagics) {
+              let found = false;
+              if (item.magics) {
+                for (let m of item.magics) {
+                  if (m.startsWith(am.name)) {
+                    let match = m.match(/([+-]?\d+)/);
+                    if (match) {
+                      let v = parseInt(match[1], 10);
+                      if (Math.abs(v) >= am.val) {
+                        found = true;
+                        break;
+                      }
+                    } else if (am.val === 0) { // property exists but no number (e.g., skill)
+                      found = true;
+                      break;
+                    }
+                  }
+                }
+              }
+              if (!found) { passed = false; break; }
+            }
+            if (!passed) return;
+          }
+
+          if (!shops[item.sellerId]) {
+            shops[item.sellerId] = {
+              shopName: item.shopName,
+              cid: item.sellerId,
+              items: []
+            };
+          }
+          shops[item.sellerId].items.push(item);
+        });
+
+        const content = document.getElementById('content');
+        let html = '';
+
+        const shopKeys = Object.keys(shops);
+        if (shopKeys.length === 0) {
+          html = '<div style="color: red; padding: 10px; text-align: center;">Không tìm thấy vật phẩm nào khớp với điều kiện lọc.</div>';
+        } else {
+          shopKeys.forEach(cid => {
+            const shop = shops[cid];
+            
+            let itemsHtml = shop.items.map(item => {
+              const sColor = seriesColors[item.series] || '#888';
+              const sName = seriesNames[item.series];
+              
+              let genderStr = 'Không yêu cầu';
+              if (item.gender === 0) genderStr = 'Nam';
+              else if (item.gender === 1) genderStr = 'Nữ';
+              
+              let magicsHtml = '<div style="color: #999; font-style: italic;">Không có thuộc tính ẩn</div>';
+              if (item.magics && item.magics.length > 0) {
+                magicsHtml = item.magics.map((m, idx) => {
+                  const color = idx % 2 === 0 ? '#0984e3' : '#636e72';
+                  return `<div class="magic-item" style="color: ${color}; font-weight: 500;">• ${m}</div>`;
+                }).join('');
+              }
+              
+              return `
+                <div class="item-card">
+                  <div class="item-header" style="color: black;">
+                    ${item.realName || item.name} ${ (item.genre !== 6 && item.genre !== 10006 && sName) ? `<span style="color: ${sColor}; font-size: 13px; font-weight: normal;">(Hệ ${sName})</span>` : ''}
+                  </div>
+                  ${ (item.genre !== 6 && item.genre !== 10006) ? `
+                  <div class="item-prop"><span class="lbl" style="color: black;">Cấp:</span> <span style="color: black;">${item.level || 0}</span></div>
+                  ${ item.reqStr > 0 ? `<div class="item-prop"><span class="lbl" style="color: black;">Yêu cầu sức mạnh:</span> <span style="color: black;">${item.reqStr} điểm</span></div>` : '' }
+                  ${ item.reqDex > 0 ? `<div class="item-prop"><span class="lbl" style="color: black;">Yêu cầu thân pháp:</span> <span style="color: black;">${item.reqDex} điểm</span></div>` : '' }
+                  <div class="item-prop"><span class="lbl" style="color: black;">Giới Tính:</span> <span style="color: black;">${genderStr}</span></div>
+                  ` : '' }
+                  <div class="item-prop"><span class="lbl" style="color: black;">Giá bán:</span> <b style="color: #d35400;">${formatMoney(item.money)}</b> | <b style="color: #27ae60;">${item.knb || 0} KNB</b></div>
+                  <div class="magics">
+                    <div class="magic-lbl">[ Thuộc Tính ]</div>
+                    ${magicsHtml}
+                  </div>
+                  <div style="margin-top: 10px; text-align: right;">
+                    <button class="buy-btn" data-idx="${item.idx}" data-cid="${cid}" data-price="${item.money > 0 ? item.money : item.knb}" style="padding: 4px 12px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">Mua Món Này</button>
+                  </div>
+                </div>
+              `;
+            }).join('');
+
+            html += `
+              <div class="shop-section">
+                <div class="shop-header">
+                  <div>Chủ Sạp: <span>${shop.shopName}</span></div>
+                  <div>Hiển thị ${shop.items.length} món đồ</div>
+                </div>
+                <div class="shop-items">
+                  ${itemsHtml}
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        content.innerHTML = html;
+
+        // Attach buy events
+        document.querySelectorAll('.buy-btn').forEach(btn => {
+          btn.onclick = async () => {
+            btn.disabled = true;
+            btn.innerText = '...';
+            const idx = parseInt(btn.getAttribute('data-idx'));
+            const cid = btn.getAttribute('data-cid');
+            const price = parseInt(btn.getAttribute('data-price'));
+            
+            try {
+              const res = await ipcRenderer.invoke('buy-datau', currentDevId, cid, idx, price);
+              if (res && res.ok) {
+                btn.innerText = 'Đã Mua';
+                btn.style.background = '#27ae60';
+              } else {
+                btn.innerText = 'Lỗi';
+                btn.style.background = '#e74c3c';
+                alert('Lỗi: ' + (res ? res.error : 'Unknown'));
+              }
+            } catch(e) {
+              btn.innerText = 'Lỗi';
+              alert('Ngoại lệ: ' + e.message);
+            }
+          };
+        });
+      } catch(e) {
+        document.getElementById('content').innerHTML = `<div style="color: red; padding: 20px;">Lỗi render: ${e.message}</div>`;
+      }
+    }
+
+    document.getElementById('flt-keyword').addEventListener('input', renderItems);
+    document.getElementById('flt-series').addEventListener('change', renderItems);
+    document.getElementById('flt-level').addEventListener('change', renderItems);
+    document.getElementById('flt-item-type').addEventListener('change', renderItems);
+    document.getElementById('flt-gender').addEventListener('change', renderItems);
+
+    function populateAvailableMagics() {
+      let magicsSet = new Set();
+      allItems.forEach(item => {
+        if (item.magics) {
+          item.magics.forEach(m => {
+            const parts = m.split(':');
+            if (parts.length > 0) {
+              magicsSet.add(parts[0].trim());
+            }
+          });
+        }
+      });
+      availableMagics = Array.from(magicsSet).sort((a, b) => a.localeCompare(b, 'vi'));
+    }
+
+    ipcRenderer.on('load-all-shops-data', (event, globalData) => {
+      currentDevId = globalData.devId;
+      allItems = globalData.items || [];
+      document.querySelector('.header').innerText = `Kết Quả Quét: Tìm thấy ${allItems.length} vật phẩm`;
+      populateAvailableMagics();
+      renderItems();
+    });
+
+    // Support single shop fallback
+    ipcRenderer.on('load-shop-data', (event, shopData) => {
+      currentDevId = shopData.devId;
+      allItems = shopData.items || [];
+      // Assign sellerId to all items to fit the global group logic if missing
+      allItems.forEach(it => { 
+        if(!it.sellerId) it.sellerId = shopData.cid; 
+        if(!it.shopName) it.shopName = shopData.shopName; 
+      });
+      document.querySelector('.header').innerText = `Chi Tiết Sạp: ${shopData.shopName}`;
+      populateAvailableMagics();
+      renderItems();
+    });
+
+    document.getElementById('btn-add-magic-filter').addEventListener('click', () => {
+      const container = document.getElementById('magic-filters-container');
+      const row = document.createElement('div');
+      row.style = 'display: flex; gap: 10px; align-items: center;';
+      
+      let optionsHtml = availableMagics.map(m => `<option value="${m}">${m}</option>`).join('');
+      
+      row.innerHTML = `
+        <select class="magic-name" style="flex: 2; padding: 4px; border: 1px solid #ccc; border-radius: 3px;">
+          <option value="">-- Chọn thuộc tính --</option>
+          ${optionsHtml}
+        </select>
+        <input type="number" class="magic-val" placeholder="Giá trị tối thiểu..." style="flex: 1; padding: 4px; border: 1px solid #ccc; border-radius: 3px;">
+        <button class="btn-remove-magic" style="padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer;">X</button>
+      `;
+      
+      row.querySelector('.btn-remove-magic').onclick = () => {
+        row.remove();
+        renderItems();
+      };
+      
+      row.querySelector('.magic-name').onchange = renderItems;
+      row.querySelector('.magic-val').oninput = renderItems;
+      
+      container.appendChild(row);
+    });
+  </script>
+</body>
+</html>
