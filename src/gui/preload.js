@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   showShopDetail: (shopData) => ipcRenderer.send('show-shop-detail', shopData),
   showAllShopsDetail: (data) => ipcRenderer.send('show-all-shops-detail', data),
   show5HanhDetail: (data) => ipcRenderer.send('show-5hanh-detail', data),
+  testCastSkill: (deviceId) => ipcRenderer.invoke('test-cast-skill', deviceId),
   onScanDatauProgress: (callback) => ipcRenderer.on('datau-progress', (event, msg) => callback(msg)),
   
   // Event listeners

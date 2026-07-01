@@ -102,6 +102,83 @@ class AutoPK {
   }
 
   /**
+   * Hàm kiểm tra mối quan hệ khắc hệ ngũ hành
+   * 0: Kim, 1: Mộc, 2: Thủy, 3: Hỏa, 4: Thổ
+   */
+  getElementRelation(myElement, enemyElement) {
+    const counterMap = {
+      0: 1, // Kim khắc Mộc
+      1: 4, // Mộc khắc Thổ
+      4: 2, // Thổ khắc Thủy
+      2: 3, // Thủy khắc Hỏa
+      3: 0  // Hỏa khắc Kim
+    };
+    
+    if (counterMap[myElement] === enemyElement) {
+      return 1; // Khắc hệ (Lợi thế)
+    }
+    if (counterMap[enemyElement] === myElement) {
+      return -1; // Bị khắc hệ (Bất lợi)
+    }
+    return 0; // Bình thường
+  }
+
+  /**
+   * Hàm chấm điểm cho một mục tiêu
+   */
+  calculateTargetScore(player, enemy) {
+    // Cấu hình các trọng số ưu tiên (Weights)
+    const WEIGHT_DISTANCE = 0.4; // Trọng số khoảng cách (càng gần càng tốt)
+    const WEIGHT_HP = 0.3;       // Trọng số máu thấp (tiện dứt điểm)
+    const WEIGHT_ELEMENT = 0.3;  // Trọng số khắc hệ ngũ hành
+
+    let score = 0;
+
+    // 1. Đánh giá khoảng cách (Chuẩn hóa về khoảng 0 - 1)
+    const maxRange = 1000; // Tầm nhìn tối đa
+    const distance = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
+    const distanceScore = distance < maxRange ? (1 - (distance / maxRange)) : 0;
+    score += distanceScore * WEIGHT_DISTANCE;
+
+    // 2. Đánh giá lượng máu (HP càng thấp điểm càng cao để tối ưu KS mạng)
+    const hpRatio = enemy.maxHp > 0 ? (enemy.hp / enemy.maxHp) : 1;
+    const hpScore = 1 - hpRatio; 
+    score += hpScore * WEIGHT_HP;
+
+    // 3. Đánh giá hệ Ngũ Hành
+    const relation = this.getElementRelation(player.series, enemy.series);
+    let elementScore = 0.5; // Mặc định trung tính
+    if (relation === 1) {
+      elementScore = 1.0; // Khắc hệ mục tiêu
+    } else if (relation === -1) {
+      elementScore = 0.1; // Tránh đánh đứa khắc mình
+    }
+    score += elementScore * WEIGHT_ELEMENT;
+
+    return score;
+  }
+
+  /**
+   * Hàm quét và tìm mục tiêu tối ưu nhất
+   */
+  findBestTarget(player, enemyList) {
+    let bestTarget = null;
+    let highestScore = -1;
+
+    for (const enemy of enemyList) {
+      if (!enemy.id) continue;
+
+      const score = this.calculateTargetScore(player, enemy);
+      if (score > highestScore) {
+        highestScore = score;
+        bestTarget = { ...enemy, score };
+      }
+    }
+
+    return bestTarget;
+  }
+
+  /**
    * Core logic run at each tick interval.
    */
   async tick() {
@@ -123,11 +200,52 @@ class AutoPK {
 
     // 2. PK / Tong Kim Attack Automation
     if (info.fighting) {
+      // Tự động duy trì kỹ năng buff trấn phái (Ví dụ Tuyết Ảnh của phái Thúy Yên là ID 109)
+      const sect = info.sect !== undefined ? info.sect : -1;
+      const sectSkillMap = {
+          0: 102, // Thiếu Lâm (Dịch Cân Kinh)
+          1: 111, // Thiên Vương (Thiên Vương Chiến Ý)
+          2: 129, // Đường Môn (Đường Môn Độc Kinh)
+          3: 139, // Ngũ Độc (Ngũ Độc Kỳ Kinh)
+          4: 159, // Nga Mi (Phật Pháp Vô Biên)
+          5: 109, // Thúy Yên (Tuyết Ảnh)
+          6: 179, // Cái Bang (Cái Bang Tâm Pháp)
+          7: 189, // Thiên Nhẫn (Thiên Nhẫn Tâm Pháp)
+          8: 209, // Võ Đang (Thái Cực Thần Công)
+          9: 219  // Côn Lôn (Côn Lôn Tâm Pháp)
+      };
+      const buffSkillId = sectSkillMap[sect];
+      if (buffSkillId && buffSkillId > 1) {
+          const now = Date.now();
+          if (!this.lastBuffTime || (now - this.lastBuffTime) > 60000) { // Buff mỗi 60 giây
+              console.log(`[AutoPK] Tự động duy trì buff kỹ năng môn phái ID: ${buffSkillId}`);
+              await this.injector.sendDoSkillTargetPosition(buffSkillId, info.x, info.y);
+              this.lastBuffTime = now;
+          }
+      }
+
       const skillId = this.attackSkills[this.currentSkillIndex];
       this.currentSkillIndex = (this.currentSkillIndex + 1) % this.attackSkills.length;
 
-      if (info.targetId) {
-        console.log(`[AutoPK] Casting skill ${skillId} on target: ${info.targetId}`);
+      // Quét các kẻ địch xung quanh từ bộ nhớ RAM (cực kỳ nhanh dưới 1ms)
+      const enemiesRes = await this.memory.getNearEnemies();
+      let bestTarget = null;
+
+      if (enemiesRes && enemiesRes.ok && enemiesRes.enemies && enemiesRes.enemies.length > 0) {
+        // Tìm mục tiêu tối ưu nhất dựa trên khoảng cách, máu và khắc hệ Ngũ Hành
+        const playerState = {
+          x: enemiesRes.localX || info.x,
+          y: enemiesRes.localY || info.y,
+          series: enemiesRes.localSeries !== undefined ? enemiesRes.localSeries : -1
+        };
+        bestTarget = this.findBestTarget(playerState, enemiesRes.enemies);
+      }
+
+      if (bestTarget) {
+        console.log(`[AutoPK] Casting skill ${skillId} on best counter target: ${bestTarget.name} (${bestTarget.id}) | Hệ: ${bestTarget.series} | HP: ${bestTarget.hp}/${bestTarget.maxHp} | Điểm: ${bestTarget.score.toFixed(3)}`);
+        await this.injector.sendDoSkillTargetPlayer(skillId, bestTarget.id);
+      } else if (info.targetId) {
+        console.log(`[AutoPK] Fallback: Casting skill ${skillId} on target: ${info.targetId}`);
         await this.injector.sendDoSkillTargetPlayer(skillId, info.targetId);
       } else {
         // Area attack or positional attack at current player location if target is empty

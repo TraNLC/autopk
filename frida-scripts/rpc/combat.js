@@ -5,28 +5,20 @@ rpc.exports.doSkillHooked = function(skillId) {
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
     if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
 
-    globalThis._pendingSkill = skillId | 0;
-    if (globalThis._skillHookOn) return { ok: true, queued: skillId | 0 };
-
     try {
-        var playerMainUpdate = il2cppBase.add(0xE42B4C);
         var doSkillFn = new NativeFunction(il2cppBase.add(0xE4969C), 'bool', ['pointer', 'int']);
+        globalThis._skillLastFire = 'queued';
 
-        Interceptor.attach(playerMainUpdate, {
-            onEnter: function() {
-                var sid = globalThis._pendingSkill;
-                if (sid === null || sid === undefined) return;
-                globalThis._pendingSkill = null;
-                try {
-                    var r = doSkillFn(_playerMainInstance, sid);
-                    globalThis._skillLastFire = 'ok DoSkill(' + sid + ')=' + r;
-                } catch (e) {
-                    globalThis._skillLastFire = 'err ' + e;
-                }
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                var r = doSkillFn(_playerMainInstance, skillId | 0);
+                globalThis._skillLastFire = 'ok DoSkill(' + skillId + ')=' + r;
+            } catch (e) {
+                globalThis._skillLastFire = 'err ' + e;
             }
         });
-        globalThis._skillHookOn = true;
-        return { ok: true, hooked: true };
+        return { ok: true, queued: true };
     } catch (e) {
         return { ok: false, error: '' + e };
     }

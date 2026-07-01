@@ -365,3 +365,30 @@ if (btnScan5Hanh) {
 
 // Init
 scanDevices();
+
+// Helpers
+function getTestDeviceId() {
+  if (currentSelectedDeviceId) return currentSelectedDeviceId;
+  for (const [id, dev] of devicesMap.entries()) {
+    if (dev.connected) return id;
+  }
+  addLog('Chưa chọn nhân vật hoặc chưa kết nối giả lập nào.', 'error');
+  return null;
+}
+
+const btnTestCast = document.getElementById('btn-test-cast');
+if (btnTestCast) {
+  btnTestCast.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      addLog('Chưa chọn nhân vật để test cast skill.', 'error');
+      return;
+    }
+    btnTestCast.disabled = true;
+    try {
+      await window.api.testCastSkill(currentSelectedDeviceId);
+    } catch (e) {
+      addLog(`Lỗi test cast: ${e.message}`, 'error');
+    }
+    btnTestCast.disabled = false;
+  });
+}

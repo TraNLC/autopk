@@ -1,95 +1,48 @@
 // frida-scripts/rpc/core/PlayerManager.js -- Player info RPC exports (sect, skills, position)
 
+function callNativeIl2Cpp(exportName, retType, argTypes, args) {
+    if (typeof il2cppBase === 'undefined' || !il2cppBase) return null;
+    var exp = findElfExport(il2cppBase, exportName);
+    if (!exp || exp.isNull()) return null;
+    var fn = new NativeFunction(exp, retType, argTypes);
+    return fn.apply(null, args);
+}
+
 rpc.exports.getMySect = function() {
-    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
     var res = { ok: true };
-    return Il2Cpp.perform(function () {
-        try {
-            var img = Il2Cpp.domain.assembly("Assembly-CSharp").image;
-            var pmClass = img.class("PlayerMain");
-            var inst = pmClass.field("instance").value;
-            if (!inst || inst.isNull()) return { ok: false, error: 'no PlayerMain.instance' };
-
-            var npc = null;
-            try { npc = inst.field("npcontroller").value; } catch (e) {
-                try { npc = inst.field("m_npcontroller").value; } catch (e2) {}
+    try {
+        var npcontroller = _playerMainInstance.add(0x20).readPointer();
+        if (!npcontroller.isNull()) {
+            var idnPtr = npcontroller.add(0x28).readPointer();
+            if (!idnPtr.isNull()) {
+                res.series = idnPtr.add(0x54).readInt();
             }
-            if (!npc || npc.isNull()) return { ok: false, error: 'no controller' };
-
-            var data = null;
-            try { data = npc.field("data").value; } catch (e) {
-                try { data = npc.field("m_data").value; } catch (e2) {}
-            }
-            if (!data || data.isNull()) return { ok: false, error: 'no data' };
-
-            // Read basic fields
-            try { res.series = data.field('series').value; } catch (e) { res.series = null; }
-            try {
-                var nv = data.field('name').value;
-                if (nv) {
-                    if (typeof nv.content !== 'undefined' && nv.content !== null) {
-                        res.name = nv.content;
-                    } else {
-                        var ptr = nv.handle ? nv.handle : new NativePointer(nv);
-                        if (!ptr.isNull()) {
-                            var len = ptr.add(0x10).readS32();
-                            if (len > 0 && len < 100) res.name = ptr.add(0x14).readUtf16String(len);
-                        }
+            var dataPtr = npcontroller.add(0x30).readPointer();
+            if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
+                var namePtr = dataPtr.add(0x40).readPointer();
+                if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
+                    var strLen = namePtr.add(0x10).readU32();
+                    if (strLen > 0 && strLen < 100) {
+                        res.name = namePtr.add(0x14).readUtf16String(strLen);
                     }
                 }
-            } catch (e) {}
-            try { res.level = data.field('level').value; } catch (e) {}
-
-            // Read faction via Controller
-            var ctrl = new Il2Cpp.Object(npc.handle);
-            try { res.faction = ctrl.method('GetFaction').invoke(); }
-            catch (e1) {
-                try {
-                    var CtrlCls = img.class('game.resource.settings.npcres.Controller');
-                    res.faction = CtrlCls.method('GetFaction').bind(ctrl).invoke();
-                } catch (e2) { res.factionErr = '' + e2; }
             }
-
-            // Read identify fields
-            try {
-                var idn = ctrl.field('identify').value;
-                if (idn && !idn.isNull()) {
-                    try { res.campValue = idn.field('campValue').value; } catch (e) {}
-                    try { res.seriesValue = idn.field('seriesValue').value; } catch (e) {}
-                    try { res.hp = idn.field('healthCurrent').value; } catch (e) {}
-                    try { res.hpMax = idn.field('healthMax').value; } catch (e) {}
-
-                    var mc = ['manaCurrent', 'mpCurrent', 'powerCurrent', 'internalCurrent'];
-                    var mm = ['manaMax', 'mpMax', 'powerMax', 'internalMax'];
-                    for (var mi = 0; mi < mc.length; mi++) {
-                        try { var mv = idn.field(mc[mi]).value; if (mv !== null && mv !== undefined) { res.mp = mv; res.mpField = mc[mi]; break; } } catch (e) {}
-                    }
-                    for (var mj = 0; mj < mm.length; mj++) {
-                        try { var mx = idn.field(mm[mj]).value; if (mx !== null && mx !== undefined) { res.mpMax = mx; break; } } catch (e) {}
-                    }
-                }
-            } catch (e) { res.idErr = '' + e; }
-
-            // Safe static mapping of Sect names and camps to prevent Access Violations
-            var SECT_NAMES = {
-                0: "Thieu Lam",
-                1: "Thien Vuong",
-                2: "Duong Mon",
-                3: "Ngu Doc",
-                4: "Nga My",
-                5: "Thuy Yen",
-                6: "Cai Bang",
-                7: "Thien Nhan",
-                8: "Vo Dang",
-                9: "Con Lon",
-                10: "Minh Giao",
-                11: "Doan Thi"
-            };
-            res.sect = (res.faction !== undefined && res.faction !== null) ? res.faction : -1;
-            res.sectName = SECT_NAMES[res.sect] || "None";
-        } catch (e) { return { ok: false, error: '' + e }; }
-        return res;
-    });
+            var character = npcontroller.add(0xa0).readPointer();
+            if (!character.isNull() && parseInt(character.toString()) > 0x10000) {
+                res.faction = character.add(0x34).readU32();
+            }
+        }
+        var SECT_NAMES = {
+            0: "Thieu Lam", 1: "Thien Vuong", 2: "Duong Mon", 3: "Ngu Doc",
+            4: "Nga My", 5: "Thuy Yen", 6: "Cai Bang", 7: "Thien Nhan",
+            8: "Vo Dang", 9: "Con Lon", 10: "Minh Giao", 11: "Doan Thi"
+        };
+        res.sect = (res.faction !== undefined && res.faction !== null) ? res.faction : -1;
+        res.sectName = SECT_NAMES[res.sect] || "None";
+    } catch (e) { return { ok: false, error: '' + e }; }
+    return res;
 };
 
 rpc.exports.getNearNpcsDetail = function() {
@@ -111,23 +64,61 @@ rpc.exports.getNearNpcsDetail = function() {
 };
 
 rpc.exports.getMySkills = function() {
-    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
-    return Il2Cpp.perform(function () {
-        var out = [];
+    
+    var out = [];
+    try {
+        console.log("[getMySkills] playerMainInstance=" + _playerMainInstance);
+        var getSkillIdAddr = null;
         try {
-            var pm = new Il2Cpp.Object(_playerMainInstance);
-            var m = pm.method("GetSkillId", 1);
+            var domain = callNativeIl2Cpp('il2cpp_domain_get', 'pointer', [], []);
+            console.log("[getMySkills] domain=" + domain);
+            if (domain && !domain.isNull()) {
+                var assembly = callNativeIl2Cpp('il2cpp_domain_assembly_open', 'pointer', ['pointer', 'pointer'], [domain, Memory.allocUtf8String("Assembly-CSharp")]);
+                console.log("[getMySkills] assembly=" + assembly);
+                var image = callNativeIl2Cpp('il2cpp_assembly_get_image', 'pointer', ['pointer'], [assembly]);
+                console.log("[getMySkills] image=" + image);
+                var klass = callNativeIl2Cpp('il2cpp_class_from_name', 'pointer', ['pointer', 'pointer', 'pointer'], [image, Memory.allocUtf8String(""), Memory.allocUtf8String("PlayerMain")]);
+                console.log("[getMySkills] klass=" + klass);
+                var method = callNativeIl2Cpp('il2cpp_class_get_method_from_name', 'pointer', ['pointer', 'pointer', 'int'], [klass, Memory.allocUtf8String("GetSkillId"), 1]);
+                console.log("[getMySkills] method=" + method);
+                if (method && !method.isNull()) {
+                    getSkillIdAddr = method.readPointer();
+                    console.log("[getMySkills] resolved methodPointer=" + getSkillIdAddr);
+                }
+            }
+        } catch(e) {
+            console.log("[getMySkills] dynamic resolve err: " + e.message);
+        }
+        
+        if (!getSkillIdAddr && typeof il2cppBase !== 'undefined' && il2cppBase) {
+            // Fallback hardcoded RVA if symbols failed to load
+            getSkillIdAddr = il2cppBase.add(0xE48560);
+            console.log("[getMySkills] fallback getSkillIdAddr=" + getSkillIdAddr);
+        }
+        
+        if (getSkillIdAddr) {
+            var getSkillIdFn = new NativeFunction(getSkillIdAddr, 'int', ['pointer', 'int']);
             for (var i = 0; i < 25; i++) {
                 try {
-                    var sid = m.invoke(i);
-                    if (sid && sid > 0) out.push({ idx: i, skillId: sid });
-                } catch (e) {}
+                    var sid = getSkillIdFn(_playerMainInstance, i);
+                    if (sid && sid > 0) {
+                        out.push({ idx: i, skillId: sid });
+                    }
+                } catch(e) {
+                    // console.log("[getMySkills] invoke err at " + i + ": " + e.message);
+                }
             }
-        } catch (e) { return { ok: false, error: '' + e }; }
-        return { ok: true, skills: out };
-    });
+            console.log("[getMySkills] scanned count=" + out.length);
+        } else {
+            console.log("[getMySkills] No address found for GetSkillId!");
+        }
+    } catch(e) {
+        console.log("[getMySkills] outer err: " + e.message);
+        return { ok: false, error: '' + e };
+    }
+    return { ok: true, skills: out };
 };
 
 rpc.exports.getPlayerInfo = function() {
@@ -186,40 +177,15 @@ rpc.exports.getPlayerInfo = function() {
                     res.storageMoney = character.add(0x110).readS64().toString();
                 }
 
-                // Read HP/MP using Il2Cpp if available
-                if (typeof Il2Cpp !== 'undefined') {
-                    Il2Cpp.perform(function() {
-                        try {
-                            var ctrl = new Il2Cpp.Object(npcontroller);
-                            var idn = ctrl.field('identify').value;
-                            if (idn && !idn.isNull()) {
-                                res.hp = idn.field('healthCurrent').value;
-                                res.maxHp = idn.field('healthMax').value;
-                                try { res.campValue = idn.field('campValue').value; } catch (e) {}
-                                
-                                var mc = ['manaCurrent', 'mpCurrent', 'powerCurrent', 'internalCurrent'];
-                                var mm = ['manaMax', 'mpMax', 'powerMax', 'internalMax'];
-                                for (var mi = 0; mi < mc.length; mi++) {
-                                    try { 
-                                        var mv = idn.field(mc[mi]).value; 
-                                        if (mv !== null && mv !== undefined) { 
-                                            res.mp = mv; 
-                                            break; 
-                                        } 
-                                    } catch (e) {}
-                                }
-                                for (var mj = 0; mj < mm.length; mj++) {
-                                    try { 
-                                        var mx = idn.field(mm[mj]).value; 
-                                        if (mx !== null && mx !== undefined) { 
-                                            res.maxMp = mx; 
-                                            break; 
-                                        } 
-                                    } catch (e) {}
-                                }
-                            }
-                        } catch(e) {}
-                    });
+                // Read HP/MP/Camp using raw memory offsets (fully bridge-free!)
+                var idnPtr = npcontroller.add(0x28).readPointer();
+                if (!idnPtr.isNull() && parseInt(idnPtr.toString()) > 0x10000) {
+                    res.campValue = idnPtr.add(0x50).readInt();
+                    res.seriesValue = idnPtr.add(0x54).readInt();
+                    res.hp = idnPtr.add(0x58).readInt();
+                    res.maxHp = idnPtr.add(0x5C).readInt();
+                    res.mp = idnPtr.add(0x60).readInt();
+                    res.maxMp = idnPtr.add(0x64).readInt();
                 }
             }
         } catch (e) {
@@ -237,3 +203,117 @@ rpc.exports.invalidatePlayerMain = function() {
     if (typeof _byteClass !== 'undefined') _byteClass = null;
     return { ok: true };
 };
+
+rpc.exports.getNearEnemies = function() {
+    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    return Il2Cpp.perform(function() {
+        var enemies = [];
+        try {
+            var pmClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerMain");
+            var pmInst = pmClass.field("instance").value;
+            if (!pmInst || pmInst.isNull()) return { ok: false, error: 'PlayerMain.instance is null' };
+
+            var localCamp = -1;
+            var localSeries = -1;
+            var localX = 0;
+            var localY = 0;
+
+            var localCtrl = pmInst.field("npcontroller").value;
+            if (localCtrl && !localCtrl.isNull()) {
+                var localIdn = localCtrl.field("identify").value;
+                if (localIdn && !localIdn.isNull()) {
+                    var localIdnPtr = localIdn.handle;
+                    localCamp = localIdnPtr.add(0x50).readInt();
+                    localSeries = localIdnPtr.add(0x54).readInt();
+                }
+                var localPos = localCtrl.add(0x10).readPointer();
+                if (!localPos.isNull()) {
+                    var localMapPos = localPos.add(0x28).readPointer();
+                    if (!localMapPos.isNull()) {
+                        localX = localMapPos.add(0x10).readInt();
+                        localY = localMapPos.add(0x14).readInt();
+                    }
+                }
+            }
+
+            var nearNpcsDict = pmInst.field("nearNpcs").value;
+            if (!nearNpcsDict || nearNpcsDict.isNull()) {
+                return { ok: true, enemies: [], localX: localX, localY: localY, localCamp: localCamp, localSeries: localSeries };
+            }
+
+            var count = nearNpcsDict.method("get_Count").invoke();
+            if (count === 0) {
+                return { ok: true, enemies: [], localX: localX, localY: localY, localCamp: localCamp, localSeries: localSeries };
+            }
+
+            var keysCollection = nearNpcsDict.method("get_Keys").invoke();
+            var enumerator = keysCollection.method("GetEnumerator").invoke();
+            while (enumerator.method("MoveNext").invoke()) {
+                var key = enumerator.method("get_Current").invoke();
+                var keyStr = key ? key.content : "";
+                if (!keyStr) continue;
+
+                var valueOut = Memory.alloc(Process.pointerSize);
+                var success = nearNpcsDict.method("TryGetValue").invoke(key, valueOut);
+                if (success) {
+                    var controllerPtr = valueOut.readPointer();
+                    if (!controllerPtr.isNull() && parseInt(controllerPtr.toString()) > 0x10000) {
+                        try {
+                            var idnPtr = controllerPtr.add(0x28).readPointer();
+                            if (!idnPtr.isNull() && parseInt(idnPtr.toString()) > 0x10000) {
+                                var campValue = idnPtr.add(0x50).readInt();
+                                // Check if it's an enemy (different camp)
+                                if (campValue !== localCamp) {
+                                    var hp = idnPtr.add(0x58).readInt();
+                                    if (hp > 0) {
+                                        var maxHp = idnPtr.add(0x5C).readInt();
+                                        var series = idnPtr.add(0x54).readInt();
+
+                                        var x = 0, y = 0;
+                                        var posPtr = controllerPtr.add(0x10).readPointer();
+                                        if (!posPtr.isNull() && parseInt(posPtr.toString()) > 0x10000) {
+                                            var mapPosPtr = posPtr.add(0x28).readPointer();
+                                            if (!mapPosPtr.isNull() && parseInt(mapPosPtr.toString()) > 0x10000) {
+                                                x = mapPosPtr.add(0x10).readInt();
+                                                y = mapPosPtr.add(0x14).readInt();
+                                            }
+                                        }
+
+                                        var name = "";
+                                        var nameValPtr = idnPtr.add(0x48).readPointer();
+                                        if (!nameValPtr.isNull() && parseInt(nameValPtr.toString()) > 0x10000) {
+                                            var len = nameValPtr.add(0x10).readInt();
+                                            if (len > 0 && len < 100) {
+                                                name = nameValPtr.add(0x14).readUtf16String(len);
+                                            }
+                                        }
+
+                                        enemies.push({
+                                            id: keyStr,
+                                            name: name,
+                                            hp: hp,
+                                            maxHp: maxHp,
+                                            series: series,
+                                            camp: campValue,
+                                            x: x,
+                                            y: y
+                                        });
+                                    }
+                                }
+                            }
+                        } catch (innerErr) {
+                            // Suppress per-entity errors to prevent breaking the loop
+                        }
+                    }
+                }
+            }
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
+        return { ok: true, enemies: enemies, localX: localX, localY: localY, localCamp: localCamp, localSeries: localSeries };
+    });
+};
+

@@ -51,7 +51,7 @@ class PacketInjector {
    */
   async sendRaw(opcode, hexBody) {
     if (!this.session) throw new Error('No Frida session');
-    return await this.session.callRpc('sendPacket', opcode, hexBody);
+    return await this.session.callRpc('sendTcpPacket', opcode, hexBody);
   }
 
   /**

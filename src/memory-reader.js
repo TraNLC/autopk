@@ -113,6 +113,21 @@ class MemoryReader {
       throw e;
     }
   }
+
+  /**
+   * Get nearby enemies from game memory.
+   */
+  async getNearEnemies() {
+    try {
+      const res = await this.session.callRpc('getNearEnemies');
+      if (res && res.ok) {
+        return res;
+      }
+    } catch (e) {
+      console.warn(`[MemoryReader] Error calling getNearEnemies: ${e.message}`);
+    }
+    return { ok: false, enemies: [] };
+  }
 }
 
 module.exports = { MemoryReader };

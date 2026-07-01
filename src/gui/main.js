@@ -9,6 +9,20 @@ function execAsync(cmd, options = {}) {
     });
   });
 }
+
+function writeVarint(val) {
+  const buf = [];
+  let v = typeof val === 'bigint' ? val : BigInt(val);
+  if (v < 0n) {
+    v = (1n << 64n) + v;
+  }
+  while (v >= 128n) {
+    buf.push(Number((v & 0x7fn) | 0x80n));
+    v >>= 7n;
+  }
+  buf.push(Number(v));
+  return Buffer.from(buf);
+}
 const { FridaSession } = require('../frida-session');
 const config = require('../../config');
 const { autoTongKimLoop, npcCacheMap } = require('../features/tongkim');
@@ -181,15 +195,29 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
     return { ok: false, error: 'Connection failed' };
   }
   
+  const state = { session, info: null, interval: null };
+  sessions.set(deviceId, state);
+
   sendLog(`[${deviceId}] Kết nối thành công! Bắt đầu tải script...`, 'success');
   
   try {
-    const scriptPath = path.join(__dirname, '../../frida-scripts/bot.bundle.js');
-    await session.loadScript(scriptPath);
-    sendLog(`[${deviceId}] Tải script thành công. Đang đọc dữ liệu nhân vật...`, 'success');
-    
     // TÍNH NĂNG "HỌC ID" NPC QUA GÓI TIN (CHỐNG VĂNG GAME)
     session.onMessage((payload, data) => {
+      if (payload) {
+        if (payload.log) {
+          sendLog(`[${deviceId}] 💡 [Frida Log] ${payload.log}`, 'info');
+          return;
+        }
+        if (payload.event) {
+          sendLog(`[${deviceId}] 📢 [Frida Event] ${payload.event}`, 'info');
+        }
+        if (payload.msg) {
+          sendLog(`[${deviceId}] ⚠️ [Frida Msg] ${payload.msg}`, 'warn');
+        }
+        if (payload.type === 'il2cpp_ready') {
+          sendLog(`[${deviceId}] 📡 [Frida] IL2CPP Base: ${payload.base || 'null'} (${payload.lib || ''})`, 'info');
+        }
+      }
       if (payload && payload.type === 'send_out') {
         // Debug
         if ([33, 231, 35, 204, 71, 48].includes(payload.opcode)) {
@@ -249,13 +277,14 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
       } // End of if (payload.type === 'send_out')
     });
 
+    const scriptPath = path.join(__dirname, '../../frida-scripts/bot.bundle.js');
+    await session.loadScript(scriptPath);
+    sendLog(`[${deviceId}] Tải script thành công. Đang đọc dữ liệu nhân vật...`, 'success');
+
   } catch(e) {
     sendLog(`[${deviceId}] Lỗi tải script: ${e.message}`, 'error');
     return { ok: false, error: 'Script load failed' };
   }
-
-  const state = { session, info: null, interval: null };
-  sessions.set(deviceId, state);
 
   // Start status polling
   state.interval = setInterval(async () => {
@@ -288,6 +317,88 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
   }, 2000);
 
   return { ok: true };
+});
+
+ipcMain.handle('test-cast-skill', async (event, deviceId) => {
+  const state = sessions.get(deviceId);
+  if (!state || !state.session) {
+    sendLog(`[${deviceId}] Lỗi: Máy chưa kết nối.`, 'error');
+    return { ok: false, error: 'Máy chưa kết nối Frida.' };
+  }
+
+  try {
+    const sect = (state.info && state.info.sect !== undefined) ? state.info.sect : -1;
+    const sectName = (state.info && state.info.sectName) ? state.info.sectName : 'Chưa rõ';
+    
+    // Map of sect to target buff skill ID (such as 109: Tuyết Ảnh for Thủy Yên)
+    const sectSkillMap = {
+        0: 102, // Thiếu Lâm
+        1: 111, // Thiên Vương
+        2: 129, // Đường Môn
+        3: 139, // Ngũ Độc
+        4: 159, // Nga Mi
+        5: 109, // Thúy Yên (Tuyết Ảnh)
+        6: 179, // Cái Bang
+        7: 189, // Thiên Nhẫn
+        8: 209, // Võ Đang
+        9: 219  // Côn Lôn
+    };
+    
+    const targetSkill = sectSkillMap[sect] || 1;
+    
+    const skillNameMap = {
+        109: 'Tuyết Ảnh (Thúy Yên)',
+        129: 'Đường Môn Độc Kinh',
+        139: 'Ngũ Độc Kỳ Kinh',
+        159: 'Phật Pháp Vô Biên',
+        102: 'Dịch Cân Kinh',
+        111: 'Thiên Vương Chiến Ý',
+        179: 'Cái Bang Tâm Pháp',
+        189: 'Thiên Nhẫn Tâm Pháp',
+        209: 'Thái Cực Thần Công',
+        219: 'Côn Lôn Tâm Pháp',
+        1: 'Đánh thường'
+    };
+    
+    const targetSkillName = skillNameMap[targetSkill] || `Kỹ năng phái (${targetSkill})`;
+
+    sendLog(`[${deviceId}] ⚡ Thực hiện cast nhanh kỹ năng: ${targetSkillName} (ID: ${targetSkill}) | Môn phái: ${sectName}`, 'info');
+    
+    // Cast skill directly through the memory hook
+    await state.session.callRpc('doSkillHooked', targetSkill);
+    
+    // Fallback: socket packet-level injection (extremely fast, works under all states)
+    try {
+      const p1 = Buffer.concat([
+        writeVarint((1 << 3) | 0), // tag 1 (int32)
+        writeVarint(targetSkill)
+      ]);
+      const p2 = Buffer.concat([
+        writeVarint((2 << 3) | 0), // tag 2 (int32)
+        writeVarint(state.info ? state.info.x || 0 : 0)
+      ]);
+      const p3 = Buffer.concat([
+        writeVarint((3 << 3) | 0), // tag 3 (int32)
+        writeVarint(state.info ? state.info.y || 0 : 0)
+      ]);
+      const bodyHex = Buffer.concat([p1, p2, p3]).toString('hex');
+      const res = await state.session.callRpc('sendTcpPacket', 240, bodyHex);
+      sendLog(`[${deviceId}] 📡 [Packet] Kết quả gửi: ${JSON.stringify(res)}`, res.ok ? 'success' : 'warn');
+    } catch(e) {
+      sendLog(`[${deviceId}] ⚠️ [Packet Fallback] ${e.message}`, 'warn');
+    }
+    
+    // Wait 500ms and check fire status
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const fireRes = await state.session.callRpc('skillLastFire');
+    sendLog(`[${deviceId}] 📡 Kết quả gọi DoSkill: ${fireRes ? fireRes.fire : 'Không có phản hồi'}`, 'info');
+    
+    sendLog(`[${deviceId}] ✅ Đã gửi lệnh DoSkill(${targetSkill}) trực tiếp qua bộ nhớ!`, 'success');
+    return { ok: true, skillId: targetSkill };
+  } catch (err) {
+    sendLog(`[${deviceId}] ❌ Lỗi test cast skill: ${err.message}`, 'error');
+    return { ok: false, error: err.message };
+  }
 });
 
 ipcMain.handle('scan-datau', async (event, deviceId, keyword, filters) => {

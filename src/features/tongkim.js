@@ -128,6 +128,37 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
           sendLog(`[${deviceId}] Gửi lệnh chọn Option ${optionIndex} cho NPC (${npcId}${npcName})...`, 'info');
           await session.callRpc('selectDialogOption', optionIndex);
           await new Promise(r => setTimeout(r, 400));
+
+          if (isTrinhSat) {
+             // Tự động tiêm gói tin buff trấn phái ngay lập tức khi vừa ra trận
+             const sect = info.sect !== undefined ? info.sect : -1;
+             const sectSkillMap = {
+                 0: 102, // Thiếu Lâm (Dịch Cân Kinh)
+                 1: 111, // Thiên Vương (Thiên Vương Chiến Ý)
+                 2: 129, // Đường Môn (Đường Môn Độc Kinh)
+                 3: 139, // Ngũ Độc (Ngũ Độc Kỳ Kinh)
+                 4: 159, // Nga Mi (Phật Pháp Vô Biên)
+                 5: 109, // Thúy Yên (Tuyết Ảnh)
+                 6: 179, // Cái Bang (Cái Bang Tâm Pháp)
+                 7: 189, // Thiên Nhẫn (Thiên Nhẫn Tâm Pháp)
+                 8: 209, // Võ Đang (Thái Cực Thần Công)
+                 9: 219  // Côn Lôn (Côn Lôn Tâm Pháp)
+             };
+             const buffSkillId = sectSkillMap[sect];
+             if (buffSkillId && buffSkillId > 1) {
+                 sendLog(`[${deviceId}] ⚡ Tiêm gói tin buff trấn phái (ID: ${buffSkillId}) tức thì không có animation delay!`, 'success');
+                 let freshX = info.x || 0;
+                 let freshY = info.y || 0;
+                 try {
+                     const freshInfo = await session.callRpc('getPlayerInfo');
+                     if (freshInfo && freshInfo.ok) {
+                         freshX = freshInfo.position ? freshInfo.position.x || freshX : freshX;
+                         freshY = freshInfo.position ? freshInfo.position.y || freshY : freshY;
+                     }
+                 } catch(e) {}
+                 await injector.sendDoSkillTargetPosition(buffSkillId, freshX, freshY);
+             }
+          }
           
           if (!isTrinhSat) {
              // Fallback: Gửi thêm eClientCompleted cho Quân Nhu vì một số NPC phe Kim yêu cầu gói này để nhận máu

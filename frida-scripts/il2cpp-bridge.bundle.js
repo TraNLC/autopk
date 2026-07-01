@@ -1,6 +1,3 @@
-📦
-138263 /frida-scripts/bridge-entry.js
-✄
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;

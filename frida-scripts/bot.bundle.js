@@ -4,15 +4,15 @@ rpc.exports = {};
 
 // ══ core/globals.js ══
 // === Console Shim ===
-(function () {
+(function() {
     var originalLog = console.log;
-    console.log = function () {
+    console.log = function() {
         var args = Array.prototype.slice.call(arguments);
-        var msg = args.map(function (arg) {
+        var msg = args.map(function(arg) {
             if (arg === null) return 'null';
             if (arg === undefined) return 'undefined';
             if (typeof arg === 'object') {
-                try { return JSON.stringify(arg); } catch (e) { return String(arg); }
+                try { return JSON.stringify(arg); } catch(e) { return String(arg); }
             }
             return String(arg);
         }).join(' ');
@@ -22,9 +22,9 @@ rpc.exports = {};
 })();
 
 // === File Shims ===
-(function () {
+(function() {
     var OriginalFile = (typeof File !== 'undefined') ? File : null;
-    globalThis.File = function (path, mode) {
+    globalThis.File = function(path, mode) {
         if (OriginalFile) {
             return new OriginalFile(path, mode);
         }
@@ -33,7 +33,7 @@ rpc.exports = {};
     if (OriginalFile) {
         globalThis.File.prototype = OriginalFile.prototype;
     }
-    globalThis.File.readAllText = function (path) {
+    globalThis.File.readAllText = function(path) {
         var libc = Process.findModuleByName('libc.so');
         if (!libc) return '';
         var fn_fopen = libc.findExportByName('fopen');
@@ -45,10 +45,10 @@ rpc.exports = {};
         var fopen = new NativeFunction(fn_fopen, 'pointer', ['pointer', 'pointer']);
         var fgets = new NativeFunction(fn_fgets, 'pointer', ['pointer', 'int', 'pointer']);
         var fclose = new NativeFunction(fn_fclose, 'int', ['pointer']);
-
+        
         var fp = fopen(Memory.allocUtf8String(path), Memory.allocUtf8String('r'));
         if (fp.isNull()) return '';
-
+        
         var lineBuf = Memory.alloc(1024);
         var content = '';
         while (true) {
@@ -67,10 +67,8 @@ var gameFdAutoLocked = false;
 var _captureAllSends = false;
 var recvBuffer = [];
 var sendBuffer = [];
-var SERVER_PUSH_OPS = {
-    7: 1, 8: 1, 9: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1, 23: 1, 54: 1, 63: 1, 66: 1,
-    72: 1, 118: 1, 124: 1, 125: 1, 126: 1, 166: 1, 205: 1, 245: 1
-};
+var SERVER_PUSH_OPS = {7:1,8:1,9:1,16:1,17:1,18:1,19:1,20:1,23:1,54:1,63:1,66:1,
+                       72:1,118:1,124:1,125:1,126:1,166:1,205:1,245:1};
 
 // === Il2Cpp State ===
 var _playerMainInstance = null;
@@ -213,7 +211,7 @@ function emitFromBuf(base, n) {
         _sendTotal++;
         if (sendBuffer.length > 100) sendBuffer.shift();
         send({ type: 'send_out', opcode: hdr.opcode, name: name, size: n, hex: hex });
-    } catch (e) { }
+    } catch (e) {}
 }
 
 /**
@@ -249,11 +247,11 @@ function il2cppExport(name) {
     try {
         var sym = DebugSymbol.fromName(name);
         if (sym && sym.address && !sym.address.isNull()) return sym.address;
-    } catch (e) { }
+    } catch(e) {}
     try {
         var sym2 = DebugSymbol.fromName('libil2cpp.so!' + name);
         if (sym2 && sym2.address && !sym2.address.isNull()) return sym2.address;
-    } catch (e2) { }
+    } catch(e2) {}
 
     return null;
 }
@@ -281,7 +279,7 @@ function findLoginInstance(className) {
         var Res = Il2Cpp.domain.assembly('UnityEngine.CoreModule').image.class('UnityEngine.Resources');
         var arr = Res.method('FindObjectsOfTypeAll', 1).invoke(k.type.object);
         if (arr && arr.length) return arr.get(0);
-    } catch (e) { }
+    } catch (e) {}
     return null;
 }
 
@@ -290,30 +288,30 @@ function findLoginInstance(className) {
 
 var GS_OPCODES = {
     0: 'eUnidentified',
-    1: 'ePlayerLoginRequest', 2: 'ePlayerLoginResponse',
-    3: 'eEnterWorldSuccess', 4: 'eCharacterDetailResponse',
-    5: 'eSkillResponse', 6: 'eItemResponse',
-    7: 'eEnterMap', 8: 'eEnterGameServer',
-    9: 'eStringData', 10: 'eDelivered',
-    13: 'eJumToMap', 20: 'eSyncPlayerMove',
-    23: 'eSyncDamage', 33: 'eNpcDialogue',
-    34: 'eNpcQuest', 35: 'eNpcSelect',
-    40: 'eCastSkill', 48: 'ePlayerTalk',
-    49: 'ePlayerUserItem', 54: 'eAddMapObject',
-    56: 'eObjectPickup', 58: 'eSetRiding',
-    69: 'ePing', 70: 'ePong',
+    1: 'ePlayerLoginRequest',    2: 'ePlayerLoginResponse',
+    3: 'eEnterWorldSuccess',     4: 'eCharacterDetailResponse',
+    5: 'eSkillResponse',         6: 'eItemResponse',
+    7: 'eEnterMap',              8: 'eEnterGameServer',
+    9: 'eStringData',            10: 'eDelivered',
+    13: 'eJumToMap',             20: 'eSyncPlayerMove',
+    23: 'eSyncDamage',           33: 'eNpcDialogue',
+    34: 'eNpcQuest',             35: 'eNpcSelect',
+    40: 'eCastSkill',            48: 'ePlayerTalk',
+    49: 'ePlayerUserItem',       54: 'eAddMapObject',
+    56: 'eObjectPickup',         58: 'eSetRiding',
+    69: 'ePing',                 70: 'ePong',
     71: 'eMapDialogNpcListRequest',
     72: 'eMapDialogNpcListResponse',
     117: 'eSwitchWalking',
-    119: 'eShopTypeOne', 120: 'eShopTypeTwo',
+    119: 'eShopTypeOne',         120: 'eShopTypeTwo',
     122: 'eTownportal',
-    132: 'eChatSend', 133: 'eChatMessage',
+    132: 'eChatSend',            133: 'eChatMessage',
     140: 'eApplyAutoplayProfile',
     166: 'eSyncPlayerInfo',
-    172: 'eEnterTongMap', 188: 'eSelfRevertMap',
+    172: 'eEnterTongMap',        188: 'eSelfRevertMap',
     205: 'eAddPlayer',
     212: 'eShopResponse',
-    229: 'eTongWarEnter', 231: 'eGotoNpc',
+    229: 'eTongWarEnter',        231: 'eGotoNpc',
     232: 'eNpcHeal',
     238: 'eDoSkillTargetPlayer', 239: 'eDoSkillTargetNpc',
     240: 'eDoSkillTargetPosition',
@@ -357,19 +355,19 @@ function readPlayerMainDirect() {
             if (mapId > 0 && mapId < 10000000) {
                 return { ok: true, playerMain: _playerMainInstance.toString(), source: 'cached' };
             }
-        } catch (e) {
+        } catch(e) {
             _playerMainInstance = null;
         }
     }
-
+    
     var now = Date.now();
     _lastPlayerMainScanTime = now;
-
+    
     // Resolve dynamically!
     try {
         var pattern = '50 6c 61 79 65 72 4d 61 69 6e'; // "PlayerMain"
         var nameStrAddr = null;
-
+        
         var maps = File.readAllText('/proc/self/maps').split('\n');
         var metaRange = null;
         for (var i = 0; i < maps.length; i++) {
@@ -383,19 +381,19 @@ function readPlayerMainDirect() {
                 break;
             }
         }
-
+        
         if (!metaRange) return { ok: false, error: 'global-metadata.dat not found' };
-
+        
         var results = Memory.scanSync(metaRange.base, metaRange.size, pattern);
         if (results.length === 0) return { ok: false, error: '"PlayerMain" string not found' };
         nameStrAddr = results[0].address;
-
+        
         var hex = nameStrAddr.toString(16);
         while (hex.length < 16) hex = '0' + hex;
         var parts = [];
         for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
         var ptrPattern = parts.join(' ');
-
+        
         var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
         var classPtr = null;
         for (var k = 0; k < allRanges.length; k++) {
@@ -413,21 +411,21 @@ function readPlayerMainDirect() {
                         }
                     }
                 }
-            } catch (e) { }
+            } catch(e) {}
             if (classPtr) break;
         }
-
+        
         if (!classPtr) return { ok: false, error: 'PlayerMain class pointer not found' };
-
+        
         var staticFields = classPtr.add(0xB8).readPointer();
         if (staticFields.isNull()) return { ok: false, error: 'static_fields is null' };
-
+        
         var instance = staticFields.readPointer();
         if (instance.isNull()) return { ok: false, error: 'PlayerMain.instance is null' };
-
+        
         _playerMainInstance = instance;
         return { ok: true, playerMain: _playerMainInstance.toString(), source: 'dynamic_scan' };
-    } catch (e) {
+    } catch(e) {
         return { ok: false, error: 'dynamic scan error: ' + e.message };
     }
 }
@@ -440,7 +438,7 @@ function readPlayerMainDirect() {
             // Hook Controller.Update at 0xFB6994 for reliable tick
             globalThis._tickCount = 0;
             Interceptor.attach(il2cppBase.add(0xFB6994), {
-                onEnter: function (args) {
+                onEnter: function(args) {
                     globalThis._tickCount++;
                     if (globalThis._tickCount % 600 === 0) {
                         // send({ type: 'log', message: '[Controller.Update] Firing, tick: ' + globalThis._tickCount });
@@ -460,19 +458,19 @@ function readPlayerMainDirect() {
 
             // Hook World.Update at 0xF2B3B8
             Interceptor.attach(il2cppBase.add(0xF2B3B8), {
-                onEnter: function (args) {
+                onEnter: function(args) {
                     try {
                         var worldPtr = args[0];
                         if (worldPtr.isNull()) return;
 
                         if (globalThis._mainThreadActions && globalThis._mainThreadActions.length > 0) {
                             var action = globalThis._mainThreadActions.shift();
-                            try { action(); } catch (e) { console.log("MainThread Action Error: " + e.message); }
+                            try { action(); } catch(e) { console.log("MainThread Action Error: " + e.message); }
                         }
 
-                        // World + 0x40 points to playerMain (PlayerMain)
+                    // World + 0x40 points to playerMain (PlayerMain)
                         var playerMainPtr = worldPtr.add(0x40).readPointer();
-
+                        
                         // World + 0x50 points to mainPlayer (NpcRes.Special)
                         var mainPlayerPtr = worldPtr.add(0x50).readPointer();
 
@@ -482,25 +480,25 @@ function readPlayerMainDirect() {
                                 send({ type: 'il2cpp_event', event: 'PlayerMain captured via World.Update', ptr: _playerMainInstance.toString() });
                             }
                         }
-                    } catch (e) {
+                    } catch(e) {
                         // Ignore read errors
                     }
                 }
             });
-
+            
             // We will do another script to find the correct offset for Controller.Update or similar.
             send({ type: 'il2cpp_event', event: 'Hooks attached successfully!' });
-
+            
             // Poll nearNpcs safely
-            setInterval(function () {
+            setInterval(function() {
                 try {
                     if (!_playerMainInstance || _playerMainInstance.isNull()) return;
-
+                    
                     var nearNpcsPtr = _playerMainInstance.add(0x60).readPointer(); // Just guessing offset for nearNpcs, usually around 0x50-0x80
                     // Let's actually find the real offset from test_dict5.js output:
                     // We need to parse nearNpcs dictionary.
                     // Wait, earlier we ran test_dict5 and we will read the log.
-                } catch (e) { }
+                } catch(e) {}
             }, 2000);
 
         } catch (e) {
@@ -542,7 +540,7 @@ function readPlayerMainDirect() {
                     }
                 }
             }
-        } catch (e) { }
+        } catch(e) {}
     }
 })();
 
@@ -554,46 +552,46 @@ function readPlayerMainDirect() {
     // Only apply if Java is available (some games are pure native/Il2Cpp)
     try {
         if (typeof Java === 'undefined') return;
-
-        Java.perform(function () {
+        
+        Java.perform(function() {
             send({ type: 'log', msg: '[anti-detect] Installing anti-detection hooks...' });
 
             // 1. Debug detection bypass
             try {
                 var Debug = Java.use('android.os.Debug');
-                Debug.isDebuggerConnected.implementation = function () {
+                Debug.isDebuggerConnected.implementation = function() {
                     return false;
                 };
                 send({ type: 'log', msg: '[anti-detect] Debug.isDebuggerConnected hooked' });
-            } catch (e) { }
+            } catch(e) {}
 
             // 2. Prevent process killing (anti-tamper)
             try {
                 var Process = Java.use('android.os.Process');
-                Process.killProcess.implementation = function (pid) {
+                Process.killProcess.implementation = function(pid) {
                     send({ type: 'log', msg: '[anti-detect] Blocked Process.killProcess(' + pid + ')' });
                     // Don't actually kill
                 };
                 send({ type: 'log', msg: '[anti-detect] Process.killProcess hooked' });
-            } catch (e) { }
+            } catch(e) {}
 
             // 3. System.exit() bypass
             try {
                 var System = Java.use('java.lang.System');
-                System.exit.implementation = function (code) {
+                System.exit.implementation = function(code) {
                     send({ type: 'log', msg: '[anti-detect] Blocked System.exit(' + code + ')' });
                     // Don't exit
                 };
                 send({ type: 'log', msg: '[anti-detect] System.exit hooked' });
-            } catch (e) { }
+            } catch(e) {}
 
             // 4. Runtime.exec() - block shell commands that detect root/frida
             try {
                 var Runtime = Java.use('java.lang.Runtime');
-                Runtime.exec.overload('[Ljava.lang.String;').implementation = function (cmd) {
+                Runtime.exec.overload('[Ljava.lang.String;').implementation = function(cmd) {
                     var cmdStr = cmd.length > 0 ? cmd[0] : '';
                     // Block known detection commands
-                    if (cmdStr.indexOf('frida') !== -1 ||
+                    if (cmdStr.indexOf('frida') !== -1 || 
                         cmdStr.indexOf('su') !== -1 ||
                         cmdStr.indexOf('magisk') !== -1 ||
                         cmdStr.indexOf('which') !== -1) {
@@ -603,14 +601,14 @@ function readPlayerMainDirect() {
                     return this.exec(cmd);
                 };
                 send({ type: 'log', msg: '[anti-detect] Runtime.exec hooked' });
-            } catch (e) { }
+            } catch(e) {}
 
             // 5. File existence check bypass (hides frida-server)
             try {
                 var File = Java.use('java.io.File');
-                File.exists.implementation = function () {
+                File.exists.implementation = function() {
                     var path = this.getAbsolutePath();
-                    if (path.indexOf('frida') !== -1 ||
+                    if (path.indexOf('frida') !== -1 || 
                         path.indexOf('su') !== -1 ||
                         path.indexOf('magisk') !== -1) {
                         send({ type: 'log', msg: '[anti-detect] Hiding file: ' + path });
@@ -619,11 +617,11 @@ function readPlayerMainDirect() {
                     return this.exists();
                 };
                 send({ type: 'log', msg: '[anti-detect] File.exists hooked' });
-            } catch (e) { }
+            } catch(e) {}
 
             send({ type: 'log', msg: '[anti-detect] Anti-detection hooks installed' });
         });
-    } catch (e) {
+    } catch(e) {
         send({ type: 'log', msg: '[anti-detect] Java not available (pure native game), skipping' });
     }
 
@@ -631,7 +629,7 @@ function readPlayerMainDirect() {
     try {
         var appFilesDir = "/data/data/vn.perfingame.jx1mobile/files";
         var fakeStatusPath = appFilesDir + "/status";
-
+        
         // 1. Create a fake status file with TracerPid = 0
         try {
             var f = new File(fakeStatusPath, "w");
@@ -652,7 +650,7 @@ function readPlayerMainDirect() {
         var fopenPtr = libc ? libc.findExportByName("fopen") : null;
         if (fopenPtr) {
             Interceptor.attach(fopenPtr, {
-                onEnter: function (args) {
+                onEnter: function(args) {
                     var path = Memory.readUtf8String(args[0]);
                     if (path && (path === "/proc/self/status" || path.indexOf("/status") !== -1 && path.indexOf("/proc/") !== -1)) {
                         args[0] = fakePathPtr; // Redirect to fake status file
@@ -666,7 +664,7 @@ function readPlayerMainDirect() {
         var openPtr = libc ? libc.findExportByName("open") : null;
         if (openPtr) {
             Interceptor.attach(openPtr, {
-                onEnter: function (args) {
+                onEnter: function(args) {
                     var path = Memory.readUtf8String(args[0]);
                     if (path && (path === "/proc/self/status" || path.indexOf("/status") !== -1 && path.indexOf("/proc/") !== -1)) {
                         args[0] = fakePathPtr; // Redirect to fake status file
@@ -692,7 +690,7 @@ function readPlayerMainDirect() {
         if (!connectAddr) return;
 
         Interceptor.attach(connectAddr, {
-            onEnter: function (args) {
+            onEnter: function(args) {
                 this.fd = args[0].toInt32();
                 var sockaddr = args[1];
                 try {
@@ -700,17 +698,17 @@ function readPlayerMainDirect() {
                     if (family === 2) { // AF_INET
                         var port = (sockaddr.add(2).readU8() << 8) | sockaddr.add(3).readU8();
                         var ip = sockaddr.add(4).readU8() + '.' + sockaddr.add(5).readU8() +
-                            '.' + sockaddr.add(6).readU8() + '.' + sockaddr.add(7).readU8();
+                                 '.' + sockaddr.add(6).readU8() + '.' + sockaddr.add(7).readU8();
                         // Filter out ADB/Frida ports
                         if (port > 1000 && port !== 5555 && port !== 5037 && port !== 27042) {
                             gameFd = this.fd;
                             send({ type: 'game_fd', fd: gameFd, ip: ip, port: port });
                         }
                     }
-                } catch (e) { }
+                } catch(e) {}
             }
         });
-    } catch (e) {
+    } catch(e) {
         send({ type: 'hook_error', hook: 'connect', error: e.toString() });
     }
 })();
@@ -731,7 +729,7 @@ function readPlayerMainDirect() {
          * Shared onEnter: capture fd and buffer pointer.
          */
         function onRecvEnter(args) {
-            this.fd = args[0].toInt32();
+            this.fd  = args[0].toInt32();
             this.buf = args[1];
         }
 
@@ -766,11 +764,11 @@ function readPlayerMainDirect() {
                 globalThis._fdsGameOps[this.fd] = (globalThis._fdsGameOps[this.fd] || 0) + 1;
             }
 
-            // Only process game socket OR auto-detect mode
-            var isGameFd = (this.fd === globalThis.gameFd);
-            var autoDetect = (globalThis.gameFd === -1);
+// Only process game socket OR auto-detect mode
+        var isGameFd = (this.fd === globalThis.gameFd);
+        var autoDetect = (globalThis.gameFd === -1);
 
-            if (!isGameFd && !autoDetect) return;
+        if (!isGameFd && !autoDetect) return;
 
             var data;
             try { data = new Uint8Array(this.buf.readByteArray(n)); } catch (e) { return; }
@@ -778,7 +776,7 @@ function readPlayerMainDirect() {
             try {
                 if (globalThis.makePacketRecord) {
                     var pkt = globalThis.makePacketRecord(data, n);
-
+                    
                     if (opcode > 0 && opcode <= 30000) {
                         if (!globalThis.recvBuffer) globalThis.recvBuffer = [];
                         globalThis.recvBuffer.push(pkt);
@@ -791,13 +789,13 @@ function readPlayerMainDirect() {
                         globalThis.gameFd = this.fd;
                         send({ type: 'game_fd', fd: globalThis.gameFd, detectedBy: 'recv opcode ' + opcode + ' (' + globalThis.GS_OPCODES[opcode] + ')' });
                     }
-
+                    
                     // Shop data detection
                     if (opcode === 119 || opcode === 120 || opcode === 212) {
                         send({ type: 'shop_data', opcode: opcode, name: pkt.name, hex: pkt.hex });
                     }
                 }
-            } catch (e) { }
+            } catch (e) {}
 
             // Track entity position from opcode 9 (throttled ~0.8s)
             if (opcode === 9 && n > 10 && (Date.now() - (_lastPosition.ts || 0) > 800)) {
@@ -817,19 +815,19 @@ function readPlayerMainDirect() {
                             }
                         }
                     }
-                } catch (ee) { }
+                } catch(ee) {}
             }
         }
 
         // Attach to all recv variants
-        if (recvAddr) Interceptor.attach(recvAddr, { onEnter: onRecvEnter, onLeave: onRecvLeave });
-        if (readAddr) Interceptor.attach(readAddr, { onEnter: onRecvEnter, onLeave: onRecvLeave });
+        if (recvAddr)     Interceptor.attach(recvAddr,     { onEnter: onRecvEnter, onLeave: onRecvLeave });
+        if (readAddr)     Interceptor.attach(readAddr,     { onEnter: onRecvEnter, onLeave: onRecvLeave });
         if (recvfromAddr) Interceptor.attach(recvfromAddr, { onEnter: onRecvEnter, onLeave: onRecvLeave });
         // Houdini x86: ARM code calls through native (x86) read()
         if (nativeReadPtr) {
             Interceptor.attach(nativeReadPtr, { onEnter: onRecvEnter, onLeave: onRecvLeave });
         }
-    } catch (e) {
+    } catch(e) {
         send({ type: 'hook_error', hook: 'recv', error: e.toString() });
     }
 })();
@@ -842,7 +840,7 @@ function readPlayerMainDirect() {
  * Captures outgoing packet, pushes to sendBuffer, notifies host.
  */
 function makeSendLeaveHandler() {
-    return function (retval) {
+    return function(retval) {
         var n = retval.toInt32();
         if (n <= 0) return;
 
@@ -878,7 +876,7 @@ function makeSendLeaveHandler() {
                     send({ type: 'game_fd', fd: globalThis.gameFd, detectedBy: 'send opcode ' + hdr.opcode + ' (' + globalThis.GS_OPCODES[hdr.opcode] + ')' });
                 }
             }
-        } catch (e) { }
+        } catch(e) {}
     };
 }
 
@@ -928,14 +926,14 @@ function onSendEnter(args) {
         // writev: scatter-gather I/O
         if (writevAddr) {
             Interceptor.attach(writevAddr, {
-                onEnter: function (args) {
+                onEnter: function(args) {
                     this.fd = args[0].toInt32();
                     this.iov = args[1];
                 },
-                onLeave: function (retval) {
+                onLeave: function(retval) {
                     var n = retval.toInt32();
                     if (n <= 0 || this.fd !== globalThis.gameFd) return;
-                    try { if (globalThis.emitFromBuf) globalThis.emitFromBuf(this.iov.readPointer(), n); } catch (e) { }
+                    try { if (globalThis.emitFromBuf) globalThis.emitFromBuf(this.iov.readPointer(), n); } catch (e) {}
                 }
             });
         }
@@ -943,21 +941,21 @@ function onSendEnter(args) {
         // sendmsg
         if (sendmsgAddr) {
             Interceptor.attach(sendmsgAddr, {
-                onEnter: function (args) {
+                onEnter: function(args) {
                     this.fd = args[0].toInt32();
                     this.msg = args[1];
                 },
-                onLeave: function (retval) {
+                onLeave: function(retval) {
                     var n = retval.toInt32();
                     if (n <= 0 || this.fd !== globalThis.gameFd) return;
                     try {
                         var iov = this.msg.add(0x10).readPointer(); // msghdr.msg_iov
                         if (globalThis.emitFromBuf) globalThis.emitFromBuf(iov.readPointer(), n);
-                    } catch (e) { }
+                    } catch (e) {}
                 }
             });
         }
-    } catch (e) {
+    } catch(e) {
         send({ type: 'hook_error', hook: 'send', error: e.toString() });
     }
 })();
@@ -969,7 +967,7 @@ function onSendEnter(args) {
  * Send a raw packet through the game socket.
  * Uses native write() (Houdini-safe) if available, otherwise SSL_write.
  */
-rpc.exports.sendPacket = function (opcode, hexBody) {
+rpc.exports.sendPacket = function(opcode, hexBody) {
     // Build packet: [uint32 LE proto_len] [uint16 LE opcode] [hex body]
     var body = hexBody ? hexToBytes(hexBody) : [];
     var protoLen = body.length;
@@ -1012,10 +1010,10 @@ rpc.exports.sendPacket = function (opcode, hexBody) {
 /**
  * Send a raw packet specifically to the game's TCP socket (used for shop/rpc).
  */
-rpc.exports.sendTcpPacket = function (opcode, hexBody) {
+rpc.exports.sendTcpPacket = function(opcode, hexBody) {
     var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
     if (tcpFd === -1) {
-        for (var i = 0; i < 1024; i++) {
+        for(var i=0; i<1024; i++) {
             try {
                 var type = Socket.type(i);
                 if (type === 'tcp' || type === 'tcp6') {
@@ -1025,19 +1023,19 @@ rpc.exports.sendTcpPacket = function (opcode, hexBody) {
                         break;
                     }
                 }
-            } catch (e) { }
+            } catch(e){}
         }
     }
-
+    
     if (tcpFd === -1) return { ok: false, error: 'no tcp socket found' };
-
+    
     var body = hexBody ? hexToBytes(hexBody) : [];
     var protoLen = body.length;
     var buf = Memory.alloc(6 + protoLen);
     buf.writeU32(protoLen);
     buf.add(4).writeU16(opcode);
     if (protoLen > 0) buf.add(6).writeByteArray(body);
-
+    
     if (nativeWrite) {
         try {
             var ret = nativeWrite(tcpFd, buf, 6 + protoLen);
@@ -1053,7 +1051,7 @@ rpc.exports.sendTcpPacket = function (opcode, hexBody) {
  * Get buffered received packets (oldest first) matching optional opcode filter.
  * Automatically clears returned packets.
  */
-rpc.exports.getRecvPackets = function (opcodeFilter, maxCount) {
+rpc.exports.getRecvPackets = function(opcodeFilter, maxCount) {
     var max = maxCount || 50;
     var result = [];
     var remaining = [];
@@ -1076,7 +1074,7 @@ rpc.exports.getRecvPackets = function (opcodeFilter, maxCount) {
 /**
  * Get buffered sent packets.
  */
-rpc.exports.getSentPackets = function (maxCount) {
+rpc.exports.getSentPackets = function(maxCount) {
     var max = maxCount || 20;
     var result = sendBuffer.slice(-max);
     return { ok: true, count: result.length, packets: result };
@@ -1085,7 +1083,7 @@ rpc.exports.getSentPackets = function (maxCount) {
 /**
  * Get diagnostic info: socket state, counters, SSL status.
  */
-rpc.exports.getDiag = function () {
+rpc.exports.getDiag = function() {
     return {
         gameFd: gameFd,
         gameFdAutoLocked: gameFdAutoLocked,
@@ -1107,7 +1105,7 @@ rpc.exports.getDiag = function () {
 /**
  * Lock gameFd (prevent auto-lock from overriding manual lock).
  */
-rpc.exports.lockFd = function (fd) {
+rpc.exports.lockFd = function(fd) {
     gameFd = fd | 0;
     gameFdAutoLocked = true;
     send({ type: 'fd_locked', fd: gameFd });
@@ -1117,7 +1115,7 @@ rpc.exports.lockFd = function (fd) {
 /**
  * Toggle captureAllSends (diagnostic mode — captures all outgoing packets on all fds).
  */
-rpc.exports.setCaptureAllSends = function (enable) {
+rpc.exports.setCaptureAllSends = function(enable) {
     _captureAllSends = !!enable;
     return { ok: true, captureAllSends: _captureAllSends };
 };
@@ -1137,17 +1135,17 @@ function hexToBytes(hex) {
 
 function findElfExport(base, targetName) {
     if (!base || base.isNull()) return ptr(0);
-
+    
     // Try built-in resolver globally first
     try {
         var exp = Module.findExportByName(null, targetName);
         if (exp && !exp.isNull()) {
             return exp;
         }
-    } catch (e) {
+    } catch(e) {
         // Module.findExportByName might be unsupported in this older frida/duktape
     }
-
+    
     // Fallback to manual parsing if completely stripped
     var mod = null;
     var lines = File.readAllText('/proc/self/maps').split('\n');
@@ -1161,17 +1159,17 @@ function findElfExport(base, targetName) {
             }
         }
     }
-
+    
     var magic = base.readByteArray(4);
     var u8 = new Uint8Array(magic);
     if (u8[0] !== 0x7f || u8[1] !== 0x45 || u8[2] !== 0x4c || u8[3] !== 0x46) {
         return ptr(0);
     }
-
+    
     // Read class: 1 = 32-bit, 2 = 64-bit
     var elfClass = base.add(4).readU8();
     var is64 = (elfClass === 2);
-
+    
     var e_phoff, e_phentsize, e_phnum;
     if (is64) {
         e_phoff = base.add(32).readU64().toNumber();
@@ -1182,10 +1180,10 @@ function findElfExport(base, targetName) {
         e_phentsize = base.add(42).readU16();
         e_phnum = base.add(44).readU16();
     }
-
+    
     var dynAddr = null;
     var dynSize = 0;
-
+    
     for (var i = 0; i < e_phnum; i++) {
         var phdrAddr = base.add(e_phoff + i * e_phentsize);
         var p_type = phdrAddr.readU32();
@@ -1203,12 +1201,12 @@ function findElfExport(base, targetName) {
             break;
         }
     }
-
+    
     if (!dynAddr) return ptr(0);
-
+    
     var symtab = null;
     var strtab = null;
-
+    
     var offset = 0;
     var dynEntrySize = is64 ? 16 : 8;
     while (offset < dynSize) {
@@ -1221,16 +1219,16 @@ function findElfExport(base, targetName) {
             d_tag = entryAddr.readS32();
             d_val = entryAddr.add(4).readPointer();
         }
-
+        
         if (d_tag === 0) break; // DT_NULL
         if (d_tag === 6) symtab = d_val; // DT_SYMTAB
         if (d_tag === 5) strtab = d_val; // DT_STRTAB
-
+        
         offset += dynEntrySize;
     }
-
+    
     if (!symtab || !strtab) return ptr(0);
-
+    
     if (parseInt(symtab.toString()) < parseInt(base.toString())) {
         symtab = base.add(symtab);
     }
@@ -1250,21 +1248,21 @@ function findElfExport(base, targetName) {
             } else {
                 st_value = symAddr.add(4).readU32();
             }
-
+            
             if (st_name === 0 && st_value.toString() === '0' && idx > 0) {
                 break;
             }
-        } catch (e) {
+        } catch(e) {
             break; // End of symtab or unreadable memory
         }
-
+        
         try {
             var nameAddr = strtab.add(st_name);
             var name = nameAddr.readUtf8String();
             if (name === targetName) {
                 return base.add(ptr(st_value.toString()));
             }
-        } catch (e) {
+        } catch(e) {
             break;
         }
         idx++;
@@ -1275,102 +1273,55 @@ function findElfExport(base, targetName) {
 // ══ rpc/core/PlayerManager.js ══
 // frida-scripts/rpc/core/PlayerManager.js -- Player info RPC exports (sect, skills, position)
 
-rpc.exports.getMySect = function () {
-    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
+function callNativeIl2Cpp(exportName, retType, argTypes, args) {
+    if (typeof il2cppBase === 'undefined' || !il2cppBase) return null;
+    var exp = findElfExport(il2cppBase, exportName);
+    if (!exp || exp.isNull()) return null;
+    var fn = new NativeFunction(exp, retType, argTypes);
+    return fn.apply(null, args);
+}
+
+rpc.exports.getMySect = function() {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
     var res = { ok: true };
-    return Il2Cpp.perform(function () {
-        try {
-            var img = Il2Cpp.domain.assembly("Assembly-CSharp").image;
-            var pmClass = img.class("PlayerMain");
-            var inst = pmClass.field("instance").value;
-            if (!inst || inst.isNull()) return { ok: false, error: 'no PlayerMain.instance' };
-
-            var npc = null;
-            try { npc = inst.field("npcontroller").value; } catch (e) {
-                try { npc = inst.field("m_npcontroller").value; } catch (e2) { }
+    try {
+        var npcontroller = _playerMainInstance.add(0x20).readPointer();
+        if (!npcontroller.isNull()) {
+            var idnPtr = npcontroller.add(0x28).readPointer();
+            if (!idnPtr.isNull()) {
+                res.series = idnPtr.add(0x54).readInt();
             }
-            if (!npc || npc.isNull()) return { ok: false, error: 'no controller' };
-
-            var data = null;
-            try { data = npc.field("data").value; } catch (e) {
-                try { data = npc.field("m_data").value; } catch (e2) { }
-            }
-            if (!data || data.isNull()) return { ok: false, error: 'no data' };
-
-            // Read basic fields
-            try { res.series = data.field('series').value; } catch (e) { res.series = null; }
-            try {
-                var nv = data.field('name').value;
-                if (nv) {
-                    if (typeof nv.content !== 'undefined' && nv.content !== null) {
-                        res.name = nv.content;
-                    } else {
-                        var ptr = nv.handle ? nv.handle : new NativePointer(nv);
-                        if (!ptr.isNull()) {
-                            var len = ptr.add(0x10).readS32();
-                            if (len > 0 && len < 100) res.name = ptr.add(0x14).readUtf16String(len);
-                        }
+            var dataPtr = npcontroller.add(0x30).readPointer();
+            if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
+                var namePtr = dataPtr.add(0x40).readPointer();
+                if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
+                    var strLen = namePtr.add(0x10).readU32();
+                    if (strLen > 0 && strLen < 100) {
+                        res.name = namePtr.add(0x14).readUtf16String(strLen);
                     }
                 }
-            } catch (e) { }
-            try { res.level = data.field('level').value; } catch (e) { }
-
-            // Read faction via Controller
-            var ctrl = new Il2Cpp.Object(npc.handle);
-            try { res.faction = ctrl.method('GetFaction').invoke(); }
-            catch (e1) {
-                try {
-                    var CtrlCls = img.class('game.resource.settings.npcres.Controller');
-                    res.faction = CtrlCls.method('GetFaction').bind(ctrl).invoke();
-                } catch (e2) { res.factionErr = '' + e2; }
             }
-
-            // Read identify fields
-            try {
-                var idn = ctrl.field('identify').value;
-                if (idn && !idn.isNull()) {
-                    try { res.campValue = idn.field('campValue').value; } catch (e) { }
-                    try { res.seriesValue = idn.field('seriesValue').value; } catch (e) { }
-                    try { res.hp = idn.field('healthCurrent').value; } catch (e) { }
-                    try { res.hpMax = idn.field('healthMax').value; } catch (e) { }
-
-                    var mc = ['manaCurrent', 'mpCurrent', 'powerCurrent', 'internalCurrent'];
-                    var mm = ['manaMax', 'mpMax', 'powerMax', 'internalMax'];
-                    for (var mi = 0; mi < mc.length; mi++) {
-                        try { var mv = idn.field(mc[mi]).value; if (mv !== null && mv !== undefined) { res.mp = mv; res.mpField = mc[mi]; break; } } catch (e) { }
-                    }
-                    for (var mj = 0; mj < mm.length; mj++) {
-                        try { var mx = idn.field(mm[mj]).value; if (mx !== null && mx !== undefined) { res.mpMax = mx; break; } } catch (e) { }
-                    }
-                }
-            } catch (e) { res.idErr = '' + e; }
-
-            // Safe static mapping of Sect names and camps to prevent Access Violations
-            var SECT_NAMES = {
-                0: "Thieu Lam",
-                1: "Thien Vuong",
-                2: "Duong Mon",
-                3: "Ngu Doc",
-                4: "Nga My",
-                5: "Thuy Yen",
-                6: "Cai Bang",
-                7: "Thien Nhan",
-                8: "Vo Dang",
-                9: "Con Lon",
-                10: "Minh Giao",
-                11: "Doan Thi"
-            };
-            res.sect = (res.faction !== undefined && res.faction !== null) ? res.faction : -1;
-            res.sectName = SECT_NAMES[res.sect] || "None";
-        } catch (e) { return { ok: false, error: '' + e }; }
-        return res;
-    });
+            var character = npcontroller.add(0xa0).readPointer();
+            if (!character.isNull() && parseInt(character.toString()) > 0x10000) {
+                res.faction = character.add(0x34).readU32();
+            }
+        }
+        var SECT_NAMES = {
+            0: "Thieu Lam", 1: "Thien Vuong", 2: "Duong Mon", 3: "Ngu Doc",
+            4: "Nga My", 5: "Thuy Yen", 6: "Cai Bang", 7: "Thien Nhan",
+            8: "Vo Dang", 9: "Con Lon", 10: "Minh Giao", 11: "Doan Thi"
+        };
+        res.sect = (res.faction !== undefined && res.faction !== null) ? res.faction : -1;
+        res.sectName = SECT_NAMES[res.sect] || "None";
+    } catch (e) { return { ok: false, error: '' + e }; }
+    return res;
 };
 
-rpc.exports.getNearNpcsDetail = function () {
+rpc.exports.getNearNpcsDetail = function() {
     try {
         var npcs = [];
-
+        
         // 1. Try to read from global npcCache if we hooked it
         if (typeof globalThis.npcCache !== 'undefined' && globalThis.npcCache) {
             for (var cid in globalThis.npcCache) {
@@ -1378,8 +1329,554 @@ rpc.exports.getNearNpcsDetail = function () {
             }
             if (npcs.length > 0) return { ok: true, npcs: npcs };
         }
-
+        
         return { ok: true, npcs: npcs };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+};
+
+rpc.exports.getMySkills = function() {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+    
+    var out = [];
+    try {
+        console.log("[getMySkills] playerMainInstance=" + _playerMainInstance);
+        var getSkillIdAddr = null;
+        try {
+            var domain = callNativeIl2Cpp('il2cpp_domain_get', 'pointer', [], []);
+            console.log("[getMySkills] domain=" + domain);
+            if (domain && !domain.isNull()) {
+                var assembly = callNativeIl2Cpp('il2cpp_domain_assembly_open', 'pointer', ['pointer', 'pointer'], [domain, Memory.allocUtf8String("Assembly-CSharp")]);
+                console.log("[getMySkills] assembly=" + assembly);
+                var image = callNativeIl2Cpp('il2cpp_assembly_get_image', 'pointer', ['pointer'], [assembly]);
+                console.log("[getMySkills] image=" + image);
+                var klass = callNativeIl2Cpp('il2cpp_class_from_name', 'pointer', ['pointer', 'pointer', 'pointer'], [image, Memory.allocUtf8String(""), Memory.allocUtf8String("PlayerMain")]);
+                console.log("[getMySkills] klass=" + klass);
+                var method = callNativeIl2Cpp('il2cpp_class_get_method_from_name', 'pointer', ['pointer', 'pointer', 'int'], [klass, Memory.allocUtf8String("GetSkillId"), 1]);
+                console.log("[getMySkills] method=" + method);
+                if (method && !method.isNull()) {
+                    getSkillIdAddr = method.readPointer();
+                    console.log("[getMySkills] resolved methodPointer=" + getSkillIdAddr);
+                }
+            }
+        } catch(e) {
+            console.log("[getMySkills] dynamic resolve err: " + e.message);
+        }
+        
+        if (!getSkillIdAddr && typeof il2cppBase !== 'undefined' && il2cppBase) {
+            // Fallback hardcoded RVA if symbols failed to load
+            getSkillIdAddr = il2cppBase.add(0xE48560);
+            console.log("[getMySkills] fallback getSkillIdAddr=" + getSkillIdAddr);
+        }
+        
+        if (getSkillIdAddr) {
+            var getSkillIdFn = new NativeFunction(getSkillIdAddr, 'int', ['pointer', 'int']);
+            for (var i = 0; i < 25; i++) {
+                try {
+                    var sid = getSkillIdFn(_playerMainInstance, i);
+                    if (sid && sid > 0) {
+                        out.push({ idx: i, skillId: sid });
+                    }
+                } catch(e) {
+                    // console.log("[getMySkills] invoke err at " + i + ": " + e.message);
+                }
+            }
+            console.log("[getMySkills] scanned count=" + out.length);
+        } else {
+            console.log("[getMySkills] No address found for GetSkillId!");
+        }
+    } catch(e) {
+        console.log("[getMySkills] outer err: " + e.message);
+        return { ok: false, error: '' + e };
+    }
+    return { ok: true, skills: out };
+};
+
+rpc.exports.getPlayerInfo = function() {
+    var pmRes = readPlayerMainDirect();
+    var pos = typeof _lastPosition !== 'undefined' ? _lastPosition : { x: 0, y: 0, eid: 0, ts: Date.now() };
+    var res = {
+        ok: pmRes.ok,
+        playerMain: pmRes.playerMain || null,
+        source: pmRes.source || null,
+        error: pmRes.error || null,
+        position: { x: pos.x, y: pos.y, eid: pos.eid, age: Date.now() - pos.ts },
+        recvTotal: typeof _recvTotal !== 'undefined' ? _recvTotal : 0,
+        sendTotal: typeof _sendTotal !== 'undefined' ? _sendTotal : 0,
+        gameFd: typeof gameFd !== 'undefined' ? gameFd : -1,
+    };
+
+    if (pmRes.ok && _playerMainInstance) {
+        try {
+            res.mapId = _playerMainInstance.add(0xE4).readS32();
+            
+            var npcontroller = _playerMainInstance.add(0x20).readPointer();
+            if (!npcontroller.isNull()) {
+                var dataPtr = npcontroller.add(0x30).readPointer();
+                if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
+                    // Read cid
+                    var cidPtr = dataPtr.add(0x10).readPointer();
+                    if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
+                        var cidLen = cidPtr.add(0x10).readInt();
+                        if (cidLen > 0 && cidLen < 100) {
+                            res.cid = cidPtr.add(0x14).readUtf16String(cidLen);
+                        }
+                    }
+                    
+                    // Read name
+                    var namePtr = dataPtr.add(0x40).readPointer();
+                    if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
+                        var strLen = namePtr.add(0x10).readU32();
+                        if (strLen > 0 && strLen < 100) {
+                            res.name = namePtr.add(0x14).readUtf16String(strLen);
+                        }
+                    }
+                    res.level = dataPtr.add(0x54).readU32();
+                }
+                
+                var character = npcontroller.add(0xa0).readPointer();
+                if (!character.isNull() && parseInt(character.toString()) > 0x10000) {
+                    res.money = character.add(0x48).readS64().toString();
+                    res.sect = character.add(0x34).readU32();
+                    var SECT_NAMES = {
+                        0: "Thiếu Lâm", 1: "Thiên Vương", 2: "Đường Môn", 3: "Ngũ Độc",
+                        4: "Nga Mi", 5: "Thúy Yên", 6: "Cái Bang", 7: "Thiên Nhẫn",
+                        8: "Võ Đang", 9: "Côn Lôn", 10: "Minh Giáo", 11: "Đoàn Thị"
+                    };
+                    res.sectName = SECT_NAMES[res.sect] || "Chưa rõ";
+                    res.level = character.add(0x58).readU32();
+                    res.storageMoney = character.add(0x110).readS64().toString();
+                }
+
+                // Read HP/MP/Camp using raw memory offsets (fully bridge-free!)
+                var idnPtr = npcontroller.add(0x28).readPointer();
+                if (!idnPtr.isNull() && parseInt(idnPtr.toString()) > 0x10000) {
+                    res.campValue = idnPtr.add(0x50).readInt();
+                    res.seriesValue = idnPtr.add(0x54).readInt();
+                    res.hp = idnPtr.add(0x58).readInt();
+                    res.maxHp = idnPtr.add(0x5C).readInt();
+                    res.mp = idnPtr.add(0x60).readInt();
+                    res.maxMp = idnPtr.add(0x64).readInt();
+                }
+            }
+        } catch (e) {
+            res.error = "Error reading fields: " + e.message;
+        }
+    }
+    return res;
+};
+
+rpc.exports.invalidatePlayerMain = function() {
+    _playerMainInstance = null;
+    if (typeof _charManagerClass !== 'undefined') _charManagerClass = null;
+    if (typeof _netCoreManagerClass !== 'undefined') _netCoreManagerClass = null;
+    if (typeof _popUpCanvasClass !== 'undefined') _popUpCanvasClass = null;
+    if (typeof _byteClass !== 'undefined') _byteClass = null;
+    return { ok: true };
+};
+
+rpc.exports.getNearEnemies = function() {
+    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    return Il2Cpp.perform(function() {
+        var enemies = [];
+        try {
+            var pmClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerMain");
+            var pmInst = pmClass.field("instance").value;
+            if (!pmInst || pmInst.isNull()) return { ok: false, error: 'PlayerMain.instance is null' };
+
+            var localCamp = -1;
+            var localSeries = -1;
+            var localX = 0;
+            var localY = 0;
+
+            var localCtrl = pmInst.field("npcontroller").value;
+            if (localCtrl && !localCtrl.isNull()) {
+                var localIdn = localCtrl.field("identify").value;
+                if (localIdn && !localIdn.isNull()) {
+                    var localIdnPtr = localIdn.handle;
+                    localCamp = localIdnPtr.add(0x50).readInt();
+                    localSeries = localIdnPtr.add(0x54).readInt();
+                }
+                var localPos = localCtrl.add(0x10).readPointer();
+                if (!localPos.isNull()) {
+                    var localMapPos = localPos.add(0x28).readPointer();
+                    if (!localMapPos.isNull()) {
+                        localX = localMapPos.add(0x10).readInt();
+                        localY = localMapPos.add(0x14).readInt();
+                    }
+                }
+            }
+
+            var nearNpcsDict = pmInst.field("nearNpcs").value;
+            if (!nearNpcsDict || nearNpcsDict.isNull()) {
+                return { ok: true, enemies: [], localX: localX, localY: localY, localCamp: localCamp, localSeries: localSeries };
+            }
+
+            var count = nearNpcsDict.method("get_Count").invoke();
+            if (count === 0) {
+                return { ok: true, enemies: [], localX: localX, localY: localY, localCamp: localCamp, localSeries: localSeries };
+            }
+
+            var keysCollection = nearNpcsDict.method("get_Keys").invoke();
+            var enumerator = keysCollection.method("GetEnumerator").invoke();
+            while (enumerator.method("MoveNext").invoke()) {
+                var key = enumerator.method("get_Current").invoke();
+                var keyStr = key ? key.content : "";
+                if (!keyStr) continue;
+
+                var valueOut = Memory.alloc(Process.pointerSize);
+                var success = nearNpcsDict.method("TryGetValue").invoke(key, valueOut);
+                if (success) {
+                    var controllerPtr = valueOut.readPointer();
+                    if (!controllerPtr.isNull() && parseInt(controllerPtr.toString()) > 0x10000) {
+                        try {
+                            var idnPtr = controllerPtr.add(0x28).readPointer();
+                            if (!idnPtr.isNull() && parseInt(idnPtr.toString()) > 0x10000) {
+                                var campValue = idnPtr.add(0x50).readInt();
+                                // Check if it's an enemy (different camp)
+                                if (campValue !== localCamp) {
+                                    var hp = idnPtr.add(0x58).readInt();
+                                    if (hp > 0) {
+                                        var maxHp = idnPtr.add(0x5C).readInt();
+                                        var series = idnPtr.add(0x54).readInt();
+
+                                        var x = 0, y = 0;
+                                        var posPtr = controllerPtr.add(0x10).readPointer();
+                                        if (!posPtr.isNull() && parseInt(posPtr.toString()) > 0x10000) {
+                                            var mapPosPtr = posPtr.add(0x28).readPointer();
+                                            if (!mapPosPtr.isNull() && parseInt(mapPosPtr.toString()) > 0x10000) {
+                                                x = mapPosPtr.add(0x10).readInt();
+                                                y = mapPosPtr.add(0x14).readInt();
+                                            }
+                                        }
+
+                                        var name = "";
+                                        var nameValPtr = idnPtr.add(0x48).readPointer();
+                                        if (!nameValPtr.isNull() && parseInt(nameValPtr.toString()) > 0x10000) {
+                                            var len = nameValPtr.add(0x10).readInt();
+                                            if (len > 0 && len < 100) {
+                                                name = nameValPtr.add(0x14).readUtf16String(len);
+                                            }
+                                        }
+
+                                        enemies.push({
+                                            id: keyStr,
+                                            name: name,
+                                            hp: hp,
+                                            maxHp: maxHp,
+                                            series: series,
+                                            camp: campValue,
+                                            x: x,
+                                            y: y
+                                        });
+                                    }
+                                }
+                            }
+                        } catch (innerErr) {
+                            // Suppress per-entity errors to prevent breaking the loop
+                        }
+                    }
+                }
+            }
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
+        return { ok: true, enemies: enemies, localX: localX, localY: localY, localCamp: localCamp, localSeries: localSeries };
+    });
+};
+
+// ══ rpc/core/DialogManager.js ══
+// frida-scripts/rpc/core/DialogManager.js -- NPC dialog interactions
+
+rpc.exports.remoteNpcDialogue = function(npcId) {
+    return new Promise(function(resolve) {
+        try {
+            var strId = npcId.toString();
+            var hexBody = "0a" + ("0" + strId.length.toString(16)).slice(-2);
+            for (var i = 0; i < strId.length; i++) {
+                hexBody += ("0" + strId.charCodeAt(i).toString(16)).slice(-2);
+            }
+            
+            // Wait for packet-io.js rpc to be available globally in the bundle
+            // It's exported as rpc.exports.sendPacket, but inside frida script we can just 
+            // call it if we wrap it, or since they are all in the same frida script, we can call it.
+            // Wait, we can't easily call other rpc.exports from within an rpc.export directly.
+            // Let's implement the TCP send directly here, or call the global sendTcpPacket if available.
+            // Actually, we can just use sendTcpPacket implementation directly here to be safe!
+            
+            var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
+            if (tcpFd === -1) {
+                for(var i=0; i<1024; i++) {
+                    try {
+                        var type = Socket.type(i);
+                        if (type === 'tcp' || type === 'tcp6') {
+                            var peer = Socket.peerAddress(i);
+                            if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
+                                tcpFd = i;
+                                break;
+                            }
+                        }
+                    } catch(e){}
+                }
+            }
+            
+            if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
+            
+            var bodyBytes = [];
+            for (var i = 0; i < hexBody.length; i += 2) {
+                bodyBytes.push(parseInt(hexBody.substr(i, 2), 16));
+            }
+            
+            var protoLen = bodyBytes.length;
+            var buf = Memory.alloc(6 + protoLen);
+            buf.writeU32(protoLen);
+            buf.add(4).writeU16(33); // opcode 33 = eNpcDialogue
+            if (protoLen > 0) buf.add(6).writeByteArray(bodyBytes);
+            
+            // Assume nativeWrite is globally available from packet-io.js
+            if (typeof nativeWrite !== 'undefined') {
+                var ret = nativeWrite(tcpFd, buf, 6 + protoLen);
+                return resolve({ ok: true, method: 'native_write_tcp', sent: ret, opcode: 33, fd: tcpFd });
+            } else {
+                return resolve({ ok: false, error: 'nativeWrite not available globally' });
+            }
+        } catch(e) {
+            resolve({ ok: false, error: 'Talk packet failed: ' + e.message });
+        }
+    });
+};
+
+rpc.exports.selectDialogOption = function(index) {
+    return new Promise(function(resolve) {
+        try {
+            var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
+            if (tcpFd === -1) {
+                for(var i=0; i<1024; i++) {
+                    try {
+                        var type = Socket.type(i);
+                        if (type === 'tcp' || type === 'tcp6') {
+                            var peer = Socket.peerAddress(i);
+                            if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
+                                tcpFd = i; break;
+                            }
+                        }
+                    } catch(e){}
+                }
+            }
+            if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
+            
+            // opcode 35 (eNpcSelect), body: Protobuf
+            var bodyBytes = [];
+            if (index > 0) {
+                bodyBytes.push(0x08); // Field 1, varint
+                bodyBytes.push(index);
+            }
+            
+            var protoLen = bodyBytes.length;
+            var buf = Memory.alloc(6 + protoLen);
+            buf.writeU32(protoLen);
+            buf.add(4).writeU16(35); // opcode 35
+            if (protoLen > 0) {
+                buf.add(6).writeByteArray(bodyBytes);
+            }
+            
+            if (typeof nativeWrite !== 'undefined') {
+                var ret = nativeWrite(tcpFd, buf, 6 + protoLen);
+                return resolve({ ok: true, sent: ret });
+            } else {
+                return resolve({ ok: false, error: 'nativeWrite not available globally' });
+            }
+        } catch(e) {
+            resolve({ ok: false, error: 'Select option failed: ' + e.message });
+        }
+    });
+};
+
+// ══ rpc/shop/ShopScanner.js ══
+// frida-scripts/rpc/shop/ShopScanner.js -- Nearby shops and stall interactions
+
+var _charManagerClass = null;
+var _lastCharManagerScanTime = 0;
+
+rpc.exports.getNearbyShops = function() {
+    try {
+        if (!_charManagerClass) {
+            var now = Date.now();
+            if (now - _lastCharManagerScanTime < 5000) {
+                return { ok: false, error: 'CharManager scan throttled (Please log into character first!)' };
+            }
+            _lastCharManagerScanTime = now;
+            var pattern = '43 68 61 72 4d 61 6e 61 67 65 72'; // "CharManager"
+            var maps = File.readAllText('/proc/self/maps').split('\n');
+            var metaRange = null;
+            for (var i = 0; i < maps.length; i++) {
+                var line = maps[i];
+                if (line.indexOf('global-metadata.dat') !== -1) {
+                    var parts = line.split(' ')[0].split('-');
+                    metaRange = {
+                        base: ptr('0x' + parts[0]),
+                        size: parseInt('0x' + parts[1]) - parseInt('0x' + parts[0])
+                    };
+                    break;
+                }
+            }
+            
+            if (!metaRange) return { ok: false, error: 'global-metadata.dat not found' };
+            
+            var results = Memory.scanSync(metaRange.base, metaRange.size, pattern);
+            if (results.length === 0) return { ok: false, error: '"CharManager" string not found' };
+            
+            var nameStrAddr = null;
+            for (var rIdx = 0; rIdx < results.length; rIdx++) {
+                if (results[rIdx].address.readUtf8String() === "CharManager") {
+                    nameStrAddr = results[rIdx].address;
+                    break;
+                }
+            }
+            if (!nameStrAddr) return { ok: false, error: 'Exact "CharManager" string not found' };
+            
+            var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+            var hex = nameStrAddr.toString(16);
+            while (hex.length < 16) hex = '0' + hex;
+            var parts = [];
+            for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
+            var ptrPattern = parts.join(' ');
+            
+            for (var k = 0; k < allRanges.length; k++) {
+                try {
+                    var matches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
+                    if (matches.length > 0) {
+                        for (var m = 0; m < matches.length; m++) {
+                            var cand = matches[m].address.sub(0x10);
+                            try {
+                                var nsPtr = cand.add(0x18).readPointer();
+                                var nsName = nsPtr.isNull() ? '' : nsPtr.readUtf8String();
+                                var checkNamePtr = cand.add(0x10).readPointer();
+                                if (checkNamePtr.toString() === nameStrAddr.toString()) {
+                                    _charManagerClass = cand;
+                                    break;
+                                }
+                            } catch(e) {}
+                        }
+                    }
+                } catch(e) {}
+                if (_charManagerClass) break;
+            }
+        }
+        
+        if (!_charManagerClass) return { ok: false, error: 'CharManager class not found' };
+        
+        var staticFields = _charManagerClass.add(0xB8).readPointer();
+        if (staticFields.isNull()) return { ok: false, error: 'CharManager static_fields is null' };
+        
+        var charManagerInstance = staticFields.readPointer();
+        if (charManagerInstance.isNull()) return { ok: false, error: 'CharManager.instance is null' };
+        
+        var myX = 0, myY = 0;
+        try {
+            var worldPtr = charManagerInstance.add(0x20).readPointer();
+            if (!worldPtr.isNull() && parseInt(worldPtr.toString()) > 0x10000) {
+                var playerMainPtr = worldPtr.add(0x40).readPointer();
+                if (!playerMainPtr.isNull() && parseInt(playerMainPtr.toString()) > 0x10000) {
+                    var npcontroller = playerMainPtr.add(0x20).readPointer();
+                    if (!npcontroller.isNull() && parseInt(npcontroller.toString()) > 0x10000) {
+                        var positionPtr = npcontroller.add(0x10).readPointer();
+                        if (!positionPtr.isNull() && parseInt(positionPtr.toString()) > 0x10000) {
+                            var mapPosPtr = positionPtr.add(0x28).readPointer();
+                            if (!mapPosPtr.isNull() && parseInt(mapPosPtr.toString()) > 0x10000) {
+                                myX = mapPosPtr.add(0x10).readInt();
+                                myY = mapPosPtr.add(0x14).readInt();
+                                console.log("[Shop] Player coords from npcontroller: " + myX + ", " + myY);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch(e) {
+            console.log("[Shop] Error resolving player coords: " + e.message);
+        }
+        if (myX === 0 && myY === 0 && typeof _lastPosition !== 'undefined' && _lastPosition) {
+            myX = _lastPosition.x || 0;
+            myY = _lastPosition.y || 0;
+        }
+        
+        var salesmansDict = charManagerInstance.add(0x58).readPointer();
+        var shops = [];
+        
+        if (!salesmansDict.isNull()) {
+            var entriesArray = salesmansDict.add(0x18).readPointer();
+            if (!entriesArray.isNull()) {
+                var maxLength = entriesArray.add(0x18).readU32();
+                for (var idx = 0; idx < maxLength; idx++) {
+                    var entryAddr = entriesArray.add(0x20).add(idx * 24);
+                    var valuePtr = entryAddr.add(16).readPointer();
+                    
+                    if (!valuePtr.isNull() && parseInt(valuePtr.toString()) > 0x10000) {
+                        var dataPtr = valuePtr.add(0x30).readPointer();
+                        if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
+                            var name = '';
+                            var namePtr = dataPtr.add(0x40).readPointer();
+                            if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
+                                var strLen = namePtr.add(0x10).readU32();
+                                if (strLen > 0 && strLen < 100) {
+                                    name = namePtr.add(0x14).readUtf16String(strLen);
+                                }
+                            }
+                            
+                            var cid = '';
+                            var cidPtr = dataPtr.add(0x10).readPointer();
+                            if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
+                                var cidLen = cidPtr.add(0x10).readInt();
+                                if (cidLen > 0 && cidLen < 100) {
+                                    cid = cidPtr.add(0x14).readUtf16String(cidLen);
+                                }
+                            }
+                            
+                            var isSalesman = dataPtr.add(0x69).readU8();
+                            var level = dataPtr.add(0x54).readU32();
+                            
+                            var x = 0, y = 0;
+                            try {
+                                var positionPtr = valuePtr.add(0x10).readPointer();
+                                if (!positionPtr.isNull() && parseInt(positionPtr.toString()) > 0x10000) {
+                                    var mapPosPtr = positionPtr.add(0x28).readPointer();
+                                    if (!mapPosPtr.isNull() && parseInt(mapPosPtr.toString()) > 0x10000) {
+                                        x = mapPosPtr.add(0x10).readInt();
+                                        y = mapPosPtr.add(0x14).readInt();
+                                    }
+                                }
+                            } catch(e) {}
+                            
+                            var dist = 999999;
+                            if (x > 0 && y > 0 && myX > 0 && myY > 0) {
+                                dist = Math.sqrt((x - myX) * (x - myX) + (y - myY) * (y - myY));
+                            }
+                            
+                            shops.push({
+                                name: name,
+                                namePtrStr: namePtr.toString(),
+                                cid: cid,
+                                cidPtrStr: cidPtr.toString(),
+                                level: level,
+                                isSalesman: isSalesman,
+                                x: x,
+                                y: y,
+                                distance: dist,
+                                controllerPtrStr: valuePtr.toString()
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
+        shops.sort(function(a, b) { return a.distance - b.distance; });
+        return { ok: true, shops: shops };
     } catch (e) {
         return { ok: false, error: e.message };
     }
@@ -1404,16 +1901,8 @@ rpc.exports.buyOtherStallItem = function(sellerId, itemIndex, price) {
             }
             if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
             
-            // Opcode 206 (ePlayerBuyOtherStallItem)
-            // Example Hex from capture: 0e000000ce000a06313037343239181720d08603
-            // Breakdown:
-            // 0e000000 (len 14) ce00 (opcode 206)
-            // Body Protocol Buffer:
-            // 0a 06 31 30 37 34 32 39 (Field 1: string sellerId)
-            // 18 17 (Field 3: varint itemIndex, 0x17 = 23)
-            // 20 d08603 (Field 4: varint price)
-
             var strId = sellerId.toString();
+            // In Opcode 206, the server expects ONLY the numeric ID, e.g., "107429", not "salesman.107429.0"
             var match = strId.match(/\d+/);
             if (match) {
                 strId = match[0];
@@ -1421,15 +1910,12 @@ rpc.exports.buyOtherStallItem = function(sellerId, itemIndex, price) {
             
             var bodyBytes = [];
             
-            // Field 1: Seller ID (string)
             bodyBytes.push(0x0a);
             bodyBytes.push(strId.length);
             for (var j = 0; j < strId.length; j++) {
                 bodyBytes.push(strId.charCodeAt(j));
             }
             
-            // Field 3: Item Index (varint)
-            // Some protobuf might use Field 2 for index, let's stick to 18 (Field 3) for now.
             bodyBytes.push(0x18);
             var val = parseInt(itemIndex);
             while (val >= 0x80) {
@@ -1438,11 +1924,9 @@ rpc.exports.buyOtherStallItem = function(sellerId, itemIndex, price) {
             }
             bodyBytes.push(val);
             
-            // Field 4: Price/Count (varint)
-            // We pass the price (or count) correctly
             bodyBytes.push(0x20);
             var pVal = parseInt(price) || 0;
-            if (pVal === 0) pVal = 1; // Default to 1 if no price given (could be count)
+            if (pVal === 0) pVal = 1;
             while (pVal >= 0x80) {
                 bodyBytes.push((pVal & 0x7F) | 0x80);
                 pVal >>>= 7;
@@ -1469,428 +1953,6 @@ rpc.exports.buyOtherStallItem = function(sellerId, itemIndex, price) {
     });
 };
 
-// ══ END OF rpc/shop/ShopScanner.js ══
-
-rpc.exports.getMySkills = function () {
-    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
-    var pmRes = readPlayerMainDirect();
-    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
-    return Il2Cpp.perform(function () {
-        var out = [];
-        try {
-            var pm = new Il2Cpp.Object(_playerMainInstance);
-            var m = pm.method("GetSkillId", 1);
-            for (var i = 0; i < 25; i++) {
-                try {
-                    var sid = m.invoke(i);
-                    if (sid && sid > 0) out.push({ idx: i, skillId: sid });
-                } catch (e) { }
-            }
-        } catch (e) { return { ok: false, error: '' + e }; }
-        return { ok: true, skills: out };
-    });
-};
-
-rpc.exports.getPlayerInfo = function () {
-    var pmRes = readPlayerMainDirect();
-    var pos = typeof _lastPosition !== 'undefined' ? _lastPosition : { x: 0, y: 0, eid: 0, ts: Date.now() };
-    var res = {
-        ok: pmRes.ok,
-        playerMain: pmRes.playerMain || null,
-        source: pmRes.source || null,
-        error: pmRes.error || null,
-        position: { x: pos.x, y: pos.y, eid: pos.eid, age: Date.now() - pos.ts },
-        recvTotal: typeof _recvTotal !== 'undefined' ? _recvTotal : 0,
-        sendTotal: typeof _sendTotal !== 'undefined' ? _sendTotal : 0,
-        gameFd: typeof gameFd !== 'undefined' ? gameFd : -1,
-    };
-
-    if (pmRes.ok && _playerMainInstance) {
-        try {
-            res.mapId = _playerMainInstance.add(0xE4).readS32();
-
-            var npcontroller = _playerMainInstance.add(0x20).readPointer();
-            if (!npcontroller.isNull()) {
-                var dataPtr = npcontroller.add(0x30).readPointer();
-                if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
-                    // Read cid
-                    var cidPtr = dataPtr.add(0x10).readPointer();
-                    if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
-                        var cidLen = cidPtr.add(0x10).readInt();
-                        if (cidLen > 0 && cidLen < 100) {
-                            res.cid = cidPtr.add(0x14).readUtf16String(cidLen);
-                        }
-                    }
-
-                    // Read name
-                    var namePtr = dataPtr.add(0x40).readPointer();
-                    if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
-                        var strLen = namePtr.add(0x10).readU32();
-                        if (strLen > 0 && strLen < 100) {
-                            res.name = namePtr.add(0x14).readUtf16String(strLen);
-                        }
-                    }
-                    res.level = dataPtr.add(0x54).readU32();
-                }
-
-                var character = npcontroller.add(0xa0).readPointer();
-                if (!character.isNull() && parseInt(character.toString()) > 0x10000) {
-                    res.money = character.add(0x48).readS64().toString();
-                    res.sect = character.add(0x34).readU32();
-                    var SECT_NAMES = {
-                        0: "Thiếu Lâm", 1: "Thiên Vương", 2: "Đường Môn", 3: "Ngũ Độc",
-                        4: "Nga Mi", 5: "Thúy Yên", 6: "Cái Bang", 7: "Thiên Nhẫn",
-                        8: "Võ Đang", 9: "Côn Lôn", 10: "Minh Giáo", 11: "Đoàn Thị"
-                    };
-                    res.sectName = SECT_NAMES[res.sect] || "Chưa rõ";
-                    res.level = character.add(0x58).readU32();
-                    res.storageMoney = character.add(0x110).readS64().toString();
-                }
-
-                // Read HP/MP using Il2Cpp if available
-                if (typeof Il2Cpp !== 'undefined') {
-                    Il2Cpp.perform(function () {
-                        try {
-                            var ctrl = new Il2Cpp.Object(npcontroller);
-                            var idn = ctrl.field('identify').value;
-                            if (idn && !idn.isNull()) {
-                                res.hp = idn.field('healthCurrent').value;
-                                res.maxHp = idn.field('healthMax').value;
-                                try { res.campValue = idn.field('campValue').value; } catch (e) { }
-
-                                var mc = ['manaCurrent', 'mpCurrent', 'powerCurrent', 'internalCurrent'];
-                                var mm = ['manaMax', 'mpMax', 'powerMax', 'internalMax'];
-                                for (var mi = 0; mi < mc.length; mi++) {
-                                    try {
-                                        var mv = idn.field(mc[mi]).value;
-                                        if (mv !== null && mv !== undefined) {
-                                            res.mp = mv;
-                                            break;
-                                        }
-                                    } catch (e) { }
-                                }
-                                for (var mj = 0; mj < mm.length; mj++) {
-                                    try {
-                                        var mx = idn.field(mm[mj]).value;
-                                        if (mx !== null && mx !== undefined) {
-                                            res.maxMp = mx;
-                                            break;
-                                        }
-                                    } catch (e) { }
-                                }
-                            }
-                        } catch (e) { }
-                    });
-                }
-            }
-        } catch (e) {
-            res.error = "Error reading fields: " + e.message;
-        }
-    }
-    return res;
-};
-
-rpc.exports.invalidatePlayerMain = function () {
-    _playerMainInstance = null;
-    if (typeof _charManagerClass !== 'undefined') _charManagerClass = null;
-    if (typeof _netCoreManagerClass !== 'undefined') _netCoreManagerClass = null;
-    if (typeof _popUpCanvasClass !== 'undefined') _popUpCanvasClass = null;
-    if (typeof _byteClass !== 'undefined') _byteClass = null;
-    return { ok: true };
-};
-
-// ══ rpc/core/DialogManager.js ══
-// frida-scripts/rpc/core/DialogManager.js -- NPC dialog interactions
-
-rpc.exports.remoteNpcDialogue = function (npcId) {
-    return new Promise(function (resolve) {
-        try {
-            var strId = npcId.toString();
-            var hexBody = "0a" + ("0" + strId.length.toString(16)).slice(-2);
-            for (var i = 0; i < strId.length; i++) {
-                hexBody += ("0" + strId.charCodeAt(i).toString(16)).slice(-2);
-            }
-
-            // Wait for packet-io.js rpc to be available globally in the bundle
-            // It's exported as rpc.exports.sendPacket, but inside frida script we can just 
-            // call it if we wrap it, or since they are all in the same frida script, we can call it.
-            // Wait, we can't easily call other rpc.exports from within an rpc.export directly.
-            // Let's implement the TCP send directly here, or call the global sendTcpPacket if available.
-            // Actually, we can just use sendTcpPacket implementation directly here to be safe!
-
-            var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
-            if (tcpFd === -1) {
-                for (var i = 0; i < 1024; i++) {
-                    try {
-                        var type = Socket.type(i);
-                        if (type === 'tcp' || type === 'tcp6') {
-                            var peer = Socket.peerAddress(i);
-                            if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
-                                tcpFd = i;
-                                break;
-                            }
-                        }
-                    } catch (e) { }
-                }
-            }
-
-            if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
-
-            var bodyBytes = [];
-            for (var i = 0; i < hexBody.length; i += 2) {
-                bodyBytes.push(parseInt(hexBody.substr(i, 2), 16));
-            }
-
-            var protoLen = bodyBytes.length;
-            var buf = Memory.alloc(6 + protoLen);
-            buf.writeU32(protoLen);
-            buf.add(4).writeU16(33); // opcode 33 = eNpcDialogue
-            if (protoLen > 0) buf.add(6).writeByteArray(bodyBytes);
-
-            // Assume nativeWrite is globally available from packet-io.js
-            if (typeof nativeWrite !== 'undefined') {
-                var ret = nativeWrite(tcpFd, buf, 6 + protoLen);
-                return resolve({ ok: true, method: 'native_write_tcp', sent: ret, opcode: 33, fd: tcpFd });
-            } else {
-                return resolve({ ok: false, error: 'nativeWrite not available globally' });
-            }
-        } catch (e) {
-            resolve({ ok: false, error: 'Talk packet failed: ' + e.message });
-        }
-    });
-};
-
-rpc.exports.selectDialogOption = function (index) {
-    return new Promise(function (resolve) {
-        try {
-            var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
-            if (tcpFd === -1) {
-                for (var i = 0; i < 1024; i++) {
-                    try {
-                        var type = Socket.type(i);
-                        if (type === 'tcp' || type === 'tcp6') {
-                            var peer = Socket.peerAddress(i);
-                            if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
-                                tcpFd = i; break;
-                            }
-                        }
-                    } catch (e) { }
-                }
-            }
-            if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
-
-            // opcode 35 (eNpcSelect), body: Protobuf
-            var bodyBytes = [];
-            if (index > 0) {
-                bodyBytes.push(0x08); // Field 1, varint
-                bodyBytes.push(index);
-            }
-
-            var protoLen = bodyBytes.length;
-            var buf = Memory.alloc(6 + protoLen);
-            buf.writeU32(protoLen);
-            buf.add(4).writeU16(35); // opcode 35
-            if (protoLen > 0) {
-                buf.add(6).writeByteArray(bodyBytes);
-            }
-
-            if (typeof nativeWrite !== 'undefined') {
-                var ret = nativeWrite(tcpFd, buf, 6 + protoLen);
-                return resolve({ ok: true, sent: ret });
-            } else {
-                return resolve({ ok: false, error: 'nativeWrite not available globally' });
-            }
-        } catch (e) {
-            resolve({ ok: false, error: 'Select option failed: ' + e.message });
-        }
-    });
-};
-
-// ══ rpc/shop/ShopScanner.js ══
-// frida-scripts/rpc/shop/ShopScanner.js -- Nearby shops and stall interactions
-
-var _charManagerClass = null;
-var _lastCharManagerScanTime = 0;
-
-rpc.exports.getNearbyShops = function () {
-    try {
-        if (!_charManagerClass) {
-            var now = Date.now();
-            if (now - _lastCharManagerScanTime < 5000) {
-                return { ok: false, error: 'CharManager scan throttled (Please log into character first!)' };
-            }
-            _lastCharManagerScanTime = now;
-            var pattern = '43 68 61 72 4d 61 6e 61 67 65 72'; // "CharManager"
-            var maps = File.readAllText('/proc/self/maps').split('\n');
-            var metaRange = null;
-            for (var i = 0; i < maps.length; i++) {
-                var line = maps[i];
-                if (line.indexOf('global-metadata.dat') !== -1) {
-                    var parts = line.split(' ')[0].split('-');
-                    metaRange = {
-                        base: ptr('0x' + parts[0]),
-                        size: parseInt('0x' + parts[1]) - parseInt('0x' + parts[0])
-                    };
-                    break;
-                }
-            }
-
-            if (!metaRange) return { ok: false, error: 'global-metadata.dat not found' };
-
-            var results = Memory.scanSync(metaRange.base, metaRange.size, pattern);
-            if (results.length === 0) return { ok: false, error: '"CharManager" string not found' };
-
-            var nameStrAddr = null;
-            for (var rIdx = 0; rIdx < results.length; rIdx++) {
-                if (results[rIdx].address.readUtf8String() === "CharManager") {
-                    nameStrAddr = results[rIdx].address;
-                    break;
-                }
-            }
-            if (!nameStrAddr) return { ok: false, error: 'Exact "CharManager" string not found' };
-
-            var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
-            var hex = nameStrAddr.toString(16);
-            while (hex.length < 16) hex = '0' + hex;
-            var parts = [];
-            for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
-            var ptrPattern = parts.join(' ');
-
-            for (var k = 0; k < allRanges.length; k++) {
-                try {
-                    var matches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
-                    if (matches.length > 0) {
-                        for (var m = 0; m < matches.length; m++) {
-                            var cand = matches[m].address.sub(0x10);
-                            try {
-                                var nsPtr = cand.add(0x18).readPointer();
-                                var nsName = nsPtr.isNull() ? '' : nsPtr.readUtf8String();
-                                var checkNamePtr = cand.add(0x10).readPointer();
-                                if (checkNamePtr.toString() === nameStrAddr.toString()) {
-                                    _charManagerClass = cand;
-                                    break;
-                                }
-                            } catch (e) { }
-                        }
-                    }
-                } catch (e) { }
-                if (_charManagerClass) break;
-            }
-        }
-
-        if (!_charManagerClass) return { ok: false, error: 'CharManager class not found' };
-
-        var staticFields = _charManagerClass.add(0xB8).readPointer();
-        if (staticFields.isNull()) return { ok: false, error: 'CharManager static_fields is null' };
-
-        var charManagerInstance = staticFields.readPointer();
-        if (charManagerInstance.isNull()) return { ok: false, error: 'CharManager.instance is null' };
-
-        var myX = 0, myY = 0;
-        try {
-            var worldPtr = charManagerInstance.add(0x20).readPointer();
-            if (!worldPtr.isNull() && parseInt(worldPtr.toString()) > 0x10000) {
-                var playerMainPtr = worldPtr.add(0x40).readPointer();
-                if (!playerMainPtr.isNull() && parseInt(playerMainPtr.toString()) > 0x10000) {
-                    var npcontroller = playerMainPtr.add(0x20).readPointer();
-                    if (!npcontroller.isNull() && parseInt(npcontroller.toString()) > 0x10000) {
-                        var positionPtr = npcontroller.add(0x10).readPointer();
-                        if (!positionPtr.isNull() && parseInt(positionPtr.toString()) > 0x10000) {
-                            var mapPosPtr = positionPtr.add(0x28).readPointer();
-                            if (!mapPosPtr.isNull() && parseInt(mapPosPtr.toString()) > 0x10000) {
-                                myX = mapPosPtr.add(0x10).readInt();
-                                myY = mapPosPtr.add(0x14).readInt();
-                                console.log("[Shop] Player coords from npcontroller: " + myX + ", " + myY);
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (e) {
-            console.log("[Shop] Error resolving player coords: " + e.message);
-        }
-        if (myX === 0 && myY === 0 && typeof _lastPosition !== 'undefined' && _lastPosition) {
-            myX = _lastPosition.x || 0;
-            myY = _lastPosition.y || 0;
-        }
-
-        var salesmansDict = charManagerInstance.add(0x58).readPointer();
-        var shops = [];
-
-        if (!salesmansDict.isNull()) {
-            var entriesArray = salesmansDict.add(0x18).readPointer();
-            if (!entriesArray.isNull()) {
-                var maxLength = entriesArray.add(0x18).readU32();
-                for (var idx = 0; idx < maxLength; idx++) {
-                    var entryAddr = entriesArray.add(0x20).add(idx * 24);
-                    var valuePtr = entryAddr.add(16).readPointer();
-
-                    if (!valuePtr.isNull() && parseInt(valuePtr.toString()) > 0x10000) {
-                        var dataPtr = valuePtr.add(0x30).readPointer();
-                        if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
-                            var name = '';
-                            var namePtr = dataPtr.add(0x40).readPointer();
-                            if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
-                                var strLen = namePtr.add(0x10).readU32();
-                                if (strLen > 0 && strLen < 100) {
-                                    name = namePtr.add(0x14).readUtf16String(strLen);
-                                }
-                            }
-
-                            var cid = '';
-                            var cidPtr = dataPtr.add(0x10).readPointer();
-                            if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
-                                var cidLen = cidPtr.add(0x10).readInt();
-                                if (cidLen > 0 && cidLen < 100) {
-                                    cid = cidPtr.add(0x14).readUtf16String(cidLen);
-                                }
-                            }
-
-                            var isSalesman = dataPtr.add(0x69).readU8();
-                            var level = dataPtr.add(0x54).readU32();
-
-                            var x = 0, y = 0;
-                            try {
-                                var positionPtr = valuePtr.add(0x10).readPointer();
-                                if (!positionPtr.isNull() && parseInt(positionPtr.toString()) > 0x10000) {
-                                    var mapPosPtr = positionPtr.add(0x28).readPointer();
-                                    if (!mapPosPtr.isNull() && parseInt(mapPosPtr.toString()) > 0x10000) {
-                                        x = mapPosPtr.add(0x10).readInt();
-                                        y = mapPosPtr.add(0x14).readInt();
-                                    }
-                                }
-                            } catch (e) { }
-
-                            var dist = 999999;
-                            if (x > 0 && y > 0 && myX > 0 && myY > 0) {
-                                dist = Math.sqrt((x - myX) * (x - myX) + (y - myY) * (y - myY));
-                            }
-
-                            shops.push({
-                                name: name,
-                                namePtrStr: namePtr.toString(),
-                                cid: cid,
-                                cidPtrStr: cidPtr.toString(),
-                                level: level,
-                                isSalesman: isSalesman,
-                                x: x,
-                                y: y,
-                                distance: dist,
-                                controllerPtrStr: valuePtr.toString()
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        shops.sort(function (a, b) { return a.distance - b.distance; });
-        return { ok: true, shops: shops };
-    } catch (e) {
-        return { ok: false, error: e.message };
-    }
-};
-
 var _netCoreManagerClass = null;
 var _lastNetCoreScanTime = 0;
 function getNetCoreManagerInstance() {
@@ -1913,10 +1975,10 @@ function getNetCoreManagerInstance() {
             }
         }
         if (!metaRange) return null;
-
+        
         var results = Memory.scanSync(metaRange.base, metaRange.size, pattern);
         if (results.length === 0) return null;
-
+        
         var nameStrAddr = null;
         for (var rIdx = 0; rIdx < results.length; rIdx++) {
             if (results[rIdx].address.readUtf8String() === "NetCoreManager") {
@@ -1925,14 +1987,14 @@ function getNetCoreManagerInstance() {
             }
         }
         if (!nameStrAddr) return null;
-
+        
         var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
         var hex = nameStrAddr.toString(16);
         while (hex.length < 16) hex = '0' + hex;
         var parts = [];
         for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
         var ptrPattern = parts.join(' ');
-
+        
         for (var k = 0; k < allRanges.length; k++) {
             try {
                 var matches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
@@ -1947,10 +2009,10 @@ function getNetCoreManagerInstance() {
                                 _netCoreManagerClass = cand;
                                 break;
                             }
-                        } catch (e) { }
+                        } catch(e) {}
                     }
                 }
-            } catch (e) { }
+            } catch(e) {}
             if (_netCoreManagerClass) break;
         }
     }
@@ -1983,7 +2045,7 @@ function getPopUpCanvasInstance() {
         if (!metaRange) return null;
         var results = Memory.scanSync(metaRange.base, metaRange.size, pattern);
         if (results.length === 0) return null;
-
+        
         var nameStrAddr = null;
         for (var rIdx = 0; rIdx < results.length; rIdx++) {
             if (results[rIdx].address.readUtf8String() === "PopUpCanvas") {
@@ -1992,14 +2054,14 @@ function getPopUpCanvasInstance() {
             }
         }
         if (!nameStrAddr) return null;
-
+        
         var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
         var hex = nameStrAddr.toString(16);
         while (hex.length < 16) hex = '0' + hex;
         var parts = [];
         for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
         var ptrPattern = parts.join(' ');
-
+        
         for (var k = 0; k < allRanges.length; k++) {
             try {
                 var matches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
@@ -2014,10 +2076,10 @@ function getPopUpCanvasInstance() {
                                 _popUpCanvasClass = cand;
                                 break;
                             }
-                        } catch (e) { }
+                        } catch(e) {}
                     }
                 }
-            } catch (e) { }
+            } catch(e) {}
             if (_popUpCanvasClass) break;
         }
     }
@@ -2028,8 +2090,8 @@ function getPopUpCanvasInstance() {
 }
 
 // Get shop items by stallIndex. Requires string pointers to bypass il2cpp_string_new native traps.
-rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr, controllerPtrStr) {
-    return new Promise(function (resolve, reject) {
+rpc.exports.getShopItems = function(stallIndex, nameStr, namePtrStr, cidPtrStr, controllerPtrStr) {
+    return new Promise(function(resolve, reject) {
         try {
             console.log("[Shop] Bat dau getShopItems voi stallIndex: " + stallIndex);
             console.log("[Shop] namePtrStr: " + namePtrStr + ", cidPtrStr: " + cidPtrStr);
@@ -2045,58 +2107,58 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                 resolve({ ok: false, error: 'NetCoreManager instance is null' });
                 return;
             }
-
+            
             var popUpCanvasInstance = getPopUpCanvasInstance();
             if (!popUpCanvasInstance || popUpCanvasInstance.isNull()) {
                 resolve({ ok: false, error: 'PopUpCanvas instance is null' });
                 return;
             }
-
+            
             var playerOtherStall = popUpCanvasInstance.add(0xA8).readPointer();
             if (playerOtherStall.isNull()) {
                 resolve({ ok: false, error: 'playerOtherStall is null' });
                 return;
             }
-
+            
             var initialStall = playerOtherStall.add(0xA0).readPointer();
             console.log("[Shop] initialStall: " + initialStall);
-
+            
             // ----------------------------------------------------
             // NEW: Send the TCP packet to request the shop data!
             // ----------------------------------------------------
             var cidLen = cidPtrStr ? ptr(cidPtrStr).add(0x10).readInt() : 0;
             if (cidLen > 0 && cidLen < 100) {
                 var cidRaw = ptr(cidPtrStr).add(0x14).readUtf16String(cidLen);
-
+                
                 // XÓA KÝ TỰ NULL (\0) NẾU CÓ ĐỂ TRÁNH DƯ BYTE TRONG GÓI TIN!
                 cidRaw = cidRaw.replace(/\0/g, '');
                 console.log("[Shop] Original cidRaw from memory (cleaned): " + cidRaw);
-
+                
                 var str = cidRaw;
                 if (!str.startsWith("salesman.")) {
                     str = "salesman." + cidRaw + ".0";
                 }
-
+                
                 var strLen = str.length;
                 var payloadLen = 2 + strLen;
                 var hexBody = [];
                 hexBody.push(0x0A, strLen);
                 for (var i = 0; i < strLen; i++) hexBody.push(str.charCodeAt(i));
-
-                var hexStr = hexBody.map(b => (b < 16 ? '0' : '') + b.toString(16)).join('');
+                
+                var hexStr = hexBody.map(b => (b<16?'0':'') + b.toString(16)).join('');
                 if (rpc.exports.sendTcpPacket) {
                     var sendRes = rpc.exports.sendTcpPacket(204, hexStr);
                     console.log("[Shop] Sent TCP request for items: " + JSON.stringify(sendRes));
                 }
             }
             // ----------------------------------------------------
-
+            
             var il2cppBase = getIl2CppBase();
             if (!il2cppBase) {
                 resolve({ ok: false, error: 'libil2cpp.so base not found' });
                 return;
             }
-
+            
             function findClassByName(className) {
                 var maps = File.readAllText('/proc/self/maps').split('\n');
                 var metaRange = null;
@@ -2139,7 +2201,7 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                             if (klass.add(0x10).readPointer().equals(nameStrAddr)) {
                                 return klass;
                             }
-                        } catch (e) { }
+                        } catch(e) {}
                     }
                 }
                 return null;
@@ -2163,10 +2225,10 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                                 if (mName === methodName) {
                                     return methodInfo;
                                 }
-                            } catch (e) { }
+                            } catch(e) {}
                         }
                     }
-                } catch (e) {
+                } catch(e) {
                     console.log("[Shop Hook] Exception in findMethodByName: " + e.message);
                 }
                 return null;
@@ -2183,7 +2245,7 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                 console.log("[Shop] Exception calling ShowReopen: " + err.message + "\\n" + err.stack);
             }
             console.log("[Shop] Queued shop action on main thread.");
-
+            
             var attempts = 30;
             function checkStall() {
                 try {
@@ -2194,20 +2256,20 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                         try {
                             var titlePtr = currentStall.add(0x18).readPointer();
                             var title = titlePtr.isNull() ? '' : titlePtr.add(0x14).readUtf16String();
-
+                            
                             var GetItemName = new NativeFunction(il2cppBase.add(0xFEB4A0), 'pointer', ['pointer', 'int', 'bool', 'pointer']);
                             var items = [];
                             var mapField = currentStall.add(0x28).readPointer();
-
+                            
                             console.log("[Dump] currentStall: " + currentStall + ", mapField: " + mapField);
-
+                            
                             try {
                                 if (!mapField.isNull()) {
                                     var linkedList = mapField.add(0x18).readPointer();
                                     if (!linkedList.isNull()) {
                                         var head = linkedList.add(0x10).readPointer();
                                         var count = linkedList.add(0x18).readU32();
-
+                                        
                                         // Attach thread to il2cpp to safely call NativeFunction
                                         try {
                                             var il2cpp_domain_get_ptr = Module.findExportByName("libil2cpp.so", "il2cpp_domain_get");
@@ -2216,8 +2278,8 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                                                 var domain = new NativeFunction(il2cpp_domain_get_ptr, 'pointer', [])();
                                                 new NativeFunction(il2cpp_thread_attach_ptr, 'pointer', ['pointer'])(domain);
                                             }
-                                        } catch (e) { }
-
+                                        } catch(e) {}
+                                        
                                         if (!head.isNull() && count > 0 && count < 200) {
                                             var node = head;
                                             var idx = 0;
@@ -2226,28 +2288,28 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                                                     var kvpAddr = node.add(0x28);
                                                     var key = kvpAddr.add(0x00).readS32();
                                                     var smPtr = kvpAddr.add(0x08).readPointer();
-
+                                                    
                                                     if (!smPtr.isNull() && parseInt(smPtr.toString()) > 0x10000) {
                                                         var itemPtr = smPtr.add(0x18).readPointer();
                                                         var money = smPtr.add(0x20).readS32() || 0;
                                                         var knb = smPtr.add(0x24).readS32() || 0;
-
+                                                        
                                                         var genre = 0, detail = 0, particular = 0, level = 0, series = 0;
                                                         var name = '';
-
+                                                        
                                                         if (!itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
                                                             var detailAndGenre = itemPtr.add(0x20).readS32();
                                                             genre = detailAndGenre & 0xFFFF;
                                                             detail = (detailAndGenre >> 16) & 0xFFFF;
-
+                                                            
                                                             var particularAndLevel = itemPtr.add(0x24).readS32();
                                                             level = particularAndLevel & 0xFFFF;
                                                             particular = (particularAndLevel >> 16) & 0xFFFF;
-
+                                                            
                                                             var stackAndSeries = itemPtr.add(0x28).readS32();
                                                             series = stackAndSeries & 0xFFFF;
                                                             name = 'Item_' + genre + '_' + detail + '_' + particular + '_' + level;
-
+                                                            
                                                             try {
                                                                 var il2cppStrPtr = GetItemName(itemPtr, 0, 0, ptr(0));
                                                                 if (!il2cppStrPtr.isNull()) {
@@ -2256,7 +2318,7 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                                                                         name = il2cppStrPtr.add(0x14).readUtf16String(strLen);
                                                                     }
                                                                 }
-                                                            } catch (e3) {
+                                                            } catch(e3) {
                                                                 // fallback string
                                                             }
                                                             var magics = [];
@@ -2271,9 +2333,9 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                                                                         }
                                                                     }
                                                                 }
-                                                            } catch (e) { }
+                                                            } catch(e) {}
                                                         }
-
+                                                        
                                                         items.push({
                                                             idx: key,
                                                             name: name,
@@ -2285,8 +2347,8 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                                                             magics: magics
                                                         });
                                                     }
-                                                } catch (e2) { }
-
+                                                } catch(e2) {}
+                                                
                                                 node = node.add(0x18).readPointer();
                                                 idx++;
                                             }
@@ -2296,9 +2358,9 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                             } catch (e) {
                                 console.log("[Dump] Error reading stall mapField: " + e.message);
                             }
-
+                            
                             resolve({ ok: true, title: title, items: items });
-                        } catch (err) {
+                        } catch(err) {
                             resolve({ ok: false, error: 'Read stall data error: ' + err.message + ' | ' + err.stack });
                         }
                     } else if (attempts > 0) {
@@ -2312,7 +2374,7 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
                 }
             }
             setTimeout(checkStall, 50);
-        } catch (e) {
+        } catch(e) {
             resolve({ ok: false, error: e.message + ' | ' + e.stack });
         }
     });
@@ -2321,7 +2383,7 @@ rpc.exports.getShopItems = function (stallIndex, nameStr, namePtrStr, cidPtrStr,
 // ══ rpc/movement.js ══
 // frida-scripts/rpc/movement.js — Movement RPC exports (bridge-free)
 
-rpc.exports.gotoFindingPath = function (x, y, approach) {
+rpc.exports.gotoFindingPath = function(x, y, approach) {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'PlayerMain not found' };
     if (!il2cppBase) return { ok: false, error: 'il2cppBase not found' };
@@ -2335,7 +2397,7 @@ rpc.exports.gotoFindingPath = function (x, y, approach) {
     }
 };
 
-rpc.exports.gotoHooked = function (x, y, approach) {
+rpc.exports.gotoHooked = function(x, y, approach) {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'PlayerMain not found' };
     if (!il2cppBase) return { ok: false, error: 'il2cppBase not found' };
@@ -2348,7 +2410,7 @@ rpc.exports.gotoHooked = function (x, y, approach) {
         var gotoFindingPathFn = new NativeFunction(il2cppBase.add(0xE4A620), 'void', ['pointer', 'int', 'int', 'int', 'pointer', 'pointer', 'pointer']);
 
         Interceptor.attach(playerMainUpdate, {
-            onEnter: function () {
+            onEnter: function() {
                 var g = globalThis._pendingGoto;
                 if (!g) return;
                 globalThis._pendingGoto = null;
@@ -2367,67 +2429,59 @@ rpc.exports.gotoHooked = function (x, y, approach) {
     }
 };
 
-rpc.exports.gotoLastFire = function () {
+rpc.exports.gotoLastFire = function() {
     return { fire: globalThis._gotoLastFire || '(chua ban)' };
 };
 
-rpc.exports.findJoysticks = function () {
+rpc.exports.findJoysticks = function() {
     return { ok: false, error: 'Joystick query needs bridge (disabled for stability)' };
 };
 
-rpc.exports.joystickSet = function (idx, dx, dy) {
+rpc.exports.joystickSet = function(idx, dx, dy) {
     return { ok: false, error: 'Joystick control needs bridge (disabled for stability)' };
 };
 
 // ══ rpc/combat.js ══
 // frida-scripts/rpc/combat.js — Combat RPC exports (bridge-free)
 
-rpc.exports.doSkillHooked = function (skillId) {
+rpc.exports.doSkillHooked = function(skillId) {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
     if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
 
-    globalThis._pendingSkill = skillId | 0;
-    if (globalThis._skillHookOn) return { ok: true, queued: skillId | 0 };
-
     try {
-        var playerMainUpdate = il2cppBase.add(0xE42B4C);
         var doSkillFn = new NativeFunction(il2cppBase.add(0xE4969C), 'bool', ['pointer', 'int']);
+        globalThis._skillLastFire = 'queued';
 
-        Interceptor.attach(playerMainUpdate, {
-            onEnter: function () {
-                var sid = globalThis._pendingSkill;
-                if (sid === null || sid === undefined) return;
-                globalThis._pendingSkill = null;
-                try {
-                    var r = doSkillFn(_playerMainInstance, sid);
-                    globalThis._skillLastFire = 'ok DoSkill(' + sid + ')=' + r;
-                } catch (e) {
-                    globalThis._skillLastFire = 'err ' + e;
-                }
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                var r = doSkillFn(_playerMainInstance, skillId | 0);
+                globalThis._skillLastFire = 'ok DoSkill(' + skillId + ')=' + r;
+            } catch (e) {
+                globalThis._skillLastFire = 'err ' + e;
             }
         });
-        globalThis._skillHookOn = true;
-        return { ok: true, hooked: true };
+        return { ok: true, queued: true };
     } catch (e) {
         return { ok: false, error: '' + e };
     }
 };
 
-rpc.exports.skillLastFire = function () {
+rpc.exports.skillLastFire = function() {
     return { fire: globalThis._skillLastFire || '(chua ban)' };
 };
 
-rpc.exports.doSkillDefaultHooked = function (skillId) {
+rpc.exports.doSkillDefaultHooked = function(skillId) {
     // Basic attack is mapped to DoSkill(skillId) natively
     return rpc.exports.doSkillHooked(skillId || 1);
 };
 
-rpc.exports.defLast = function () {
+rpc.exports.defLast = function() {
     return { last: globalThis._skillLastFire || '(chua)' };
 };
 
-rpc.exports.attackPlayerHooked = function (cid, skillId, isPhysic, dismount) {
+rpc.exports.attackPlayerHooked = function(cid, skillId, isPhysic, dismount) {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
     if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
@@ -2441,7 +2495,7 @@ rpc.exports.attackPlayerHooked = function (cid, skillId, isPhysic, dismount) {
                 playerSwitchHorseFn(_playerMainInstance);
             }
         }
-
+        
         // Execute skill targeting active opponent
         return rpc.exports.doSkillHooked(skillId);
     } catch (e) {
@@ -2449,14 +2503,14 @@ rpc.exports.attackPlayerHooked = function (cid, skillId, isPhysic, dismount) {
     }
 };
 
-rpc.exports.pkLast = function () {
+rpc.exports.pkLast = function() {
     return { last: globalThis._skillLastFire || '(chua)' };
 };
 
 // ══ rpc/ui-control.js ══
 // frida-scripts/rpc/ui-control.js — UI control RPCs (bridge-free)
 
-rpc.exports.closeDialogPopups = function () {
+rpc.exports.closeDialogPopups = function() {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
     if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
@@ -2477,7 +2531,7 @@ rpc.exports.closeDialogPopups = function () {
         // Attempt to close PlayerDie (Về thành dưỡng sức) via Il2Cpp
         if (typeof Il2Cpp !== 'undefined') {
             try {
-                Il2Cpp.perform(function () {
+                Il2Cpp.perform(function() {
                     var playerDieClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerDie");
                     if (playerDieClass) {
                         var instances = Il2Cpp.api.Object.FindObjectsOfType(playerDieClass.type, false);
@@ -2492,7 +2546,7 @@ rpc.exports.closeDialogPopups = function () {
                         }
                     }
                 });
-            } catch (ex) {
+            } catch(ex) {
                 // Ignore Il2Cpp errors
             }
         }
@@ -2503,28 +2557,28 @@ rpc.exports.closeDialogPopups = function () {
     }
 };
 
-rpc.exports.closePopupResult = function () {
+rpc.exports.closePopupResult = function() {
     return { res: globalThis._closePopupResult || null, pending: 0 };
 };
 
-rpc.exports.sortBagItems = function () {
+rpc.exports.sortBagItems = function() {
     return { ok: false, error: 'Sort bag needs bridge (disabled for stability)' };
 };
 
-rpc.exports.sortResult = function () { return { res: null }; };
+rpc.exports.sortResult = function() { return { res: null }; };
 
-rpc.exports.equipHooked = function (idx) {
+rpc.exports.equipHooked = function(idx) {
     return { ok: false, error: 'Equip item needs bridge (disabled for stability)' };
 };
 
-rpc.exports.equipLastFire = function () { return { fire: '(disabled)' }; };
+rpc.exports.equipLastFire = function() { return { fire: '(disabled)' }; };
 
-rpc.exports.shopOpenLog = function () { return { log: globalThis._shopOpenLog || [] }; };
+rpc.exports.shopOpenLog = function() { return { log: globalThis._shopOpenLog || [] }; };
 
 // ══ rpc/diagnostics.js ══
 // frida-scripts/rpc/diagnostics.js — Diagnostic RPC exports
 
-rpc.exports.enumActiveUi = function () {
+rpc.exports.enumActiveUi = function() {
     if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
     return Il2Cpp.perform(function () {
         try {
@@ -2547,17 +2601,17 @@ rpc.exports.enumActiveUi = function () {
                             var o = arr.get(j);
                             var go = o.method('get_gameObject').invoke();
                             if (go.method('get_activeInHierarchy').invoke()) act++;
-                        } catch (e) { }
+                        } catch (e) {}
                     }
                     if (act > 0) active[nm] = total + '/' + act;
-                } catch (e) { }
+                } catch (e) {}
             }
             return { ok: true, active: active };
         } catch (e) { return { ok: false, error: '' + e }; }
     });
 };
 
-rpc.exports.captureGoto = function () {
+rpc.exports.captureGoto = function() {
     if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
     if (globalThis._gotoCapOn) return { ok: true, already: true };
     globalThis._gotoLog = [];
@@ -2581,7 +2635,7 @@ rpc.exports.captureGoto = function () {
                     }
                 });
                 hooked.push(name + '/' + cnt);
-            } catch (e) { }
+            } catch (e) {}
         }
         hookM("GotoFindingPath", 6, 6);
         hookM("GotoFindingPathOnVector", 1, 1);
@@ -2593,9 +2647,9 @@ rpc.exports.captureGoto = function () {
     });
 };
 
-rpc.exports.lastGotoArgs = function () { return { log: globalThis._gotoLog || [] }; };
+rpc.exports.lastGotoArgs = function() { return { log: globalThis._gotoLog || [] }; };
 
-rpc.exports.listMethods = function (className, filter) {
+rpc.exports.listMethods = function(className, filter) {
     if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
     return Il2Cpp.perform(function () {
         try {
@@ -2606,7 +2660,7 @@ rpc.exports.listMethods = function (className, filter) {
             for (var i = 0; i < ms.length; i++) {
                 var n = ms[i].name;
                 if (!f || n.toLowerCase().indexOf(f) !== -1) {
-                    var pc = 0; try { pc = ms[i].parameterCount; } catch (e) { }
+                    var pc = 0; try { pc = ms[i].parameterCount; } catch (e) {}
                     out.push(n + "/" + pc);
                 }
             }

@@ -19,7 +19,8 @@ body {
 
 /* DataGrid (Table) */
 .datagrid-container {
-  height: 250px;
+  height: 100px;
+  flex-shrink: 0;
   border: 1px solid #828790;
   background-color: #fff;
   margin: 10px;
