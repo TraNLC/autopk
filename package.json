@@ -18,7 +18,8 @@
     "adbkit": "^2.11.1",
     "frida": "^17.10.1",
     "frida-compile": "^19.0.5",
-    "frida-il2cpp-bridge": "^0.13.1"
+    "frida-il2cpp-bridge": "^0.13.1",
+    "systeminformation": "^5.31.11"
   },
   "devDependencies": {
     "electron": "^33.0.0"

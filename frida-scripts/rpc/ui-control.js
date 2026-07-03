@@ -18,27 +18,46 @@ rpc.exports.closeDialogPopups = function() {
 
         globalThis._closePopupResult = { closed: { dialog: 1, shop: 1, bag: 1, storage: 1 }, found: {}, ts: Date.now() };
 
-        // Attempt to close PlayerDie (Về thành dưỡng sức) via Il2Cpp
+        // Aggressive popup close: thử tất cả class có thể là popup "Về thành dưỡng sức"
         if (typeof Il2Cpp !== 'undefined') {
             try {
                 Il2Cpp.perform(function() {
-                    var playerDieClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerDie");
-                    if (playerDieClass) {
-                        var instances = Il2Cpp.api.Object.FindObjectsOfType(playerDieClass.type, false);
-                        if (instances && instances.length > 0) {
-                            var closeMethod = playerDieClass.method("Close");
-                            for (var i = 0; i < instances.length; i++) {
-                                var pd = new Il2Cpp.Object(instances[i]);
-                                if (pd && !pd.isNull()) {
-                                    closeMethod.invoke(pd);
-                                }
+                    var assembly = Il2Cpp.domain.assembly("Assembly-CSharp").image;
+                    
+                    // Danh sách tất cả class có thể là popup cần đóng
+                    var classNames = [
+                        "PlayerDie", "PopUpCanvas", "MessageBox",
+                        "ConfirmDialog", "ConfirmBox", "NoticeDialog", "NoticeBox",
+                        "GameNotice", "SystemNotice", "CommonDialog", "UIDialog",
+                        "PopupDialog", "DialogBase", "NpcDialog", "TipDialog",
+                        "MessageDialog", "AlertDialog", "OkCancelDialog"
+                    ];
+                    
+                    for (var ci = 0; ci < classNames.length; ci++) {
+                        try {
+                            var cls = assembly.class(classNames[ci]);
+                            if (!cls) continue;
+                            var instances = Il2Cpp.api.Object.FindObjectsOfType(cls.type, false);
+                            if (!instances || instances.length === 0) continue;
+                            
+                            for (var j = 0; j < instances.length; j++) {
+                                var obj = new Il2Cpp.Object(instances[j]);
+                                if (!obj || obj.isNull()) continue;
+                                
+                                // Thử tất cả phương thức đóng có thể
+                                try { obj.method("Close").invoke(obj); } catch(e) {}
+                                try { obj.method("OnClose").invoke(obj); } catch(e) {}
+                                try { obj.method("OnBtnOk").invoke(obj); } catch(e) {}
+                                try { obj.method("OnBtnConfirm").invoke(obj); } catch(e) {}
+                                try { obj.method("OnBtnYes").invoke(obj); } catch(e) {}
+                                try { obj.method("Dispose").invoke(obj); } catch(e) {}
+                                // Fallback: set inactive
+                                try { obj.method("SetActive").invoke(obj, false); } catch(e) {}
                             }
-                        }
+                        } catch(e) {}
                     }
                 });
-            } catch(ex) {
-                // Ignore Il2Cpp errors
-            }
+            } catch(ex) {}
         }
 
         return { ok: true, closed: true };

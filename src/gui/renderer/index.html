@@ -31,6 +31,7 @@
   <div class="tab-control">
     <div class="tab-headers">
       <button class="tab-btn active" data-tab="tab-tongkim">Tống Kim</button>
+      <button class="tab-btn" data-tab="tab-pk">Tấn Công</button>
       <button class="tab-btn" data-tab="tab-datau">Tìm Dã Tẩu</button>
       <button class="tab-btn" data-tab="tab-5hanh">Phối Đồ Ngũ Hành</button>
     </div>
@@ -87,9 +88,53 @@
         <!-- Log box inside Tống Kim tab -->
         <div class="log-container" id="global-log-container" style="margin-top: 15px;"></div>
       </div>
-
-
       
+      <!-- TAB: Tấn Công -->
+      <div id="tab-pk" class="tab-pane">
+        <div class="tab-pane-header">
+          <span class="tab-title">Cài Đặt Tấn Công (Auto PK)</span>
+        </div>
+        
+        <div class="groupbox">
+          <span class="groupbox-title">Tấn công cơ bản</span>
+          <div class="groupbox-content">
+            <div style="margin-bottom: 8px;">
+              <label><input type="checkbox" id="chk-priority-range-enabled" checked> Phạm vi dò tìm ưu tiên</label>
+              <input type="number" id="num-priority-range" value="400" style="width: 60px; float: right; padding: 2px;">
+            </div>
+            <div style="margin-bottom: 8px;">
+              <label style="padding-left: 20px;">Phạm vi dò tìm mở rộng</label>
+              <input type="number" id="num-extended-range" value="800" style="width: 60px; float: right; padding: 2px;">
+            </div>
+            <div style="margin-bottom: 8px;">
+              <label style="padding-left: 20px;">Phạm vi chiêu thức</label>
+              <input type="number" id="num-skill-range" value="512" style="width: 60px; float: right; padding: 2px;">
+            </div>
+            <div style="margin-bottom: 8px;">
+              <label><input type="checkbox" id="chk-outer-range-enabled" checked> Đánh trước ngoài phạm vi</label>
+              <input type="number" id="num-outer-range" value="700" style="width: 60px; float: right; padding: 2px;">
+            </div>
+            <div style="margin-bottom: 8px; margin-top: 12px;">
+              <label><input type="checkbox" id="chk-dismount-fight" checked> Xuống ngựa khi chiến đấu</label>
+            </div>
+            <div style="margin-bottom: 8px;">
+              <label><input type="checkbox" id="chk-ignore-invulnerable" checked> Không đánh người bất tử</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="groupbox" style="margin-top: 15px;">
+          <span class="groupbox-title">Tiêu chí tấn công</span>
+          <div class="groupbox-content">
+            <label><input type="radio" name="rad-criteria" value="nearest" checked> Đối thủ gần nhất (ưu tiên khắc hệ)</label>
+          </div>
+        </div>
+
+        <div style="margin-top: 15px;">
+          <button id="btn-save-pk" style="width:100%; padding: 8px; font-weight: bold; background-color: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer;">Lưu Cấu Hình Tấn Công</button>
+        </div>
+      </div>
+
       <!-- TAB: Tìm Dã Tẩu -->
       <div id="tab-datau" class="tab-pane">
         <div class="tab-pane-header">

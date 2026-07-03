@@ -187,12 +187,39 @@ rpc.exports.getPlayerInfo = function() {
                     res.mp = idnPtr.add(0x60).readInt();
                     res.maxMp = idnPtr.add(0x64).readInt();
                 }
+                
+                // Read riding state (fully bridge-free native check)
+                try {
+                    var isRidingFn = new NativeFunction(il2cppBase.add(0xFB7568), 'bool', ['pointer']);
+                    res.riding = isRidingFn(npcontroller);
+                } catch(e) {
+                    res.riding = false;
+                }
             }
         } catch (e) {
             res.error = "Error reading fields: " + e.message;
         }
     }
     return res;
+};
+
+rpc.exports.switchHorse = function() {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+    if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
+
+    try {
+        var playerSwitchHorseFn = new NativeFunction(il2cppBase.add(0xE493F4), 'void', ['pointer']);
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                playerSwitchHorseFn(_playerMainInstance);
+            } catch(e){}
+        });
+        return { ok: true };
+    } catch(e) {
+        return { ok: false, error: '' + e };
+    }
 };
 
 rpc.exports.invalidatePlayerMain = function() {
@@ -291,16 +318,44 @@ rpc.exports.getNearEnemies = function() {
                                             }
                                         }
 
-                                        enemies.push({
-                                            id: keyStr,
-                                            name: name,
-                                            hp: hp,
-                                            maxHp: maxHp,
-                                            series: series,
-                                            camp: campValue,
-                                            x: x,
-                                            y: y
-                                        });
+                                         // Read active states/buffs (fully bridge-free)
+                                         var states = [];
+                                         try {
+                                             var statePtr = controllerPtr.add(0x18).readPointer();
+                                             if (!statePtr.isNull() && parseInt(statePtr.toString()) > 0x10000) {
+                                                 var stateSettingArray = statePtr.add(0x10).readPointer();
+                                                 if (!stateSettingArray.isNull() && parseInt(stateSettingArray.toString()) > 0x10000) {
+                                                     var len = stateSettingArray.add(0xc).readInt();
+                                                     if (len > 0 && len < 50) {
+                                                         for (var k = 0; k < len; k++) {
+                                                             var settingPtr = stateSettingArray.add(0x10 + k * Process.pointerSize).readPointer();
+                                                             if (!settingPtr.isNull() && parseInt(settingPtr.toString()) > 0x10000) {
+                                                                 var isActive = settingPtr.add(0x1C).readU8();
+                                                                 if (isActive) {
+                                                                     var stateObj = settingPtr.add(0x10).readPointer();
+                                                                     if (!stateObj.isNull() && parseInt(stateObj.toString()) > 0x10000) {
+                                                                         var stateId = stateObj.add(0x10).readInt();
+                                                                         states.push(stateId);
+                                                                     }
+                                                                 }
+                                                             }
+                                                         }
+                                                     }
+                                                 }
+                                             }
+                                         } catch(e){}
+
+                                         enemies.push({
+                                             id: keyStr,
+                                             name: name,
+                                             hp: hp,
+                                             maxHp: maxHp,
+                                             series: series,
+                                             camp: campValue,
+                                             x: x,
+                                             y: y,
+                                             states: states
+                                         });
                                     }
                                 }
                             }
@@ -314,6 +369,148 @@ rpc.exports.getNearEnemies = function() {
             return { ok: false, error: e.message };
         }
         return { ok: true, enemies: enemies, localX: localX, localY: localY, localCamp: localCamp, localSeries: localSeries };
+    });
+};
+
+rpc.exports.getNearNpcNames = function() {
+    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    return Il2Cpp.perform(function() {
+        var npcMap = {};
+        try {
+            var pmClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerMain");
+            var pmInst = pmClass.field("instance").value;
+            if (pmInst && !pmInst.isNull()) {
+                var nearNpcsDict = pmInst.field("nearNpcs").value;
+                if (nearNpcsDict && !nearNpcsDict.isNull()) {
+                    var keysCollection = nearNpcsDict.method("get_Keys").invoke();
+                    var enumerator = keysCollection.method("GetEnumerator").invoke();
+                    var getNameFn = new NativeFunction(il2cppBase.add(0xFB9004), 'pointer', ['pointer']);
+                    
+                    while (enumerator.method("MoveNext").invoke()) {
+                        var key = enumerator.method("get_Current").invoke();
+                        var keyStr = key ? key.content : "";
+                        if (!keyStr) continue;
+
+                        var valueOut = Memory.alloc(Process.pointerSize);
+                        var success = nearNpcsDict.method("TryGetValue").invoke(key, valueOut);
+                        if (success) {
+                            var controllerPtr = valueOut.readPointer();
+                            if (!controllerPtr.isNull() && parseInt(controllerPtr.toString()) > 0x10000) {
+                                var namePtr = getNameFn(controllerPtr);
+                                if (!namePtr.isNull()) {
+                                    var nameStr = namePtr.add(0x14).readUtf16String();
+                                    npcMap[keyStr] = nameStr;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return { ok: true, npcMap: npcMap };
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
+    });
+};
+
+rpc.exports.getInventoryItems = function() {
+    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    return Il2Cpp.perform(function() {
+        var items = [];
+        try {
+            var pmClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerMain");
+            var pmInst = pmClass.field("instance").value;
+            if (pmInst && !pmInst.isNull()) {
+                var itemsDict = pmInst.field("items").value;
+                if (itemsDict && !itemsDict.isNull()) {
+                    var keysCollection = itemsDict.method("get_Keys").invoke();
+                    var enumerator = keysCollection.method("GetEnumerator").invoke();
+                    var getNameFn = new NativeFunction(il2cppBase.add(0xF8AF5C), 'pointer', ['pointer']);
+                    
+                    while (enumerator.method("MoveNext").invoke()) {
+                        var key = enumerator.method("get_Current").invoke();
+                        var itemIdx = parseInt(key.toString());
+
+                        var valueOut = Memory.alloc(Process.pointerSize);
+                        var success = itemsDict.method("TryGetValue").invoke(key, valueOut);
+                        if (success) {
+                            var itemPtr = valueOut.readPointer();
+                            if (!itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
+                                var location = itemPtr.add(0x60).readInt();
+                                if (location === 2) { // 2 = bagarate (in inventory bag)
+                                    var particular = itemPtr.add(0x4C).readInt();
+                                    var genre = itemPtr.add(0x44).readInt();
+                                    var detail = itemPtr.add(0x48).readInt();
+                                    var count = itemPtr.add(0x58).readInt();
+                                    
+                                    var nameStr = "";
+                                    try {
+                                        var namePtr = getNameFn(itemPtr);
+                                        if (!namePtr.isNull()) {
+                                            nameStr = namePtr.add(0x14).readUtf16String();
+                                        }
+                                    } catch(e){}
+
+                                    items.push({
+                                        index: itemIdx,
+                                        particular: particular,
+                                        genre: genre,
+                                        detail: detail,
+                                        count: count,
+                                        name: nameStr
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return { ok: true, items: items };
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
+    });
+};
+
+rpc.exports.useItem = function(itemIdx) {
+    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    return Il2Cpp.perform(function() {
+        try {
+            var pmClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerMain");
+            var pmInst = pmClass.field("instance").value;
+            if (pmInst && !pmInst.isNull()) {
+                var itemsDict = pmInst.field("items").value;
+                if (itemsDict && !itemsDict.isNull()) {
+                    var valueOut = Memory.alloc(Process.pointerSize);
+                    var success = itemsDict.method("TryGetValue").invoke(itemIdx, valueOut);
+                    if (success) {
+                        var itemPtr = valueOut.readPointer();
+                        if (!itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
+                            var requestUseItemFn = new NativeFunction(il2cppBase.add(0xE4CEFC), 'void', ['pointer', 'pointer']);
+                            globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+                            globalThis._mainThreadActions.push(function() {
+                                try {
+                                    requestUseItemFn(pmInst.handle, itemPtr);
+                                } catch(e){}
+                            });
+                            return { ok: true };
+                        }
+                    }
+                }
+            }
+            return { ok: false, error: 'Item not found' };
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
     });
 };
 

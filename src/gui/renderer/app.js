@@ -187,6 +187,16 @@ function selectDevice(id) {
   if (selDelay) {
     selDelay.value = (cfg.delay !== undefined) ? cfg.delay.toString() : '0';
   }
+
+  // Load PK config
+  document.getElementById('chk-priority-range-enabled').checked = cfg.usePriorityRange !== false;
+  document.getElementById('num-priority-range').value = cfg.priorityRange !== undefined ? cfg.priorityRange : 512;
+  document.getElementById('num-extended-range').value = cfg.extendedRange !== undefined ? cfg.extendedRange : 800;
+  document.getElementById('num-skill-range').value = cfg.skillRange !== undefined ? cfg.skillRange : 512;
+  document.getElementById('chk-outer-range-enabled').checked = cfg.useOuterRange !== false;
+  document.getElementById('num-outer-range').value = cfg.outerRange !== undefined ? cfg.outerRange : 700;
+  document.getElementById('chk-dismount-fight').checked = cfg.dismountOnFight !== false;
+  document.getElementById('chk-ignore-invulnerable').checked = cfg.ignoreInvulnerable !== false;
 }
 
 // Save Acc Settings
@@ -200,15 +210,40 @@ btnSaveAcc.addEventListener('click', () => {
   if (chkLac2.checked) lacs.push('51');
   if (chkLac3.checked) lacs.push('50');
   
-  dev.tkConfig = {
-    side: selSide.value,
-    lacs: lacs,
-    delay: parseInt(document.getElementById('sel-delay').value, 10) || 0
-  };
+  dev.tkConfig = dev.tkConfig || {};
+  dev.tkConfig.side = selSide.value;
+  dev.tkConfig.lacs = lacs;
+  dev.tkConfig.delay = parseInt(document.getElementById('sel-delay').value, 10) || 0;
   
   updateGlobalTK();
   addLog(`[${currentSelectedDeviceId}] Đã lưu cấu hình Tống Kim.`, 'info');
 });
+
+// Save PK Settings
+const btnSavePk = document.getElementById('btn-save-pk');
+if (btnSavePk) {
+  btnSavePk.addEventListener('click', () => {
+    if (!currentSelectedDeviceId) {
+      addLog('Chưa chọn nhân vật để lưu cấu hình PK.', 'error');
+      return;
+    }
+    const dev = devicesMap.get(currentSelectedDeviceId);
+    if (!dev) return;
+
+    dev.tkConfig = dev.tkConfig || { side: 'auto', lacs: [], delay: 0 };
+    dev.tkConfig.usePriorityRange = document.getElementById('chk-priority-range-enabled').checked;
+    dev.tkConfig.priorityRange = parseInt(document.getElementById('num-priority-range').value, 10) || 512;
+    dev.tkConfig.extendedRange = parseInt(document.getElementById('num-extended-range').value, 10) || 800;
+    dev.tkConfig.skillRange = parseInt(document.getElementById('num-skill-range').value, 10) || 512;
+    dev.tkConfig.useOuterRange = document.getElementById('chk-outer-range-enabled').checked;
+    dev.tkConfig.outerRange = parseInt(document.getElementById('num-outer-range').value, 10) || 700;
+    dev.tkConfig.dismountOnFight = document.getElementById('chk-dismount-fight').checked;
+    dev.tkConfig.ignoreInvulnerable = document.getElementById('chk-ignore-invulnerable').checked;
+
+    updateGlobalTK();
+    addLog(`[${currentSelectedDeviceId}] Đã lưu cấu hình Tấn Công (PK).`, 'success');
+  });
+}
 
 
 
@@ -392,3 +427,7 @@ if (btnTestCast) {
     btnTestCast.disabled = false;
   });
 }
+
+
+
+

@@ -19,7 +19,7 @@ body {
 
 /* DataGrid (Table) */
 .datagrid-container {
-  height: 100px;
+  height: 140px;
   flex-shrink: 0;
   border: 1px solid #828790;
   background-color: #fff;
@@ -190,7 +190,7 @@ select, input[type="text"] {
 
 /* Logs */
 .log-container {
-  height: 200px;
+  height: 220px;
   border: 1px solid #a0a0a0;
   background: #fff;
   overflow-y: auto;

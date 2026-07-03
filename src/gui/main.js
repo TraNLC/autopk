@@ -24,9 +24,13 @@ function writeVarint(val) {
   return Buffer.from(buf);
 }
 const { FridaSession } = require('../frida-session');
+const { AutoPK } = require('../auto-pk');
+const { MemoryReader } = require('../memory-reader');
+const { PacketInjector } = require('../packet-injector');
+const { PacketSniffer } = require('../packet-sniffer');
 const config = require('../../config');
-const { autoTongKimLoop, npcCacheMap } = require('../features/tongkim');
-const { TongKimMapData } = require('../features/tongkim-data');
+const { autoTongKimLoop, npcCacheMap, ensureCache } = require('../features/tongkim');
+const { TongKimMapData, updateNpcId } = require('../features/tongkim-data');
 const { scanDatauItems, buyDatauItem, getShopDetails } = require('../features/datau');
 const { getMapName } = require('../item-db');
 
@@ -46,9 +50,9 @@ const PKG = config.GAME_PACKAGE || 'vn.perfingame.jx1mobile';
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 450,
-    height: 720,
+    height: 800,
     minWidth: 400,
-    minHeight: 500,
+    minHeight: 600,
     resizable: true,
     frame: true,
     title: 'GST Auto TK ver 1.0',
@@ -103,14 +107,15 @@ app.on('window-all-closed', async () => {
 ipcMain.handle('scan-devices', async () => {
   try {
     try { execSync(`"${ADB}" start-server`, { timeout: 3000 }); } catch (e) {}
-    const ports = config.DEFAULT_PORTS || [16416, 5555, 5556, 5557, 26624, 26656, 26688, 26720, 26752, 26784, 26816, 26880];
-    
-    // Check ports using net.Socket first to avoid ADB crashes and hanging
+// Smart scan: auto-detect MuMu console ports (16380-16500 range, parallel TCP check)
     const net = require('net');
+    const SCAN_START = 16380;
+    const SCAN_END = 16500;
+
     function checkPort(port) {
       return new Promise((resolve) => {
         const s = new net.Socket();
-        s.setTimeout(200);
+        s.setTimeout(150);
         s.on('connect', () => { s.destroy(); resolve(true); });
         s.on('timeout', () => { s.destroy(); resolve(false); });
         s.on('error', () => { s.destroy(); resolve(false); });
@@ -118,39 +123,47 @@ ipcMain.handle('scan-devices', async () => {
       });
     }
 
-    for (const port of ports) {
-      if (await checkPort(port)) {
-        try { await execAsync(`"${ADB}" connect 127.0.0.1:${port}`, { timeout: 1500 }); } catch(e){}
-      }
+    // Phase 1: TCP scan in parallel batches of 30
+    const openPorts = [];
+    const allPorts = [];
+    for (let p = SCAN_START; p <= SCAN_END; p++) allPorts.push(p);
+    for (let i = 0; i < allPorts.length; i += 30) {
+      const batch = allPorts.slice(i, i + 30);
+      const results = await Promise.all(batch.map(p => checkPort(p).then(ok => ok ? p : null)));
+      for (const r of results) if (r) openPorts.push(r);
     }
 
-    const { stdout } = await execAsync(`"${ADB}" devices`);
+    // Phase 2: adb connect to open ports in parallel batches
+    for (let i = 0; i < openPorts.length; i += 10) {
+      const batch = openPorts.slice(i, i + 10);
+      await Promise.all(batch.map(p => 
+        execAsync(`"${ADB}" connect 127.0.0.1:${p}`, { timeout: 2000 }).catch(() => {})
+      ));
+    }
+
+    // Phase 3: get devices, filter 5-digit ports, dedup by product model
+    const { stdout } = await execAsync(`"${ADB}" devices -l`);
     const lines = stdout.split('\n');
     const devices = [];
+    const seenModels = new Set();
+    
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (line && line.includes('device') && !line.includes('offline')) {
-        let deviceId = line.split('\t')[0];
-        
-        // Deduplicate common emulator console vs tcp ports
-        let isDuplicate = false;
-        for (const d of devices) {
-          if (deviceId === '127.0.0.1:5555' && d.id === 'emulator-5554') isDuplicate = true;
-          if (deviceId === 'emulator-5554' && d.id === '127.0.0.1:5555') isDuplicate = true;
-          if (deviceId === '127.0.0.1:5557' && d.id === 'emulator-5556') isDuplicate = true;
-          if (deviceId === 'emulator-5556' && d.id === '127.0.0.1:5557') isDuplicate = true;
-          if (deviceId === '127.0.0.1:5559' && d.id === 'emulator-5558') isDuplicate = true;
-          if (deviceId === 'emulator-5558' && d.id === '127.0.0.1:5559') isDuplicate = true;
-          // Nox specific
-          if (deviceId === '127.0.0.1:62001' && d.id === 'emulator-5554') isDuplicate = true;
-          if (deviceId === 'emulator-5554' && d.id === '127.0.0.1:62001') isDuplicate = true;
-        }
-        
-        if (!isDuplicate) {
-          devices.push({ id: deviceId, name: deviceId });
-        }
-      }
+      if (!line || !line.includes('device') || line.includes('offline')) continue;
+      
+      const parts = line.split(/\s+/);
+      const deviceId = parts[0];
+      if (!deviceId) continue;
+
+      // Only 5-digit ports (MuMu console), skip 4-digit aliases (5555, 7555...)
+      const portMatch = deviceId.match(/:(\d+)$/);
+      if (!portMatch || portMatch[1].length !== 5) continue;
+
+      // Each 5-digit port = unique emulator instance (no dedup needed)
+      devices.push({ id: deviceId, name: deviceId });
     }
+
+    sendLog(`📱 Tìm thấy ${devices.length} giả lập (quét ${SCAN_START}-${SCAN_END}).`, 'info');
     return { ok: true, devices };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -164,6 +177,8 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
     const state = sessions.get(deviceId);
     if (state) {
       if (state.interval) clearInterval(state.interval);
+      if (state.sniffer) state.sniffer.stop();
+      if (state.autoPK) state.autoPK.stop();
       try {
         if (state.session) await state.session.disconnect();
       } catch (e) {
@@ -195,8 +210,16 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
     return { ok: false, error: 'Connection failed' };
   }
   
-  const state = { session, info: null, interval: null };
+  const sniffer = new PacketSniffer(session);
+  const injector = new PacketInjector(session);
+  const memory = new MemoryReader(session);
+  const autoPK = new AutoPK(session, memory, injector, sniffer, deviceId);
+  
+  const state = { session, info: null, interval: null, sniffer, injector, memory, autoPK };
   sessions.set(deviceId, state);
+
+  // Start packet sniffer immediately (runs in background for diagnostic logging and packet captures)
+  sniffer.start(200);
 
   sendLog(`[${deviceId}] Kết nối thành công! Bắt đầu tải script...`, 'success');
   
@@ -250,28 +273,92 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
         }
 
         if (dynamicId) {
-          if (!npcCacheMap.has(deviceId)) npcCacheMap.set(deviceId, {});
-          let cache = npcCacheMap.get(deviceId);
+          let cache = ensureCache(deviceId);
           
           let currentMapId = state.info ? state.info.mapId : null;
-          if (cache.mapId !== currentMapId) {
+          let currentCamp = (state.info && state.info.campValue) ? state.info.campValue : 1;
+          
+          // Reset NPC IDs khi đổi map HOẶC đổi phe (cùng map khác phe = NPC khác)
+          if (cache.mapId !== currentMapId || cache.campValue !== currentCamp) {
             cache.mapId = currentMapId;
+            cache.campValue = currentCamp;
+            cache.quanNhuId = null;
+            cache.trinhSatId = null;
+            cache.baodanhId = null;
             cache.learnedIds = [];
           }
-          
-          if (!cache.learnedIds) cache.learnedIds = [];
-          
-          if (TongKimMapData && currentMapId && TongKimMapData[currentMapId]) {
-              return; // Đã có trong DB cứng, không cần học tay
-          }
-          if (cache.learnedIds.length >= 2) {
-              return; // Đã học đủ 2 NPC cho map này, không ghi đè nếu click nhầm
-          }
-          
-          if (!cache.learnedIds.includes(dynamicId)) {
-            cache.learnedIds.push(dynamicId);
-            sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC: ${dynamicId}. (Đã nhớ ${cache.learnedIds.length}/2 NPC tại map ${currentMapId})`, 'success');
-          }
+
+          state.session.callRpc('getNearNpcNames').then(res => {
+            if (res && res.ok && res.npcMap) {
+              const name = res.npcMap[dynamicId] || "";
+              const lowerName = name.toLowerCase();
+
+              if (lowerName.includes("quân nhu") || lowerName.includes("quan nhu")) {
+                cache.quanNhuId = dynamicId;
+                if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
+                // Lưu vào DB theo map + phe
+                const cv = (state.info && state.info.campValue) ? state.info.campValue : 1;
+                updateNpcId(currentMapId, cv, 'quanNhu', dynamicId);
+                sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID QUÂN NHU: ${dynamicId} (${name})`, 'success');
+              } else if (lowerName.includes("trinh sát") || lowerName.includes("trinh sat")) {
+                // CHỈ match "Trinh Sát" — KHÔNG match "Chiêu Binh Quân", "Mã Binh Quan", "Tướng Quân"
+                cache.trinhSatId = dynamicId;
+                if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
+                const cv = (state.info && state.info.campValue) ? state.info.campValue : 1;
+                updateNpcId(currentMapId, cv, 'trinhSat', dynamicId);
+                sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID TRINH SÁT: ${dynamicId} (${name})`, 'success');
+              } else if (lowerName.includes("chiêu binh") || lowerName.includes("chieu binh") || lowerName.includes("mộ binh") || lowerName.includes("mo binh")) {
+                // NPC Báo Danh ở thành (Chiêu Binh Quân / Mộ Binh Quan)
+                cache.baodanhId = dynamicId;
+                if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
+                sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID BÁO DANH: ${dynamicId} (${name})`, 'success');
+              } else {
+                // Tên không khớp pattern → nếu đang ở staging area, thử gán dự phòng
+                const stagingMaps = [323, 324, 325, 379, 382, 972];
+                if (stagingMaps.includes(currentMapId)) {
+                  if (!cache.quanNhuId) {
+                    cache.quanNhuId = dynamicId;
+                    if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
+                    sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID QUÂN NHU (tên lạ: "${name}"): ${dynamicId}`, 'success');
+                  } else if (!cache.trinhSatId) {
+                    cache.trinhSatId = dynamicId;
+                    if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
+                    sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID TRINH SÁT (tên lạ: "${name}"): ${dynamicId}`, 'success');
+                  } else {
+                    sendLog(`[${deviceId}] 📢 Click NPC không liên quan (${dynamicId} - ${name || 'Không rõ'}), bỏ qua.`, 'info');
+                  }
+                } else {
+                  sendLog(`[${deviceId}] 📢 Click NPC không liên quan (${dynamicId} - ${name || 'Không rõ'}), bỏ qua học ID.`, 'info');
+                }
+              }
+            } else {
+              // Fallback: không đọc được tên NPC → đoán theo thứ tự click
+              if (!cache.learnedIds.includes(dynamicId)) {
+                cache.learnedIds.push(dynamicId);
+                
+                // Nếu đang ở khu staging area, gán ID vào role còn thiếu
+                const stagingMaps = [323, 324, 325, 379, 382, 972];
+                if (stagingMaps.includes(currentMapId)) {
+                  if (!cache.quanNhuId) {
+                    cache.quanNhuId = dynamicId;
+                    sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID QUÂN NHU (dự phòng): ${dynamicId}`, 'success');
+                  } else if (!cache.trinhSatId) {
+                    cache.trinhSatId = dynamicId;
+                    sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID TRINH SÁT (dự phòng): ${dynamicId}`, 'success');
+                  } else {
+                    sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC (Dự phòng): ${dynamicId}`, 'success');
+                  }
+                } else {
+                  sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC (Dự phòng): ${dynamicId}`, 'success');
+                }
+              }
+            }
+          }).catch(err => {
+             if (!cache.learnedIds.includes(dynamicId)) {
+                cache.learnedIds.push(dynamicId);
+                sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC (Dự phòng): ${dynamicId}`, 'success');
+             }
+          });
         }
         } // End of if (payload.opcode === 33)
       } // End of if (payload.type === 'send_out')
@@ -489,12 +576,40 @@ ipcMain.handle('toggle-auto-tk', (event, enable, tkConfigs) => {
         for (const [deviceId, state] of sessions.entries()) {
           try {
             const devCfg = globalTkConfigs[deviceId] || { side: 'auto', lacs: [], delay: 0 };
-            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, devCfg.delay, sendLog);
+            
+            // Determine map zone
+            const mapId = state.info ? state.info.mapId : 0;
+            const isBattlefield = [44, 375, 376, 377, 580].includes(mapId);
+            
+            if (isBattlefield) {
+              // Battlefield: Run custom AutoPK logic, pause dialog NPC loops
+              if (state.autoPK && !state.autoPK.running) {
+                // Apply configurations from GUI profile
+                state.autoPK.usePriorityRange = devCfg.usePriorityRange !== false;
+                state.autoPK.priorityRange = devCfg.priorityRange !== undefined ? devCfg.priorityRange : 400;
+                state.autoPK.extendedRange = devCfg.extendedRange !== undefined ? devCfg.extendedRange : 800;
+                state.autoPK.skillRange = devCfg.skillRange !== undefined ? devCfg.skillRange : 512;
+                state.autoPK.useOuterRange = devCfg.useOuterRange !== false;
+                state.autoPK.outerRange = devCfg.outerRange !== undefined ? devCfg.outerRange : 700;
+                state.autoPK.dismountOnFight = devCfg.dismountOnFight !== false;
+                state.autoPK.ignoreInvulnerable = devCfg.ignoreInvulnerable !== false;
+
+                sendLog(`[${deviceId}] ⚔️ Nhân vật đang ở Chiến trường. Khởi động luồng PK nhanh...`, 'success');
+                state.autoPK.start();
+              }
+            } else {
+              // Staging area/Dead/Town: Pause custom AutoPK, run autoTongKimLoop respawn logic
+              if (state.autoPK && state.autoPK.running) {
+                sendLog(`[${deviceId}] 🛡️ Nhân vật đang ở Dưỡng sức/Thành. Tạm dừng luồng PK.`, 'warn');
+                await state.autoPK.stop();
+              }
+              await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, devCfg.delay, sendLog);
+            }
           } catch(e) {
             sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');
           }
         }
-      }, 5000);
+      }, 3000); // 3-second poll for fast staging-battlefield transitions
     }
   } else {
     sendLog(`TẮT Auto Tống Kim toàn cục.`, 'warn');
@@ -502,8 +617,13 @@ ipcMain.handle('toggle-auto-tk', (event, enable, tkConfigs) => {
       clearInterval(globalAutoTKInterval);
       globalAutoTKInterval = null;
     }
+    // Stop all running AutoPK loops
+    for (const [deviceId, state] of sessions.entries()) {
+      if (state.autoPK && state.autoPK.running) {
+        state.autoPK.stop();
+      }
+    }
   }
   return { ok: true };
 });
-
 

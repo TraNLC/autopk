@@ -15,7 +15,7 @@ const MODULES = [
   'core/globals.js', 'core/helpers.js', 'core/opcodes.js', 'core/il2cpp-init.js',
   'hooks/native-funcs.js', 'hooks/anti-detection.js', 'hooks/connect.js', 'hooks/recv.js', 'hooks/send.js',
   'rpc/packet-io.js', 
-  'rpc/core/Il2CppUtils.js', 'rpc/core/PlayerManager.js', 'rpc/core/DialogManager.js', 'rpc/shop/ShopScanner.js',
+  'rpc/core/Il2CppUtils.js', 'rpc/core/PlayerManager.js', 'rpc/core/PlayerManager-fix.js', 'rpc/core/DialogManager.js', 'rpc/shop/ShopScanner.js',
   'rpc/movement.js', 'rpc/combat.js',
   'rpc/ui-control.js', 'rpc/diagnostics.js', 'ready.js',
 ];
