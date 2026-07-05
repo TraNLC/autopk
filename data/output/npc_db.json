@@ -16,7 +16,7 @@
     },
     "kim": {
       "quanNhu": null,
-      "trinhSat": null
+      "trinhSat": "4575"
     }
   },
   "325": {
@@ -36,7 +36,7 @@
     },
     "kim": {
       "quanNhu": null,
-      "trinhSat": null
+      "trinhSat": "4575"
     }
   },
   "382": {
@@ -53,6 +53,16 @@
     "song": {
       "quanNhu": null,
       "trinhSat": null
+    },
+    "kim": {
+      "quanNhu": null,
+      "trinhSat": null
+    }
+  },
+  "null": {
+    "song": {
+      "quanNhu": null,
+      "trinhSat": "4575"
     },
     "kim": {
       "quanNhu": null,

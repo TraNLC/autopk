@@ -6,20 +6,32 @@ class MemoryReader {
    */
   constructor(session) {
     this.session = session;
+    this._lastPlayerInfoTime = 0;
+    this._cachedPlayerInfo = null;
+    this._lastEnemyTime = 0;
+    this._cachedEnemies = null;
   }
 
   /**
    * Fetch player basic info (HP, MP, coordinates, target, state).
+   * Throttled: max 1 RPC call per second, returns cached value otherwise.
    */
   async getPlayerInfo() {
+    const now = Date.now();
+    if (this._cachedPlayerInfo && (now - this._lastPlayerInfoTime < 1000)) {
+      return this._cachedPlayerInfo;
+    }
     try {
       const res = await this.session.callRpc('getPlayerInfo');
       if (res && res.ok) {
+        this._cachedPlayerInfo = res;
+        this._lastPlayerInfoTime = now;
         return res;
       }
     } catch (e) {
       console.warn(`[MemoryReader] Error calling getPlayerInfo: ${e.message}`);
     }
+    if (this._cachedPlayerInfo) return this._cachedPlayerInfo;
     return {
       hp: 1000,
       maxHp: 1000,
@@ -116,16 +128,27 @@ class MemoryReader {
 
   /**
    * Get nearby enemies from game memory.
+   * Throttled: max 1 RPC call per 2 seconds.
    */
   async getNearEnemies() {
+    const now = Date.now();
+    if (this._cachedEnemies && (now - this._lastEnemyTime < 2000)) {
+      return this._cachedEnemies;
+    }
     try {
       const res = await this.session.callRpc('getNearEnemies');
       if (res && res.ok) {
+        this._cachedEnemies = res;
+        this._lastEnemyTime = now;
         return res;
       }
+      // If RPC fails (no bridge), cache the empty result for 5s
+      this._cachedEnemies = { ok: false, enemies: [], noBridge: true };
+      this._lastEnemyTime = now;
     } catch (e) {
       console.warn(`[MemoryReader] Error calling getNearEnemies: ${e.message}`);
     }
+    if (this._cachedEnemies) return this._cachedEnemies;
     return { ok: false, enemies: [] };
   }
 }

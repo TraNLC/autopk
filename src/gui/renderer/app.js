@@ -4,22 +4,7 @@ const btnRestart = document.getElementById('btn-restart');
 const deviceTableBody = document.getElementById('device-table-body');
 const globalLogContainer = document.getElementById('global-log-container');
 
-// Tabs
-const tabBtns = document.querySelectorAll('.tab-btn');
-const tabPanes = document.querySelectorAll('.tab-pane');
-
-tabBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    // Remove active class
-    tabBtns.forEach(b => b.classList.remove('active'));
-    tabPanes.forEach(p => p.classList.remove('active'));
-    
-    // Add active class
-    btn.classList.add('active');
-    const targetId = btn.getAttribute('data-tab');
-    document.getElementById(targetId).classList.add('active');
-  });
-});
+// UI Elements
 
 // TK Settings Elements
 const pkFightSwitch = document.getElementById('pk-fight-switch');
@@ -428,6 +413,21 @@ if (btnTestCast) {
   });
 }
 
-
-
-
+// Tab logic
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const targetId = btn.getAttribute('data-target');
+    if (!targetId) return;
+    
+    // Remove active class from all buttons and panes
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    
+    // Add active class to clicked button and target pane
+    btn.classList.add('active');
+    const targetPane = document.getElementById(targetId);
+    if (targetPane) {
+      targetPane.classList.add('active');
+    }
+  });
+});

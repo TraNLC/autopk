@@ -372,8 +372,9 @@ rpc.exports.getNearEnemies = function() {
     });
 };
 
+// getNearNpcNames: ưu tiên bridge (Il2Cpp), fallback NPCScanner no-bridge
+if (typeof Il2Cpp !== 'undefined') {
 rpc.exports.getNearNpcNames = function() {
-    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
 
@@ -409,12 +410,14 @@ rpc.exports.getNearNpcNames = function() {
                     }
                 }
             }
-            return { ok: true, npcMap: npcMap };
+            return { ok: true, npcMap: npcMap, source: 'bridge:nearNpcs' };
         } catch(e) {
             return { ok: false, error: e.message };
         }
     });
 };
+}
+// else: NPCScanner.js (loaded before) provides the no-bridge version
 
 rpc.exports.getInventoryItems = function() {
     if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };

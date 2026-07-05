@@ -2,9 +2,9 @@
   "name": "gst-auto-pk-node",
   "version": "1.0.0",
   "description": "GST Auto PK - VLTK1 Mobile Automation Tool (Node.js Rewrite)",
-  "main": "src/index.js",
+  "main": "src/gui/main.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "electron src/gui/main.js",
     "build:frida": "node frida-scripts/build.js",
     "build:frida:bridge": "node frida-scripts/build.js --bridge",
     "watchdog": "node src/game-watchdog.js",
@@ -12,7 +12,9 @@
     "test:frida": "node test/test-frida.js",
     "test:memory": "node test/test-memory.js",
     "test:packet": "node test/test-packet.js",
-    "gui": "electron src/gui/main.js"
+    "gui": "electron src/gui/main.js",
+    "dist": "electron-builder",
+    "dist:dir": "electron-builder --dir"
   },
   "dependencies": {
     "adbkit": "^2.11.1",
@@ -22,7 +24,32 @@
     "systeminformation": "^5.31.11"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.gst.auto-pk",
+    "productName": "VLTK Auto Tong Kim",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**",
+      "frida-scripts/**",
+      "data/**",
+      "config.js",
+      "node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools"
+      }
+    ],
+    "win": {
+      "target": "portable",
+      "icon": null
+    }
   },
   "author": "GST",
   "license": "MIT"

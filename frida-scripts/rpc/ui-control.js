@@ -1,5 +1,23 @@
 // frida-scripts/rpc/ui-control.js — UI control RPCs (bridge-free)
 
+// Check if NPC dialog is currently open
+rpc.exports.isDialogOpen = function() {
+    try {
+        // Init if needed (readPlayerMainDirect sets il2cppBase + _playerMainInstance)
+        if (!_playerMainInstance) {
+            var pmRes = readPlayerMainDirect();
+            if (!pmRes.ok || !_playerMainInstance) return { ok: false, open: false, error: 'no PlayerMain' };
+        }
+        if (!il2cppBase) return { ok: false, open: false, error: 'no il2cppBase' };
+        
+        // PlayerMain.npcDialogMessage @0xE8 — non-null when dialog is open
+        var dialogMsg = _playerMainInstance.add(0xE8).readPointer();
+        return { ok: true, open: !dialogMsg.isNull(), ptr: dialogMsg.toString() };
+    } catch(e) {
+        return { ok: false, open: false, error: e.message };
+    }
+};
+
 rpc.exports.closeDialogPopups = function() {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };

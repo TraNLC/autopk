@@ -122,13 +122,13 @@ async function scanAllShops() {
             })
           });
           scanned++;
-          console.log(`  ✅ [${scanned}/${shops.length}] ${shop.name}: ${data.items.length} items`);
+          console.log(`  [Thành Công] [${scanned}/${shops.length}] ${shop.name}: ${data.items.length} items`);
         } else {
           failed++;
         }
       } catch (e) {
         failed++;
-        console.log(`  ⚠️  [${scanned + failed}/${shops.length}] ${shop.name}: ${e.message}`);
+        console.log(`  [Cảnh Báo]  [${scanned + failed}/${shops.length}] ${shop.name}: ${e.message}`);
       }
 
       // Small delay between shops
@@ -150,7 +150,7 @@ async function scanAllShops() {
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     const filePath = path.join(OUTPUT_DIR, filename);
     fs.writeFileSync(filePath, JSON.stringify(exportData, null, 2), 'utf-8');
-    console.log(`\n[Radar] ✅ Saved to ${filePath}`);
+    console.log(`\n[Radar] [Thành Công] Saved to ${filePath}`);
     console.log(`[Radar] Shops: ${scanned} scanned, ${failed} failed, ${exportData.totalItems} total items`);
 
     return exportData;
