@@ -278,14 +278,22 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
           let currentMapId = state.info ? state.info.mapId : null;
           let currentCamp = (state.info && state.info.campValue) ? state.info.campValue : 1;
           
-          // Reset NPC IDs khi đổi map HOẶC đổi phe (cùng map khác phe = NPC khác)
-          if (cache.mapId !== currentMapId || cache.campValue !== currentCamp) {
+          const STAGING_MAPS = [323, 324, 325, 379, 382, 972];
+          const BATTLE_MAPS  = [44, 375, 376, 377, 580];
+          const prevInTK  = STAGING_MAPS.includes(cache.mapId) || BATTLE_MAPS.includes(cache.mapId);
+          const currInTK  = STAGING_MAPS.includes(currentMapId) || BATTLE_MAPS.includes(currentMapId);
+
+          // Chỉ reset khi đổi phe, hoặc khi ra ngoài vùng TK hẳn (về thành)
+          if (cache.campValue !== currentCamp || (cache.mapId !== null && prevInTK && !currInTK)) {
+            sendLog(`[${deviceId}] [DEBUG] Reset NPC cache: camp ${cache.campValue}→${currentCamp} / map ${cache.mapId}→${currentMapId}`, 'warn');
             cache.mapId = currentMapId;
             cache.campValue = currentCamp;
-            cache.quanNhuId = null;
             cache.trinhSatId = null;
             cache.baodanhId = null;
             cache.learnedIds = [];
+          } else {
+            cache.mapId = currentMapId;
+            if (!cache.campValue) cache.campValue = currentCamp;
           }
 
           state.session.callRpc('getNearNpcNames').then(res => {
@@ -293,70 +301,44 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
               const name = res.npcMap[dynamicId] || "";
               const lowerName = name.toLowerCase();
 
-              if (lowerName.includes("quân nhu") || lowerName.includes("quan nhu")) {
-                cache.quanNhuId = dynamicId;
-                if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
-                // Lưu vào DB theo map + phe
-                const cv = (state.info && state.info.campValue) ? state.info.campValue : 1;
-                updateNpcId(currentMapId, cv, 'quanNhu', dynamicId);
-                sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID QUÂN NHU: ${dynamicId} (${name})`, 'success');
-              } else if (lowerName.includes("trinh sát") || lowerName.includes("trinh sat")) {
-                // CHỈ match "Trinh Sát" — KHÔNG match "Chiêu Binh Quân", "Mã Binh Quan", "Tướng Quân"
+              if (lowerName.includes("trinh sát") || lowerName.includes("trinh sat")) {
                 cache.trinhSatId = dynamicId;
                 if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
                 const cv = (state.info && state.info.campValue) ? state.info.campValue : 1;
                 updateNpcId(currentMapId, cv, 'trinhSat', dynamicId);
                 sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID TRINH SÁT: ${dynamicId} (${name})`, 'success');
               } else if (lowerName.includes("chiêu binh") || lowerName.includes("chieu binh") || lowerName.includes("mộ binh") || lowerName.includes("mo binh")) {
-                // NPC Báo Danh ở thành (Chiêu Binh Quân / Mộ Binh Quan)
                 cache.baodanhId = dynamicId;
                 if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
                 sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID BÁO DANH: ${dynamicId} (${name})`, 'success');
               } else {
-                // Tên không khớp pattern → nếu đang ở staging area, thử gán dự phòng
                 const stagingMaps = [323, 324, 325, 379, 382, 972];
                 if (stagingMaps.includes(currentMapId)) {
-                  if (!cache.quanNhuId) {
-                    cache.quanNhuId = dynamicId;
-                    if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
-                    sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID QUÂN NHU (tên lạ: "${name}"): ${dynamicId}`, 'success');
-                  } else if (!cache.trinhSatId) {
+                  if (!cache.trinhSatId) {
                     cache.trinhSatId = dynamicId;
                     if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
                     sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID TRINH SÁT (tên lạ: "${name}"): ${dynamicId}`, 'success');
                   } else {
                     sendLog(`[${deviceId}] 📢 Click NPC không liên quan (${dynamicId} - ${name || 'Không rõ'}), bỏ qua.`, 'info');
                   }
-                } else {
-                  sendLog(`[${deviceId}] 📢 Click NPC không liên quan (${dynamicId} - ${name || 'Không rõ'}), bỏ qua học ID.`, 'info');
                 }
               }
             } else {
-              // Fallback: không đọc được tên NPC → đoán theo thứ tự click
+              // Fallback
               if (!cache.learnedIds.includes(dynamicId)) {
                 cache.learnedIds.push(dynamicId);
-                
-                // Nếu đang ở khu staging area, gán ID vào role còn thiếu
                 const stagingMaps = [323, 324, 325, 379, 382, 972];
                 if (stagingMaps.includes(currentMapId)) {
-                  if (!cache.quanNhuId) {
-                    cache.quanNhuId = dynamicId;
-                    sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID QUÂN NHU (dự phòng): ${dynamicId}`, 'success');
-                  } else if (!cache.trinhSatId) {
+                  if (!cache.trinhSatId) {
                     cache.trinhSatId = dynamicId;
                     sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID TRINH SÁT (dự phòng): ${dynamicId}`, 'success');
-                  } else {
-                    sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC (Dự phòng): ${dynamicId}`, 'success');
                   }
-                } else {
-                  sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC (Dự phòng): ${dynamicId}`, 'success');
                 }
               }
             }
           }).catch(err => {
              if (!cache.learnedIds.includes(dynamicId)) {
                 cache.learnedIds.push(dynamicId);
-                sendLog(`[${deviceId}] 🎓 ĐÃ HỌC ID NPC (Dự phòng): ${dynamicId}`, 'success');
              }
           });
         }
@@ -609,7 +591,7 @@ ipcMain.handle('toggle-auto-tk', (event, enable, tkConfigs) => {
             sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');
           }
         }
-      }, 3000); // 3-second poll for fast staging-battlefield transitions
+      }, 1000); // 1-second poll for precise staging/battlefield checking
     }
   } else {
     sendLog(`TẮT Auto Tống Kim toàn cục.`, 'warn');
