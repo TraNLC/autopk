@@ -428,6 +428,23 @@ if (btnTestCast) {
   });
 }
 
+const btnTestBuff = document.getElementById('btn-test-buff');
+if (btnTestBuff) {
+  btnTestBuff.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      addLog('Chưa chọn nhân vật để test buff.', 'error');
+      return;
+    }
+    btnTestBuff.disabled = true;
+    try {
+      await window.api.testBuff(currentSelectedDeviceId);
+    } catch (e) {
+      addLog(`Lỗi test buff: ${e.message}`, 'error');
+    }
+    btnTestBuff.disabled = false;
+  });
+}
+
 
 
 

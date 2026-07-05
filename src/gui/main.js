@@ -388,7 +388,7 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
   return { ok: true };
 });
 
-ipcMain.handle('test-cast-skill', async (event, deviceId) => {
+ipcMain.handle('test-buff', async (event, deviceId) => {
   const state = sessions.get(deviceId);
   if (!state || !state.session) {
     sendLog(`[${deviceId}] Lỗi: Máy chưa kết nối.`, 'error');
@@ -431,7 +431,7 @@ ipcMain.handle('test-cast-skill', async (event, deviceId) => {
     
     const targetSkillName = skillNameMap[targetSkill] || `Kỹ năng phái (${targetSkill})`;
 
-    sendLog(`[${deviceId}] ⚡ Thực hiện cast nhanh kỹ năng: ${targetSkillName} (ID: ${targetSkill}) | Môn phái: ${sectName}`, 'info');
+    sendLog(`[${deviceId}] ⚡ Thực hiện cast nhanh buff: ${targetSkillName} (ID: ${targetSkill}) | Môn phái: ${sectName}`, 'info');
     
     // Cast skill directly through the memory hook
     await state.session.callRpc('doSkillHooked', targetSkill);
@@ -452,21 +452,72 @@ ipcMain.handle('test-cast-skill', async (event, deviceId) => {
       ]);
       const bodyHex = Buffer.concat([p1, p2, p3]).toString('hex');
       const res = await state.session.callRpc('sendTcpPacket', 240, bodyHex);
-      sendLog(`[${deviceId}] 📡 [Packet] Kết quả gửi: ${JSON.stringify(res)}`, res.ok ? 'success' : 'warn');
-    } catch(e) {
-      sendLog(`[${deviceId}] ⚠️ [Packet Fallback] ${e.message}`, 'warn');
-    }
+    } catch(e) {}
     
-    // Wait 500ms and check fire status
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const fireRes = await state.session.callRpc('skillLastFire');
-    sendLog(`[${deviceId}] 📡 Kết quả gọi DoSkill: ${fireRes ? fireRes.fire : 'Không có phản hồi'}`, 'info');
-    
-    sendLog(`[${deviceId}] ✅ Đã gửi lệnh DoSkill(${targetSkill}) trực tiếp qua bộ nhớ!`, 'success');
+    sendLog(`[${deviceId}] ✅ Đã test buff (${targetSkill})!`, 'success');
     return { ok: true, skillId: targetSkill };
   } catch (err) {
-    sendLog(`[${deviceId}] ❌ Lỗi test cast skill: ${err.message}`, 'error');
+    sendLog(`[${deviceId}] ❌ Lỗi test buff: ${err.message}`, 'error');
     return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('test-cast-skill', async (event, deviceId) => {
+  try {
+    const state = sessions.get(deviceId);
+    if (!state || !state.injector || !state.info) {
+      sendLog(`[${deviceId}] Lỗi: Chưa kết nối hoặc chưa có dữ liệu nhân vật.`, 'error');
+      return { ok: false, error: 'Not ready' };
+    }
+    
+    let targetSkill = 1;
+    const sect = state.info.sect !== undefined ? state.info.sect : -1;
+    const sectName = state.info.sectName || 'Chưa rõ';
+    
+    const sectSkill9xMap = {
+      0: 104, // Thiếu Lâm (Đạt Ma)
+      1: 114, // Thiên Vương (Truy Tinh)
+      2: 132, // Đường Môn (Bạo Vũ)
+      3: 142, // Ngũ Độc (Bách Độc)
+      4: 152, // Nga Mi (Phong Sương)
+      5: 172, // Thúy Yên (Băng Tâm Tiên Tử)
+      6: 182, // Cái Bang (Kháng Long)
+      7: 192, // Thiên Nhẫn (Vân Long / Thiên Ngoại)
+      8: 204, // Võ Đang (Thiên Địa)
+      9: 215  // Côn Lôn (Lôi Động)
+    };
+    if (sect !== -1 && sectSkill9xMap[sect]) {
+      targetSkill = sectSkill9xMap[sect];
+    }
+    
+    sendLog(`[${deviceId}] ⚡ Thực thi test đánh chiêu 9x (ID ${targetSkill}) | Môn phái: ${sectName}...`, 'info');
+    
+    // Sử dụng doSkillHooked thay vì packet để client hiển thị animation + tự tính toán packet
+    await state.session.callRpc('doSkillHooked', targetSkill);
+    
+    // Gửi thêm packet fallback (như logic test-buff)
+    try {
+      const p1 = Buffer.concat([
+        writeVarint((1 << 3) | 0), // tag 1 (int32)
+        writeVarint(targetSkill)
+      ]);
+      const p2 = Buffer.concat([
+        writeVarint((2 << 3) | 0), // tag 2 (int32)
+        writeVarint(state.info ? state.info.x || 0 : 0)
+      ]);
+      const p3 = Buffer.concat([
+        writeVarint((3 << 3) | 0), // tag 3 (int32)
+        writeVarint(state.info ? state.info.y || 0 : 0)
+      ]);
+      const bodyHex = Buffer.concat([p1, p2, p3]).toString('hex');
+      const res = await state.session.callRpc('sendTcpPacket', 240, bodyHex);
+    } catch(e) {}
+
+    sendLog(`[${deviceId}] ✅ Đã test skill 9x (${targetSkill})!`, 'success');
+    return { ok: true, skillId: targetSkill };
+  } catch(e) {
+    sendLog(`[${deviceId}] Lỗi test skill: ${e.message}`, 'error');
+    return { ok: false, error: e.message };
   }
 });
 

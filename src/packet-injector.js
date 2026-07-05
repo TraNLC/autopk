@@ -58,7 +58,7 @@ class PacketInjector {
    * Send eNpcDialogue (opcode 33)
    */
   async sendNpcDialogue(npcId) {
-    const body = encodeField(1, 'string', npcId);
+    const body = encodeField(1, 'string', String(npcId));
     return await this.sendRaw(33, body.toString('hex'));
   }
 

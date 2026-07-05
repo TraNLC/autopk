@@ -54,12 +54,35 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
       }
       sendLog(`[${deviceId}] 📋 Gọi NPC Báo Danh (ID: ${baodanhId})...`, 'info');
       try {
-        await session.callRpc('remoteNpcDialogue', baodanhId);
-        await new Promise(r => setTimeout(r, 400));
-        await session.callRpc('selectDialogOption', 0);
+        // Gọi Trinh Sát bằng Packet Injection để tránh kẹt UI hoặc animation lock
+        await injector.sendNpcDialogue(baodanhId);
         await new Promise(r => setTimeout(r, 500));
-        await session.callRpc('closeDialogPopups').catch(() => {});
-        sendLog(`[${deviceId}] ✅ Đã gửi lệnh vào khu chờ Tống Kim!`, 'success');
+        await injector.sendNpcSelect(0);
+        await new Promise(r => setTimeout(r, 1000)); // Chờ 1s để server xử lý dịch chuyển
+
+        // Dùng map cố định ID skill 9x để xuất chiêu cancel target ngay lập tức
+        let targetSkill = 1;
+        const sect = info.sect !== undefined ? info.sect : -1;
+        const sectSkill9xMap = {
+          0: 104, // Thiếu Lâm (Đạt Ma)
+          1: 114, // Thiên Vương (Truy Tinh)
+          2: 132, // Đường Môn (Bạo Vũ)
+          3: 142, // Ngũ Độc (Bách Độc)
+          4: 152, // Nga Mi (Phong Sương)
+          5: 172, // Thúy Yên (Băng Tâm Tiên Tử)
+          6: 182, // Cái Bang (Kháng Long)
+          7: 192, // Thiên Nhẫn (Vân Long / Thiên Ngoại)
+          8: 204, // Võ Đang (Thiên Địa)
+          9: 215  // Côn Lôn (Lôi Động)
+        };
+        
+        if (sect !== -1 && sectSkill9xMap[sect]) {
+          targetSkill = sectSkill9xMap[sect];
+        }
+
+        sendLog(`[${deviceId}] ⚡ Xuất chiêu 9x (ID ${targetSkill}) để giải phóng target Trinh Sát...`, 'info');
+        await injector.sendDoSkillTargetPosition(targetSkill, info.x || 0, info.y || 0);
+
       } catch(e) {
         sendLog(`[${deviceId}] Lỗi báo danh: ${e.message}`, 'error');
       }
@@ -104,11 +127,18 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
         }
 
         // ── Tính toán khoảng giãn cách call (Không block loop chính) ─────────
-        // 5 phút đầu ở staging: gọi nhanh 2.5s / lần để nhanh chóng vào trận.
-        // Sau 5 phút vẫn kẹt ở staging: hạ tốc độ xuống 5s / lần chống dis.
+        // Bình thường: gọi nhanh 2.5s / lần để vào trận.
+        // Cứ mỗi mốc 5 phút (5p, 10p, 15p...): giãn cách 5s một lần duy nhất để reset rate-limit của server, sau đó tiếp tục 2.5s.
         const elapsed = Date.now() - (cache.enterStagingTime || Date.now());
-        const isCooldownActive = elapsed < 5 * 60 * 1000;
-        const callInterval = isCooldownActive ? 2500 : 5000;
+        const minutesPassed = Math.floor(elapsed / (5 * 60 * 1000));
+        
+        let callInterval = 2500;
+        let isSlowTick = false;
+
+        if (minutesPassed > (cache.lastMinutesPassed || 0)) {
+          callInterval = 5000;
+          isSlowTick = true;
+        }
 
         const now = Date.now();
         if (cache._lastCallTime && (now - cache._lastCallTime) < callInterval) {
@@ -116,10 +146,11 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
         }
         cache._lastCallTime = now;
 
-        if (isCooldownActive) {
-          sendLog(`[${deviceId}] ⚔️ Trong 5 phút đầu. Gọi Trinh Sát nhanh 2.5s/lần...`, 'success');
+        if (isSlowTick) {
+          cache.lastMinutesPassed = minutesPassed;
+          sendLog(`[${deviceId}] ⏳ Chạm mốc ${minutesPassed * 5} phút dưỡng sức. Giãn cách lần này là 5s để chống dis...`, 'warn');
         } else {
-          sendLog(`[${deviceId}] ⏳ Kẹt quá 5 phút ở staging. Giảm tốc độ gọi Trinh Sát xuống 5s/lần...`, 'warn');
+          sendLog(`[${deviceId}] ⚔️ Gọi Trinh Sát giãn cách 2.5s/lần...`, 'success');
         }
 
         // Thực thi mở dialog
@@ -164,10 +195,33 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
         const battleOption = (campValue === 2) ? 1 : 0;
         sendLog(`[${deviceId}] ⚔️ Gọi Trinh Sát (ID=${trinhSatId}) → Chọn Trận địa bên ${campValue === 2 ? 'Kim' : 'Tống'} (Option ${battleOption})...`, 'info');
         
-        await session.callRpc('remoteNpcDialogue', trinhSatId);
+        // Gọi Trinh Sát bằng Packet Injection để tránh bị kẹt UI hoặc animation lock do đánh skill
+        await injector.sendNpcDialogue(trinhSatId);
         await new Promise(r => setTimeout(r, 500));
-        await session.callRpc('selectDialogOption', battleOption);
-        await new Promise(r => setTimeout(r, 1000)); // Chờ 1s để client kịp load map mới
+        await injector.sendNpcSelect(battleOption);
+        await new Promise(r => setTimeout(r, 1000)); // Chờ tối thiểu 1s để server xử lý lệnh dịch chuyển
+
+        // Dùng map cố định ID skill 9x để đánh 1 chiêu cancel target
+        let targetSkill = 1;
+        const sectSkill9xMap = {
+          0: 104, // Thiếu Lâm (Đạt Ma)
+          1: 114, // Thiên Vương (Truy Tinh)
+          2: 132, // Đường Môn (Bạo Vũ)
+          3: 142, // Ngũ Độc (Bách Độc)
+          4: 152, // Nga Mi (Phong Sương)
+          5: 172, // Thúy Yên (Băng Tâm Tiên Tử)
+          6: 182, // Cái Bang (Kháng Long)
+          7: 192, // Thiên Nhẫn (Vân Long / Thiên Ngoại)
+          8: 204, // Võ Đang (Thiên Địa)
+          9: 215  // Côn Lôn (Lôi Động)
+        };
+        
+        if (sect !== -1 && sectSkill9xMap[sect]) {
+          targetSkill = sectSkill9xMap[sect];
+        }
+
+        sendLog(`[${deviceId}] ⚡ Xuất chiêu 9x (ID ${targetSkill}) để cancel target Trinh Sát...`, 'info');
+        await injector.sendDoSkillTargetPosition(targetSkill, info.x || 0, info.y || 0);
 
       } catch(e) {
         sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');
