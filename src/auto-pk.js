@@ -32,14 +32,13 @@ class AutoPK {
     this.usePriorityRange = true;
     this.useOuterRange = true;
     this.ignoreInvulnerable = true;
-    
+    this.dismountOnFight = true;
     this.attackCriteria = 'nearest'; // nearest | lowest_level | highest_level
 
     // Default skills to execute
     this.attackSkills = [1];
     this.currentSkillIndex = 0;
     this.lastLagFixTime = 0;
-    this._lastSelfDieTime = Date.now(); // Khởi tạo bằng giờ hiện tại để không bị chết ngay lập tức
   }
 
   /**
@@ -109,82 +108,156 @@ class AutoPK {
     console.log('[AutoPK] Stopping Auto PK Loop.');
     try {
       await this.injector.sendApplyAutoplayProfile(false, this.profileGuid);
-      // Khi dừng PK (hoặc nhảy map/tương tác NPC), tự gửi 1 lệnh di chuyển tại chỗ để huỷ target cũ
-      const info = await this.memory.getPlayerInfo();
-      if (info && info.x && info.y) {
-        await this.injector.sendDoSkillTargetPosition(1, info.x, info.y);
-      }
     } catch (e) {}
   }
 
-  getElementRelation(mySeries, targetSeries) {
-    if (mySeries === -1 || targetSeries === -1) return 0;
-    // JX1 Series: 0: Kim, 1: Mộc, 2: Thủy, 3: Hỏa, 4: Thổ
-    if ((mySeries === 0 && targetSeries === 1) ||
-        (mySeries === 1 && targetSeries === 4) ||
-        (mySeries === 4 && targetSeries === 2) ||
-        (mySeries === 2 && targetSeries === 3) ||
-        (mySeries === 3 && targetSeries === 0)) {
-      return 1; // Mình khắc địch (Có lợi)
+  /**
+   * Hàm kiểm tra mối quan hệ khắc hệ ngũ hành
+   * 0: Kim, 1: Mộc, 2: Thủy, 3: Hỏa, 4: Thổ
+   */
+  getElementRelation(myElement, enemyElement) {
+    const counterMap = {
+      0: 1, // Kim khắc Mộc
+      1: 4, // Mộc khắc Thổ
+      4: 2, // Thổ khắc Thủy
+      2: 3, // Thủy khắc Hỏa
+      3: 0  // Hỏa khắc Kim
+    };
+    
+    if (counterMap[myElement] === enemyElement) {
+      return 1; // Khắc hệ (Lợi thế)
     }
-    if ((targetSeries === 0 && mySeries === 1) ||
-        (targetSeries === 1 && mySeries === 4) ||
-        (targetSeries === 4 && mySeries === 2) ||
-        (targetSeries === 2 && mySeries === 3) ||
-        (targetSeries === 3 && mySeries === 0)) {
-      return -1; // Địch khắc mình (Bất lợi)
+    if (counterMap[enemyElement] === myElement) {
+      return -1; // Bị khắc hệ (Bất lợi)
     }
-    return 0; // Hòa hệ
+    return 0; // Bình thường
   }
 
   /**
-   * Hàm tìm mục tiêu tốt nhất dựa trên tính điểm (Khoảng cách + HP + Khắc hệ)
+   * Hàm chấm điểm cho một mục tiêu
+   */
+  calculateTargetScore(player, enemy) {
+    // Cấu hình các trọng số ưu tiên (Weights)
+    const WEIGHT_DISTANCE = 0.4; // Trọng số khoảng cách (càng gần càng tốt)
+    const WEIGHT_HP = 0.3;       // Trọng số máu thấp (tiện dứt điểm)
+    const WEIGHT_ELEMENT = 0.3;  // Trọng số khắc hệ ngũ hành
+
+    let score = 0;
+
+    // 1. Đánh giá khoảng cách (Chuẩn hóa về khoảng 0 - 1)
+    const maxRange = this.extendedRange;
+    const distance = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
+    const distanceScore = distance < maxRange ? (1 - (distance / maxRange)) : 0;
+    score += distanceScore * WEIGHT_DISTANCE;
+
+    // 2. Đánh giá lượng máu (HP càng thấp điểm càng cao để tối ưu KS mạng)
+    const hpRatio = enemy.maxHp > 0 ? (enemy.hp / enemy.maxHp) : 1;
+    const hpScore = 1 - hpRatio; 
+    score += hpScore * WEIGHT_HP;
+
+    // 3. Đánh giá hệ Ngũ Hành
+    const relation = this.getElementRelation(player.series, enemy.series);
+    let elementScore = 0.5; // Mặc định trung tính
+    if (relation === 1) {
+      elementScore = 1.0; // Khắc hệ mục tiêu
+    } else if (relation === -1) {
+      elementScore = 0.1; // Tránh đánh đứa khắc mình
+    }
+    score += elementScore * WEIGHT_ELEMENT;
+
+    return score;
+  }
+
+  /**
+   * Hàm quét và tìm mục tiêu tối ưu nhất
+   * - usePriorityRange=true:  Phạm vi ưu tiên → khắc hệ; còn lại → gần nhất
+   * - usePriorityRange=false: Toàn bộ phạm vi → gần nhất thuần
+   * - useOuterRange=true:      Filter max = outerRange (chỉ tìm mục tiêu có thể đánh)
    */
   findBestTarget(player, enemyList) {
-    const maxRange = this.skillRange; // Chỉ tìm trong tầm đánh
+    // Phạm vi filter hiệu quả: nếu bật outerRange thì dùng outerRange, không thì extendedRange
+    const effectiveMaxRange = this.useOuterRange ? this.outerRange : this.extendedRange;
 
-    let bestEnemy = null;
-    let highestScore = -99999;
-
-    for (const enemy of enemyList) {
-      // Bỏ qua mục tiêu bất tử
-      if (this.ignoreInvulnerable && enemy.states && (enemy.states.includes(2) || enemy.states.includes(52))) {
-        continue;
-      }
-      
+    // Lọc theo khoảng cách và trạng thái đặc biệt
+    const filteredEnemies = enemyList.filter(enemy => {
       const dist = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
-      if (dist > maxRange) continue;
-
-      let score = 0;
       
-      // 1. Điểm khoảng cách (Càng gần càng nhiều điểm)
-      score += (maxRange - dist);
-      
-      // 2. Điểm thấp máu (Ưu tiên KS)
-      if (enemy.maxHp > 0) {
-        const hpRatio = enemy.hp / enemy.maxHp;
-        if (hpRatio < 0.3) score += 500; // Dưới 30% máu -> Khả năng giết cực cao
-        else if (hpRatio < 0.5) score += 200; // Dưới 50% máu
+      if (dist > effectiveMaxRange) return false;
+
+      if (this.ignoreInvulnerable && enemy.states && (enemy.states.includes(2) || enemy.states.includes(52))) {
+        return false;
+      }
+      return true;
+    });
+
+    if (filteredEnemies.length === 0) return null;
+
+    // Nếu KHÔNG dùng phạm vi ưu tiên → đánh gần nhất thuần
+    if (!this.usePriorityRange) {
+      let nearest = null;
+      let nearestDist = 99999;
+      for (const enemy of filteredEnemies) {
+        const dist = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = enemy;
+        }
+      }
+      return nearest;
+    }
+
+    // === CÓ dùng phạm vi ưu tiên: 2 tầng ===
+    const priorityEnemies = filteredEnemies.filter(enemy => {
+      const dist = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
+      return dist <= this.priorityRange;
+    });
+
+    if (priorityEnemies.length > 0) {
+      // === TRONG PHẠM VI ƯU TIÊN: khắc hệ ngũ hành ===
+      let nearest = null;
+      let nearestDist = 99999;
+      for (const enemy of priorityEnemies) {
+        const dist = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = enemy;
+        }
       }
 
-      // 3. Điểm ngũ hành
-      if (player.series !== -1 && enemy.series !== -1) {
-          const relation = this.getElementRelation(player.series, enemy.series);
-          if (relation === 1) score += 300; // Khắc hệ -> ưu tiên đấm
-          else if (relation === -1) score -= 300; // Bị khắc -> né bớt
+      const nearThreshold = nearestDist * 1.2;
+      let bestKicHe = nearest;
+      let bestKicHeDist = nearestDist;
+
+      for (const enemy of priorityEnemies) {
+        const dist = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
+        if (dist > nearThreshold) continue;
+
+        const relation = this.getElementRelation(player.series, enemy.series);
+        if (relation === 1 && dist < bestKicHeDist + 50) {
+          bestKicHe = enemy;
+          bestKicHeDist = dist;
+        }
       }
 
-      if (score > highestScore) {
-          highestScore = score;
-          bestEnemy = enemy;
+      if (bestKicHe !== nearest) {
+        console.log(`[AutoPK] 🎯 [Ưu tiên] Khắc hệ: ${bestKicHe.name || '???'} (${bestKicHeDist.toFixed(0)}m) < gần nhất ${nearest.name || '???'} (${nearestDist.toFixed(0)}m)`);
       }
+      return bestKicHe;
+
+    } else {
+      // === NGOÀI PHẠM VI ƯU TIÊN (priorityRange → effectiveMaxRange): gần nhất ===
+      let nearest = null;
+      let nearestDist = 99999;
+      for (const enemy of filteredEnemies) {
+        const dist = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = enemy;
+        }
+      }
+      console.log(`[AutoPK] 🎯 [Mở rộng] Gần nhất: ${nearest.name || '???'} (${nearestDist.toFixed(0)}m)`);
+      return nearest;
     }
-    
-    if (bestEnemy) {
-      const dist = Math.sqrt(Math.pow(bestEnemy.x - player.x, 2) + Math.pow(bestEnemy.y - player.y, 2));
-      console.log(`[AutoPK] 🎯 Chọn mục tiêu: ${bestEnemy.name || '???'} (Cách ${dist.toFixed(0)}m - Điểm: ${highestScore.toFixed(0)})`);
-    }
-    return bestEnemy;
   }
 
   /**
@@ -199,15 +272,6 @@ class AutoPK {
       return; // Không cast skill khi đã chết
     }
 
-    // 0.5. Mỗi 5 phút tự đứng im 5s để chết 1 lần (reset trạng thái)
-    const now = Date.now();
-    if (now - this._lastSelfDieTime > 300000) {
-      console.log('[AutoPK] [Sinh Tử] 5 phút — đứng im 5s để chết...');
-      this._lastSelfDieTime = now;
-      await new Promise(r => setTimeout(r, 5000));
-      return;
-    }
-
     // 1. Tự động xuống ngựa khi phát hiện mục tiêu chiến đấu
     if (this.dismountOnFight && info.riding) {
       console.log(`[AutoPK] Phát hiện cưỡi ngựa khi chiến đấu. Tự động xuống ngựa...`);
@@ -219,17 +283,8 @@ class AutoPK {
 
     // 2. Fix lag vị trí: chỉ đồng bộ khi KHÔNG có mục tiêu (tránh giật khi đang đánh)
     //    Khi đang tấn công, gói tin cast skill đã tự động cập nhật vị trí cho server
+    const now = Date.now();
     const enemiesRes = await this.memory.getNearEnemies();
-    
-    // Nếu không có bridge (safe mode), chỉ sync vị trí mỗi 15s, không scan enemy
-    if (enemiesRes && enemiesRes.noBridge) {
-      if (now - this.lastLagFixTime > 15000) {
-        this.lastLagFixTime = now;
-        await this.injector.sendGotoPosition(info.x, info.y);
-      }
-      return;
-    }
-    
     let bestTarget = null;
     let hasEnemy = false;
     let playerState = { x: info.x, y: info.y, series: -1 };
@@ -254,11 +309,18 @@ class AutoPK {
     this.currentSkillIndex = (this.currentSkillIndex + 1) % this.attackSkills.length;
 
     if (bestTarget) {
+      // Dùng vị trí từ getNearEnemies (localX/Y) đồng bộ với findBestTarget
       const dist = Math.sqrt(Math.pow(bestTarget.x - playerState.x, 2) + Math.pow(bestTarget.y - playerState.y, 2));
+      const targetRange = this.useOuterRange ? this.outerRange : this.skillRange;
 
-      if (dist <= this.skillRange) {
-        console.log(`[AutoPK] [Chiến Trường] Địch trong tầm chiêu. Tấn công: ${bestTarget.name || '???'} (${dist.toFixed(0)}m)`);
-        await this.injector.sendDoSkillTargetPlayer(skillId, bestTarget.id);
+      if (dist <= targetRange) {
+        if (dist > this.skillRange && this.useOuterRange) {
+          console.log(`[AutoPK] ⚡ Tấn công ngoài tầm chiêu (${dist.toFixed(0)}m > ${this.skillRange}m). Đứng im xả chiêu vào tọa độ (${bestTarget.x}, ${bestTarget.y})`);
+          await this.injector.sendDoSkillTargetPosition(skillId, bestTarget.x, bestTarget.y);
+        } else {
+          console.log(`[AutoPK] ⚔️ Địch trong tầm chiêu. Tấn công: ${bestTarget.name || '???'} (${dist.toFixed(0)}m)`);
+          await this.injector.sendDoSkillTargetPlayer(skillId, bestTarget.id);
+        }
       }
     }
     // Khi không có mục tiêu: KHÔNG cast để tiết kiệm mana, chỉ sync vị trí đã làm ở trên

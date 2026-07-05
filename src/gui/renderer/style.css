@@ -73,48 +73,66 @@ body {
   cursor: pointer;
 }
 
-/* Main Content Wrapper */
-.main-content-wrapper {
+/* TabControl */
+.tab-control {
   flex: 1;
   display: flex;
   flex-direction: column;
   margin: 0 10px 10px 10px;
+}
+
+.tab-headers {
+  display: flex;
+  border-bottom: 1px solid #999;
+}
+
+.tab-btn {
+  background: #f0f0f0;
+  border: 1px solid #999;
+  border-bottom: none;
+  padding: 4px 10px;
+  margin-right: 2px;
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+  cursor: default;
+  color: #333;
+}
+.tab-btn:hover {
+  background: #e5f1fb;
+}
+.tab-btn.active {
+  background: #fff;
+  border-top-color: #ff8c00; /* Subtle orange top line like VS */
+  border-bottom: 1px solid #fff;
+  margin-bottom: -1px;
+  color: #000;
+  font-weight: bold;
+}
+
+.tab-content {
+  flex: 1;
   background: #fff;
   border: 1px solid #999;
+  border-top: none;
+  padding: 10px;
+  position: relative;
   overflow-y: auto;
 }
 
-.main-content {
-  padding: 10px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
+.tab-pane {
+  display: none;
 }
-
-.section-pane {
+.tab-pane.active {
   display: block;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #eee;
-}
-.section-pane:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
 }
 
-.section-header {
+.tab-pane-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-  background-color: #f8f9fa;
-  padding: 8px 10px;
-  border-left: 4px solid #0066cc;
-  border-radius: 2px;
+  margin-bottom: 10px;
 }
-.section-title {
+.tab-title {
   color: #0066cc;
   font-weight: bold;
   font-size: 13px;
@@ -172,7 +190,7 @@ select, input[type="text"] {
 
 /* Logs */
 .log-container {
-  flex: 1;
+  height: 220px;
   border: 1px solid #a0a0a0;
   background: #fff;
   overflow-y: auto;
@@ -206,42 +224,3 @@ select, input[type="text"] {
 .icon-btn:hover {
   background: #d0d0d0;
 }
-
-/* Tab Control */
-.tab-control {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.tab-headers {
-  display: flex;
-  border-bottom: 1px solid #a0a0a0;
-  margin-bottom: 10px;
-}
-
-.tab-btn {
-  padding: 6px 12px;
-  background: #f0f0f0;
-  border: 1px solid #a0a0a0;
-  border-bottom: none;
-  cursor: pointer;
-  margin-right: 2px;
-  border-radius: 4px 4px 0 0;
-  color: #333;
-}
-
-.tab-btn:hover {
-  background: #e5f1fb;
-}
-
-.tab-btn.active {
-  background: #fff;
-  border-top: 2px solid #0078d7;
-  font-weight: bold;
-  padding-bottom: 7px;
-  margin-bottom: -1px;
-}
-
-.tab-pane { display: none; flex-direction: column; flex: 1; overflow: hidden; }
-.tab-pane.active { display: flex; }

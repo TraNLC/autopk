@@ -48,11 +48,23 @@ rpc.exports.sendPacket = function(opcode, hexBody) {
  * Send a raw packet specifically to the game's TCP socket (used for shop/rpc).
  */
 rpc.exports.sendTcpPacket = function(opcode, hexBody) {
-    // Dùng cached gameFd — KHÔNG scan 1024 FD mỗi lần (gây đơ game)
-    var tcpFd = typeof gameFd !== 'undefined' && gameFd > 0 ? gameFd :
-                (typeof globalThis !== 'undefined' && globalThis.gameFd > 0 ? globalThis.gameFd : -1);
+    var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
+    if (tcpFd === -1) {
+        for(var i=0; i<1024; i++) {
+            try {
+                var type = Socket.type(i);
+                if (type === 'tcp' || type === 'tcp6') {
+                    var peer = Socket.peerAddress(i);
+                    if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
+                        tcpFd = i;
+                        break;
+                    }
+                }
+            } catch(e){}
+        }
+    }
     
-    if (tcpFd <= 0) return { ok: false, error: 'no tcp socket (gameFd not set)' };
+    if (tcpFd === -1) return { ok: false, error: 'no tcp socket found' };
     
     var body = hexBody ? hexToBytes(hexBody) : [];
     var protoLen = body.length;

@@ -30,15 +30,18 @@
   <!-- MIDDLE: TabControl -->
   <div class="tab-control">
     <div class="tab-headers">
-      <button class="tab-btn active" data-target="tab-tongkim">Tống Kim</button>
-      <button class="tab-btn" data-target="tab-pk">Tấn Công</button>
-      <button class="tab-btn" data-target="tab-datau">Tìm Dã Tẩu</button>
-      <button class="tab-btn" data-target="tab-5hanh">Ngũ Hành</button>
+      <button class="tab-btn active" data-tab="tab-tongkim">Tống Kim</button>
+      <button class="tab-btn" data-tab="tab-pk">Tấn Công</button>
+      <button class="tab-btn" data-tab="tab-datau">Tìm Dã Tẩu</button>
+      <button class="tab-btn" data-tab="tab-5hanh">Phối Đồ Ngũ Hành</button>
     </div>
     
-    <div class="main-content">
-      <!-- SECTION: Tống Kim -->
+    <div class="tab-content">
+      <!-- TAB: Tống Kim -->
       <div id="tab-tongkim" class="tab-pane active">
+        <div class="tab-pane-header">
+          <span class="tab-title">Cấu hình Tống Kim</span>
+        </div>
         
         <div class="groupbox" style="margin-top: 15px;">
           <span class="groupbox-title">Tự động Ra Trận (Toàn cục)</span>
@@ -48,30 +51,22 @@
           </div>
         </div>
 
-
-        <!-- Log box inside Tống Kim tab -->
-        <div class="log-container" id="global-log-container" style="margin-top: 15px;"></div>
-      </div>
-      
-      <!-- SECTION: Tấn Công -->
-      <div id="tab-pk" class="tab-pane">
-        
-        <div class="groupbox" style="margin-bottom: 15px;">
-          <span class="groupbox-title">Tấn Công Cụ Thể (Nhân vật đang chọn)</span>
+        <div class="groupbox" style="margin-top: 15px;">
+          <span class="groupbox-title">Cài đặt Cụ thể (Chọn NV ở trên)</span>
           <div class="groupbox-content">
-            <div style="margin-bottom: 5px; font-size: 13px;">Nhân vật: <strong id="lbl-selected-acc" style="color: #0078d7;">Chưa chọn</strong></div>
-            <div id="acc-settings-panel" style="display: none; padding-top: 10px; border-top: 1px solid #eee;">
-              <div style="margin-bottom: 8px;">
-                <label style="display:inline-block; width:60px;">Phe:</label>
-                <select id="sel-side" style="width: 120px; padding: 4px; border-radius: 3px;">
+            <div style="margin-bottom: 5px;">Nhân vật: <strong id="lbl-selected-acc" style="color: blue;">Chưa chọn</strong></div>
+            <div id="acc-settings-panel" style="display: none; padding-top: 5px; border-top: 1px solid #ccc;">
+              <div style="margin-bottom: 5px;">
+                <label style="display:inline-block; width:40px;">Phe:</label>
+                <select id="sel-side" style="width: 100px;">
                   <option value="auto">Tự động</option>
                   <option value="song">Tống</option>
                   <option value="jin">Kim</option>
                 </select>
               </div>
-              <div style="margin-bottom: 12px;">
-                <label style="display:inline-block; width:60px;">Trễ ra trận:</label>
-                <select id="sel-delay" style="width: 120px; padding: 4px; border-radius: 3px;">
+              <div style="margin-bottom: 10px;">
+                <label style="display:inline-block; width:80px;">Trễ ra trận:</label>
+                <select id="sel-delay" style="width: 100px;">
                   <option value="0">0 giây</option>
                   <option value="5000">5 giây</option>
                   <option value="10000">10 giây</option>
@@ -79,18 +74,27 @@
                   <option value="60000">1 phút</option>
                 </select>
               </div>
-              <div style="margin-bottom: 12px; display: flex; gap: 15px;">
-                <label><input type="checkbox" id="chk-lac1" value="45"> Phi Tốc Hoàn</label>
-                <label><input type="checkbox" id="chk-lac2" value="51"> Lệnh Bài</label>
+              <div>
+                <label><input type="checkbox" id="chk-lac1" value="45"> Phi Tốc Hoàn</label><br>
+                <label><input type="checkbox" id="chk-lac2" value="51"> Lệnh Bài</label><br>
                 <label><input type="checkbox" id="chk-lac3" value="50"> Chiến Cổ</label>
-              </div>
-              <div style="display: flex; gap: 10px;">
-                <button id="btn-save-acc" style="flex: 1; padding: 8px; font-weight: bold; background-color: #f1c40f; color: #333; border: 1px solid #f39c12; border-radius: 4px; cursor: pointer;">Lưu Thiết Lập Cá Nhân</button>
-                <button id="btn-test-cast" style="flex: 1; padding: 8px; background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">⚡ Test Cast Skill Nhanh</button>
+                <br>
+                <button id="btn-save-acc" style="width:100%; margin-top:5px;">Lưu</button>
+                <button id="btn-test-cast" style="width:100%; margin-top:5px; background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; border: none; padding: 6px; font-weight: bold; border-radius: 4px; cursor: pointer;">⚡ Test Cast Skill Nhanh</button>
               </div>
             </div>
           </div>
         </div>
+        <!-- Log box inside Tống Kim tab -->
+        <div class="log-container" id="global-log-container" style="margin-top: 15px;"></div>
+      </div>
+      
+      <!-- TAB: Tấn Công -->
+      <div id="tab-pk" class="tab-pane">
+        <div class="tab-pane-header">
+          <span class="tab-title">Cài Đặt Tấn Công (Auto PK)</span>
+        </div>
+        
         <div class="groupbox">
           <span class="groupbox-title">Tấn công cơ bản</span>
           <div class="groupbox-content">
@@ -131,8 +135,11 @@
         </div>
       </div>
 
-      <!-- SECTION: Tìm Dã Tẩu -->
+      <!-- TAB: Tìm Dã Tẩu -->
       <div id="tab-datau" class="tab-pane">
+        <div class="tab-pane-header">
+          <span class="tab-title">Quét Sạp Người Chơi (Tìm đồ Dã Tẩu)</span>
+        </div>
         
         <div style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
           <p style="margin-bottom: 10px; color: #555;">Nhấn nút bên dưới để quét sạp hàng xung quanh. Dữ liệu sẽ hiển thị trong một cửa sổ chi tiết mới.</p>
@@ -148,8 +155,11 @@
         </div>
       </div>
       
-      <!-- SECTION: Phối Đồ Ngũ Hành -->
+      <!-- TAB: Phối Đồ Ngũ Hành -->
       <div id="tab-5hanh" class="tab-pane">
+        <div class="tab-pane-header">
+          <span class="tab-title">Xây Dựng Đồ Ngũ Hành (Lọc Trang Bị)</span>
+        </div>
         
         <div style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
           <p style="margin-bottom: 10px; color: #555;">Quét toàn bộ sạp hàng để phân loại trang bị thành bộ Ngũ Hành 5 món hoàn chỉnh.</p>

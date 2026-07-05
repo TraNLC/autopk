@@ -9,11 +9,30 @@ rpc.exports.remoteNpcDialogue = function(npcId) {
                 hexBody += ("0" + strId.charCodeAt(i).toString(16)).slice(-2);
             }
             
-            // Dùng cached gameFd — KHÔNG scan 1024 FD mỗi lần (gây đơ game)
-            var tcpFd = typeof gameFd !== 'undefined' && gameFd > 0 ? gameFd :
-                        (typeof globalThis !== 'undefined' && globalThis.gameFd > 0 ? globalThis.gameFd : -1);
+            // Wait for packet-io.js rpc to be available globally in the bundle
+            // It's exported as rpc.exports.sendPacket, but inside frida script we can just 
+            // call it if we wrap it, or since they are all in the same frida script, we can call it.
+            // Wait, we can't easily call other rpc.exports from within an rpc.export directly.
+            // Let's implement the TCP send directly here, or call the global sendTcpPacket if available.
+            // Actually, we can just use sendTcpPacket implementation directly here to be safe!
             
-            if (tcpFd <= 0) return resolve({ ok: false, error: 'no tcp socket (gameFd not set)' });
+            var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
+            if (tcpFd === -1) {
+                for(var i=0; i<1024; i++) {
+                    try {
+                        var type = Socket.type(i);
+                        if (type === 'tcp' || type === 'tcp6') {
+                            var peer = Socket.peerAddress(i);
+                            if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
+                                tcpFd = i;
+                                break;
+                            }
+                        }
+                    } catch(e){}
+                }
+            }
+            
+            if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
             
             var bodyBytes = [];
             for (var i = 0; i < hexBody.length; i += 2) {
@@ -26,8 +45,8 @@ rpc.exports.remoteNpcDialogue = function(npcId) {
             buf.add(4).writeU16(33); // opcode 33 = eNpcDialogue
             if (protoLen > 0) buf.add(6).writeByteArray(bodyBytes);
             
+            // Assume nativeWrite is globally available from packet-io.js
             if (typeof nativeWrite !== 'undefined') {
-                globalThis.gameFd = tcpFd;
                 var ret = nativeWrite(tcpFd, buf, 6 + protoLen);
                 return resolve({ ok: true, method: 'native_write_tcp', sent: ret, opcode: 33, fd: tcpFd });
             } else {
@@ -42,14 +61,23 @@ rpc.exports.remoteNpcDialogue = function(npcId) {
 rpc.exports.selectDialogOption = function(index) {
     return new Promise(function(resolve) {
         try {
-            // Dùng cached gameFd — KHÔNG scan 1024 FD mỗi lần (gây đơ game)
-            var tcpFd = typeof gameFd !== 'undefined' && gameFd > 0 ? gameFd :
-                        (typeof globalThis !== 'undefined' && globalThis.gameFd > 0 ? globalThis.gameFd : -1);
-            
-            if (tcpFd <= 0) return resolve({ ok: false, error: 'no tcp socket (gameFd not set)' });
+            var tcpFd = typeof gameFd !== 'undefined' ? gameFd : (globalThis.gameFd || -1);
+            if (tcpFd === -1) {
+                for(var i=0; i<1024; i++) {
+                    try {
+                        var type = Socket.type(i);
+                        if (type === 'tcp' || type === 'tcp6') {
+                            var peer = Socket.peerAddress(i);
+                            if (peer && peer.port !== 80 && peer.port !== 443 && peer.port !== 27042) {
+                                tcpFd = i; break;
+                            }
+                        }
+                    } catch(e){}
+                }
+            }
+            if (tcpFd === -1) return resolve({ ok: false, error: 'no tcp socket found' });
             
             // opcode 35 (eNpcSelect), body: Protobuf
-            // idx0 = body rỗng, idx>=1 = 08 0N (theo lequan_town_npc.json)
             var bodyBytes = [];
             if (index > 0) {
                 bodyBytes.push(0x08); // Field 1, varint

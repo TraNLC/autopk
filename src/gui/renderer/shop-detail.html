@@ -124,8 +124,8 @@
           
           if (itype !== -1) {
             if (itype === 0 && item.genre !== 0 && item.genre !== 1) return; // vũ khí
-            else if (itype === 10006 && item.genre !== 10006) return; // khác
-            else if (itype !== 0 && itype !== 10006 && item.genre !== itype) return; // áo, mũ, giày...
+            else if (itype === 10006 && item.genre !== 6 && item.genre !== 10006) return; // khác
+            else if (itype !== 0 && itype !== 10006 && item.genre !== itype) return; // áo, mũ, giày... match exactly genre
           }
 
           if (activeMagics.length > 0) {
@@ -134,10 +134,7 @@
               let found = false;
               if (item.magics) {
                 for (let m of item.magics) {
-                  // Normalize both strings to lower case for case-insensitive exact matching
-                  let magicText = m.toLowerCase();
-                  let searchName = am.name.toLowerCase();
-                  if (magicText.includes(searchName)) {
+                  if (m.startsWith(am.name)) {
                     let match = m.match(/([+-]?\d+)/);
                     if (match) {
                       let v = parseInt(match[1], 10);
@@ -145,7 +142,7 @@
                         found = true;
                         break;
                       }
-                    } else if (am.val === 0) {
+                    } else if (am.val === 0) { // property exists but no number (e.g., skill)
                       found = true;
                       break;
                     }

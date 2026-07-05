@@ -49,11 +49,11 @@
     <div class="select-group">
       <label>Hệ Vũ Khí muốn Build:</label>
       <select id="sel-core-series">
-        <option value="0">🟡 Kim</option>
-        <option value="1">🟢 Mộc</option>
-        <option value="2">🔵 Thủy</option>
-        <option value="3">🔴 Hỏa</option>
-        <option value="4">🟤 Thổ</option>
+        <option value="1">🟡 Kim</option>
+        <option value="2">🟢 Mộc</option>
+        <option value="3">🔵 Thủy</option>
+        <option value="4">🔴 Hỏa</option>
+        <option value="5">🟤 Thổ</option>
       </select>
     </div>
   </div>
@@ -86,8 +86,8 @@
     // Series IDs: 1:Kim, 2:Mộc, 3:Thủy, 4:Hỏa, 5:Thổ
     // Activation chain: Thổ(5) -> Kim(1) -> Thủy(3) -> Mộc(2) -> Hỏa(4) -> Thổ(5)
     
-    const SERIES_NAMES = { 0: 'Kim', 1: 'Mộc', 2: 'Thủy', 3: 'Hỏa', 4: 'Thổ' };
-    const SERIES_COLORS = { 0: '#d4af37', 1: '#27ae60', 2: '#3498db', 3: '#e74c3c', 4: '#f39c12' };
+    const SERIES_NAMES = { 1: 'Kim', 2: 'Mộc', 3: 'Thủy', 4: 'Hỏa', 5: 'Thổ' };
+    const SERIES_COLORS = { 1: '#d4af37', 2: '#27ae60', 3: '#3498db', 4: '#e74c3c', 5: '#f39c12' };
     
     const PAIR_NAMES = {
       p1: 'Vũ Khí & Mũ',
@@ -121,7 +121,7 @@
       const s1 = coreSeries;
       // Vũ khí(s1) kích Giày + Nhẫn Trên(s2) -> s1 kích s2
       // Kim(1)->Thủy(3), Mộc(2)->Hỏa(4), Thủy(3)->Mộc(2), Hỏa(4)->Thổ(5), Thổ(5)->Kim(1)
-      const activationMap = { 0: 2, 2: 1, 1: 3, 3: 4, 4: 0 };
+      const activationMap = { 1: 3, 3: 2, 2: 4, 4: 5, 5: 1 };
       
       const s2 = activationMap[s1];
       const s3 = activationMap[s2];
@@ -144,7 +144,7 @@
       container.innerHTML = '';
       
       // Filter out consumables
-      const equippableItems = allItems.filter(it => it.genre !== 10006);
+      const equippableItems = allItems.filter(it => it.genre !== 6 && it.genre !== 10006);
       
       groupsConfig.forEach(grp => {
         // Find items that match genre and series
@@ -235,7 +235,7 @@
       currentDevId = globalData.devId;
       allItems = globalData.items || [];
       // Default to Metal (1)
-      renderGroups(0);
+      renderGroups(1);
     });
   </script>
 </body>
