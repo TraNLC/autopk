@@ -67,15 +67,59 @@ class AutoPK {
     console.log(`[AutoPK] Using default fallback profile GUID: ${this.profileGuid}`);
   }
 
-  /**
-   * Start the PK loop.
-   */
-  async start() {
+  async start(sendLog) {
     if (this.running) return;
     this.running = true;
     this.loadProfile();
 
     console.log('[AutoPK] Starting Auto PK Loop...');
+    if (sendLog) sendLog(`[${this.deviceId}] ⚔️ Khởi động luồng PK. Quét kỹ năng môn phái...`, 'info');
+
+    // Clear target lock from previous staging area (NPC Trinh Sát)
+    try {
+      const info = await this.memory.getPlayerInfo();
+      if (info) {
+        // Tắt autoplay tạm thời để clear target
+        await this.injector.sendApplyAutoplayProfile(false, "");
+        await new Promise(r => setTimeout(r, 200));
+
+        // Tự động gán skill 9x chủ động của môn phái bằng map cố định (tránh lỗi getMySkills)
+        let targetSkill = 1;
+        try {
+          const sectSkill9xMap = {
+            0: 104, // Thiếu Lâm (Đạt Ma)
+            1: 114, // Thiên Vương (Truy Tinh)
+            2: 132, // Đường Môn (Bạo Vũ)
+            3: 142, // Ngũ Độc (Bách Độc)
+            4: 152, // Nga Mi (Phong Sương)
+            5: 172, // Thúy Yên (Băng Tâm Tiên Tử)
+            6: 182, // Cái Bang (Kháng Long)
+            7: 192, // Thiên Nhẫn (Vân Long)
+            8: 204, // Võ Đang (Thiên Địa)
+            9: 215  // Côn Lôn (Lôi Động)
+          };
+          
+          const sect = info.sect !== undefined ? info.sect : -1;
+          if (sect !== -1 && sectSkill9xMap[sect]) {
+            targetSkill = sectSkill9xMap[sect];
+            this.attackSkills = [targetSkill]; // Gán làm chiêu tấn công chính
+            console.log(`[AutoPK] Gán cố định chiêu 9x theo phái: ID ${targetSkill}`);
+            if (sendLog) sendLog(`[${this.deviceId}] 🎓 Phát hiện môn phái. Đặt chiêu 9x (ID ${targetSkill}) làm kỹ năng tấn công chính!`, 'success');
+          } else {
+            if (sendLog) sendLog(`[${this.deviceId}] ⚠️ Không xác định được hệ phái. Sử dụng đánh thường làm kỹ năng chính.`, 'warn');
+          }
+        } catch (e) {
+          console.warn(`[AutoPK] Lỗi gán skill 9x: ${e.message}`);
+        }
+
+        // Cast chiêu thức 9x tại chỗ để hủy lock NPC cũ
+        if (sendLog) sendLog(`[${this.deviceId}] ⚡ Thực hiện chiêu thức (ID ${targetSkill}) tại chỗ để hủy target NPC cũ...`, 'info');
+        await this.injector.sendDoSkillTargetPosition(targetSkill, info.x || 0, info.y || 0);
+        await new Promise(r => setTimeout(r, 300));
+      }
+    } catch (err) {
+      console.warn(`[AutoPK] Failed to clear target: ${err.message}`);
+    }
 
     // Warm up the auto-play system (prevent wipes by applying profile)
     try {

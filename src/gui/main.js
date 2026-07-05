@@ -291,6 +291,8 @@ ipcMain.handle('toggle-device', async (event, deviceId, connect) => {
             cache.trinhSatId = null;
             cache.baodanhId = null;
             cache.learnedIds = [];
+            cache.enterStagingTime = null;
+            cache.lastMinutesPassed = null;
           } else {
             cache.mapId = currentMapId;
             if (!cache.campValue) cache.campValue = currentCamp;
@@ -577,7 +579,7 @@ ipcMain.handle('toggle-auto-tk', (event, enable, tkConfigs) => {
                 state.autoPK.ignoreInvulnerable = devCfg.ignoreInvulnerable !== false;
 
                 sendLog(`[${deviceId}] ⚔️ Nhân vật đang ở Chiến trường. Khởi động luồng PK nhanh...`, 'success');
-                state.autoPK.start();
+                state.autoPK.start(sendLog);
               }
             } else {
               // Staging area/Dead/Town: Pause custom AutoPK, run autoTongKimLoop respawn logic
@@ -591,7 +593,7 @@ ipcMain.handle('toggle-auto-tk', (event, enable, tkConfigs) => {
             sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');
           }
         }
-      }, 1000); // 1-second poll for precise staging/battlefield checking
+      }, 500); // 500ms poll for precise staging/battlefield checking
     }
   } else {
     sendLog(`TẮT Auto Tống Kim toàn cục.`, 'warn');

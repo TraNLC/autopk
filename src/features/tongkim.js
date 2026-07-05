@@ -103,23 +103,32 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
           return;
         }
 
-        // ── Tính toán khoảng giãn cách call (Không block loop chính) ─────────
-        // 5 phút đầu ở staging: gọi nhanh 2.5s / lần để nhanh chóng vào trận.
-        // Sau 5 phút vẫn kẹt ở staging: hạ tốc độ xuống 5s / lần chống dis.
+        // ── Kiểm tra giãn cách gọi NPC (Không block loop) ──────────────────
+        // Bình thường: gọi nhanh 2.5s / lần để vào trận.
+        // Cứ mỗi mốc 5 phút (5p, 10p, 15p...): giảm tốc độ xuống 5s một lần duy nhất để reset rate-limit của server, sau đó tiếp tục 2.5s.
         const elapsed = Date.now() - (cache.enterStagingTime || Date.now());
-        const isCooldownActive = elapsed < 5 * 60 * 1000;
-        const callInterval = isCooldownActive ? 2500 : 5000;
+        const minutesPassed = Math.floor(elapsed / (5 * 60 * 1000));
+        
+        let callInterval = 2500;
+        let isSlowTick = false;
+
+        if (minutesPassed > (cache.lastMinutesPassed || 0)) {
+          callInterval = 5000;
+          isSlowTick = true;
+        }
 
         const now = Date.now();
         if (cache._lastCallTime && (now - cache._lastCallTime) < callInterval) {
-          return; // Chưa tới lượt, thoát ngay để loop chạy các việc khác
+          return; // Chưa đến lượt call, return nhanh để loop chính không bị block
         }
         cache._lastCallTime = now;
 
-        if (isCooldownActive) {
-          sendLog(`[${deviceId}] ⚔️ Trong 5 phút đầu. Gọi Trinh Sát nhanh 2.5s/lần...`, 'success');
+        // Lưu lại mốc phút đã giảm tốc độ sau khi thực hiện gửi gói tin thành công
+        if (isSlowTick) {
+          cache.lastMinutesPassed = minutesPassed;
+          sendLog(`[${deviceId}] ⏳ Chạm mốc 5 phút dưỡng sức. Giảm tốc độ gọi Trinh Sát xuống 5s một lần để chống dis...`, 'warn');
         } else {
-          sendLog(`[${deviceId}] ⏳ Kẹt quá 5 phút ở staging. Giảm tốc độ gọi Trinh Sát xuống 5s/lần...`, 'warn');
+          sendLog(`[${deviceId}] ⚔️ Gọi Trinh Sát giãn cách 2.5s/lần...`, 'success');
         }
 
         // Thực thi mở dialog
@@ -128,7 +137,7 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
 
         // Buff trấn phái
         const sect = info.sect !== undefined ? info.sect : -1;
-        const sectSkillMap = { 0: 102, 1: 111, 2: 129, 3: 139, 4: 159, 5: 109, 6: 179, 7: 189, 8: 209, 9: 219 };
+        const sectSkillMap = { 0: 102, 1: 111, 3: 139, 4: 159, 5: 109, 6: 179, 7: 189, 8: 209, 9: 219 }; // Bỏ sect 2 (Đường Môn) vì không có buff
         const buffSkillId = sectSkillMap[sect];
         if (buffSkillId && buffSkillId > 1) {
           sendLog(`[${deviceId}] ⚡ Buff trấn phái (skill ${buffSkillId})...`, 'success');
@@ -167,7 +176,30 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
         await session.callRpc('remoteNpcDialogue', trinhSatId);
         await new Promise(r => setTimeout(r, 500));
         await session.callRpc('selectDialogOption', battleOption);
-        await new Promise(r => setTimeout(r, 1000)); // Chờ 1s để client kịp load map mới
+        await new Promise(r => setTimeout(r, 200));
+
+        // Dùng map cố định ID skill 9x thay vì getMySkills (tránh lỗi access violation của Frida)
+        let targetSkill = 1;
+        const sectSkill9xMap = {
+          0: 104, // Thiếu Lâm (Đạt Ma)
+          1: 114, // Thiên Vương (Truy Tinh)
+          2: 132, // Đường Môn (Bạo Vũ)
+          3: 142, // Ngũ Độc (Bách Độc)
+          4: 152, // Nga Mi (Phong Sương)
+          5: 172, // Thúy Yên (Băng Tâm Tiên Tử)
+          6: 182, // Cái Bang (Kháng Long)
+          7: 192, // Thiên Nhẫn (Vân Long / Thiên Ngoại)
+          8: 204, // Võ Đang (Thiên Địa)
+          9: 215  // Côn Lôn (Lôi Động)
+        };
+        
+        if (sect !== -1 && sectSkill9xMap[sect]) {
+          targetSkill = sectSkill9xMap[sect];
+        }
+
+        sendLog(`[${deviceId}] ⚡ Đánh 1 chiêu 9x (ID ${targetSkill}) tại chỗ để hủy target Trinh Sát...`, 'info');
+        await injector.sendDoSkillTargetPosition(targetSkill, info.x || 0, info.y || 0);
+        await new Promise(r => setTimeout(r, 800)); // Chờ 800ms để client kịp load map mới hoặc hồi chiêu
 
       } catch(e) {
         sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');
