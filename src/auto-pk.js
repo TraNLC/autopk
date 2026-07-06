@@ -309,6 +309,7 @@ class AutoPK {
     this.currentSkillIndex = (this.currentSkillIndex + 1) % this.attackSkills.length;
 
     if (bestTarget) {
+      this.hadTarget = true;
       // Dùng vị trí từ getNearEnemies (localX/Y) đồng bộ với findBestTarget
       const dist = Math.sqrt(Math.pow(bestTarget.x - playerState.x, 2) + Math.pow(bestTarget.y - playerState.y, 2));
       const targetRange = this.useOuterRange ? this.outerRange : this.skillRange;
@@ -322,8 +323,14 @@ class AutoPK {
           await this.injector.sendDoSkillTargetPlayer(skillId, bestTarget.id);
         }
       }
+    } else {
+      // Khi không có mục tiêu: KHÔNG cast để tiết kiệm mana, chỉ sync vị trí đã làm ở trên
+      if (this.hadTarget) {
+        this.hadTarget = false;
+        console.log(`[AutoPK] 🎯 Mất mục tiêu hoặc mục tiêu đã bay màu. Đang Reset Focus để chống chạy bậy...`);
+        await this.session.callRpc('clearFocus');
+      }
     }
-    // Khi không có mục tiêu: KHÔNG cast để tiết kiệm mana, chỉ sync vị trí đã làm ở trên
   }
 }
 

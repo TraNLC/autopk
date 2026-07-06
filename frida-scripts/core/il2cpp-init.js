@@ -115,6 +115,19 @@ function readPlayerMainDirect() {
         try {
             // Hook Controller.Update at 0xFB6994 for reliable tick
             globalThis._tickCount = 0;
+            globalThis._playerOtherInstance = null;
+            
+            try {
+                // Hook PlayerOther.SetSelectGameObject (0xE4EDB0) to capture PlayerOther instance
+                Interceptor.attach(il2cppBase.add(0xE4EDB0), {
+                    onEnter: function (args) {
+                        globalThis._playerOtherInstance = args[0];
+                    }
+                });
+            } catch (e) {
+                console.log("[Hook] Failed to hook SetSelectGameObject: " + e);
+            }
+
             Interceptor.attach(il2cppBase.add(0xFB6994), {
                 onEnter: function(args) {
                     globalThis._tickCount++;

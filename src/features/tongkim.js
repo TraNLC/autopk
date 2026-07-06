@@ -1,5 +1,5 @@
 const { PacketInjector } = require('../packet-injector');
-const { getNpcPair, updateNpcId } = require('./tongkim-data');
+const { getNpcPair } = require('./tongkim-data');
 
 const npcCacheMap = new Map(); // deviceId -> { mapId, campValue, trinhSatId, baodanhId, learnedIds, enterStagingTime, _lastCallTime }
 const busyDevices = new Set();
@@ -14,7 +14,7 @@ function ensureCache(deviceId) {
 /**
  * Auto Tống Kim loop — được gọi từ loop chính trong main.js
  */
-async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendLog) {
+async function autoTongKimLoop(deviceId, session, info, _side, lacs, delay, sendLog) {
   if (!session || !info) return;
   if (busyDevices.has(deviceId)) return;
   busyDevices.add(deviceId);
@@ -54,35 +54,10 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
       }
       sendLog(`[${deviceId}] 📋 Gọi NPC Báo Danh (ID: ${baodanhId})...`, 'info');
       try {
-        // Gọi Trinh Sát bằng Packet Injection để tránh kẹt UI hoặc animation lock
         await injector.sendNpcDialogue(baodanhId);
         await new Promise(r => setTimeout(r, 500));
         await injector.sendNpcSelect(0);
-        await new Promise(r => setTimeout(r, 1000)); // Chờ 1s để server xử lý dịch chuyển
-
-        // Dùng map cố định ID skill 9x để xuất chiêu cancel target ngay lập tức
-        let targetSkill = 1;
-        const sect = info.sect !== undefined ? info.sect : -1;
-        const sectSkill9xMap = {
-          0: 104, // Thiếu Lâm (Đạt Ma)
-          1: 114, // Thiên Vương (Truy Tinh)
-          2: 132, // Đường Môn (Bạo Vũ)
-          3: 142, // Ngũ Độc (Bách Độc)
-          4: 152, // Nga Mi (Phong Sương)
-          5: 172, // Thúy Yên (Băng Tâm Tiên Tử)
-          6: 182, // Cái Bang (Kháng Long)
-          7: 192, // Thiên Nhẫn (Vân Long / Thiên Ngoại)
-          8: 204, // Võ Đang (Thiên Địa)
-          9: 215  // Côn Lôn (Lôi Động)
-        };
-        
-        if (sect !== -1 && sectSkill9xMap[sect]) {
-          targetSkill = sectSkill9xMap[sect];
-        }
-
-        sendLog(`[${deviceId}] ⚡ Xuất chiêu 9x (ID ${targetSkill}) để giải phóng target Trinh Sát...`, 'info');
-        await injector.sendDoSkillTargetPosition(targetSkill, info.x || 0, info.y || 0);
-
+        await new Promise(r => setTimeout(r, 1000));
       } catch(e) {
         sendLog(`[${deviceId}] Lỗi báo danh: ${e.message}`, 'error');
       }
@@ -126,36 +101,82 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
           return;
         }
 
-        // ── Tính toán khoảng giãn cách call (Không block loop chính) ─────────
-        // Bình thường: gọi nhanh 2.5s / lần để vào trận.
-        // Cứ mỗi mốc 5 phút (5p, 10p, 15p...): giãn cách 5s một lần duy nhất để reset rate-limit của server, sau đó tiếp tục 2.5s.
-        const elapsed = Date.now() - (cache.enterStagingTime || Date.now());
+        // ── Throttle: 2.5s bình thường, mỗi mốc 5 phút gắn cờ gọi 5s một lần ──
+        const now = Date.now();
+        const elapsed = now - (cache.enterStagingTime || now);
         const minutesPassed = Math.floor(elapsed / (5 * 60 * 1000));
-        
-        let callInterval = 2500;
-        let isSlowTick = false;
 
-        if (minutesPassed > (cache.lastMinutesPassed || 0)) {
-          callInterval = 5000;
-          isSlowTick = true;
+        // Cứ mỗi mốc 5 phút mới: đặt cờ _slowTickOnce để lần này gọi 5s
+        // Sau lần đó reset cờ, quay về 2.5s
+        if (minutesPassed > (cache._lastSlowMinutes || 0)) {
+          cache._slowTickOnce = true;
+          cache._lastSlowMinutes = minutesPassed;
         }
 
-        const now = Date.now();
+        const callInterval = cache._slowTickOnce ? 5000 : 2500;
         if (cache._lastCallTime && (now - cache._lastCallTime) < callInterval) {
-          return; // Chưa tới lượt, thoát ngay để loop chạy các việc khác
+          return; // Chưa tới lượt
         }
         cache._lastCallTime = now;
 
-        if (isSlowTick) {
-          cache.lastMinutesPassed = minutesPassed;
-          sendLog(`[${deviceId}] ⏳ Chạm mốc ${minutesPassed * 5} phút dưỡng sức. Giãn cách lần này là 5s để chống dis...`, 'warn');
-        } else {
-          sendLog(`[${deviceId}] ⚔️ Gọi Trinh Sát giãn cách 2.5s/lần...`, 'success');
+        if (cache._slowTickOnce) {
+          cache._slowTickOnce = false; // Reset ngay sau khi vượt qua throttle
+          sendLog(`[${deviceId}] ⏳ Chạm mốc ${minutesPassed * 5} phút. Giãn cách 5s lần này để reset rate-limit...`, 'warn');
         }
 
-        // Thực thi mở dialog
+        // Đóng popup cũ trước khi mở dialog mới
         await session.callRpc('closeDialogPopups').catch(() => {});
         await new Promise(r => setTimeout(r, 200));
+
+        // ── Nhận máu/mana từ Quân Nhu ──
+        // Kiểm tra số lượng Ngũ Hoa Ngọc Lộ Hoàn, nếu >= 20 thì bỏ qua
+        let quanNhuId = cache.quanNhuId || null;
+        let needHeal = true;
+
+        // Học ID Quân Nhu từ DB nếu chưa có
+        if (!quanNhuId) {
+          const pair = getNpcPair(mapId, campValue);
+          if (pair && pair.quanNhu) {
+            quanNhuId = pair.quanNhu;
+            cache.quanNhuId = quanNhuId;
+            sendLog(`[${deviceId}] 📋 Nạp Quân Nhu ID=${quanNhuId} từ Database.`, 'info');
+          }
+        }
+
+        if (quanNhuId) {
+          try {
+            const itemsRes = await session.callRpc('getInventoryItems');
+            if (itemsRes && itemsRes.ok && itemsRes.items) {
+              let potionCount = 0;
+              for (const item of itemsRes.items) {
+                const name = (item.name || '').toLowerCase();
+                if (name.includes('ngũ hoa') || name.includes('ngu hoa')) {
+                  potionCount += (item.count || 0);
+                }
+              }
+              if (potionCount >= 20) {
+                needHeal = false;
+                sendLog(`[${deviceId}] 💊 Còn ${potionCount} bình Ngũ Hoa → bỏ qua Quân Nhu.`, 'info');
+              } else {
+                sendLog(`[${deviceId}] 💊 Chỉ còn ${potionCount} bình → nhận thêm từ Quân Nhu.`, 'info');
+              }
+            }
+          } catch(e) { /* ignore */ }
+
+          if (needHeal) {
+            sendLog(`[${deviceId}] 🎒 Gọi Quân Nhu (ID=${quanNhuId})...`, 'info');
+            await injector.sendNpcDialogue(quanNhuId);
+            await new Promise(r => setTimeout(r, 800));
+            await injector.sendNpcSelect(0);
+            await new Promise(r => setTimeout(r, 400));
+            await session.callRpc('sendPacket', 232, '');
+            await new Promise(r => setTimeout(r, 400));
+            sendLog(`[${deviceId}] ✅ Đã nhận thuốc từ Quân Nhu!`, 'success');
+
+            await session.callRpc('closeDialogPopups').catch(() => {});
+            await new Promise(r => setTimeout(r, 200));
+          }
+        }
 
         // Buff trấn phái
         const sect = info.sect !== undefined ? info.sect : -1;
@@ -191,37 +212,21 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
           await new Promise(r => setTimeout(r, delay));
         }
 
-        // Chọn option đúng theo phe (0: Tống | 1: Kim)
-        const battleOption = (campValue === 2) ? 1 : 0;
-        sendLog(`[${deviceId}] ⚔️ Gọi Trinh Sát (ID=${trinhSatId}) → Chọn Trận địa bên ${campValue === 2 ? 'Kim' : 'Tống'} (Option ${battleOption})...`, 'info');
-        
-        // Gọi Trinh Sát bằng Packet Injection để tránh bị kẹt UI hoặc animation lock do đánh skill
+        // Gọi Trinh Sát → chọn phe vào chiến trường (0: Tống | 1: Kim)
+        let battleOption = 0;
+        if (_side === 'jin') {
+          battleOption = 1;
+        } else if (_side === 'song') {
+          battleOption = 0;
+        } else {
+          // auto: dùng campValue từ game
+          battleOption = (campValue === 2) ? 1 : 0;
+        }
+        sendLog(`[${deviceId}] ⚔️ Gọi Trinh Sát (ID=${trinhSatId}) → Phe ${battleOption === 1 ? 'Kim' : 'Tống'} (Option ${battleOption})...`, 'info');
         await injector.sendNpcDialogue(trinhSatId);
         await new Promise(r => setTimeout(r, 500));
         await injector.sendNpcSelect(battleOption);
-        await new Promise(r => setTimeout(r, 1000)); // Chờ tối thiểu 1s để server xử lý lệnh dịch chuyển
-
-        // Dùng map cố định ID skill 9x để đánh 1 chiêu cancel target
-        let targetSkill = 1;
-        const sectSkill9xMap = {
-          0: 104, // Thiếu Lâm (Đạt Ma)
-          1: 114, // Thiên Vương (Truy Tinh)
-          2: 132, // Đường Môn (Bạo Vũ)
-          3: 142, // Ngũ Độc (Bách Độc)
-          4: 152, // Nga Mi (Phong Sương)
-          5: 172, // Thúy Yên (Băng Tâm Tiên Tử)
-          6: 182, // Cái Bang (Kháng Long)
-          7: 192, // Thiên Nhẫn (Vân Long / Thiên Ngoại)
-          8: 204, // Võ Đang (Thiên Địa)
-          9: 215  // Côn Lôn (Lôi Động)
-        };
-        
-        if (sect !== -1 && sectSkill9xMap[sect]) {
-          targetSkill = sectSkill9xMap[sect];
-        }
-
-        sendLog(`[${deviceId}] ⚡ Xuất chiêu 9x (ID ${targetSkill}) để cancel target Trinh Sát...`, 'info');
-        await injector.sendDoSkillTargetPosition(targetSkill, info.x || 0, info.y || 0);
+        await new Promise(r => setTimeout(r, 1000));
 
       } catch(e) {
         sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');

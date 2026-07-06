@@ -437,6 +437,19 @@ function readPlayerMainDirect() {
         try {
             // Hook Controller.Update at 0xFB6994 for reliable tick
             globalThis._tickCount = 0;
+            globalThis._playerOtherInstance = null;
+            
+            try {
+                // Hook PlayerOther.SetSelectGameObject (0xE4EDB0) to capture PlayerOther instance
+                Interceptor.attach(il2cppBase.add(0xE4EDB0), {
+                    onEnter: function (args) {
+                        globalThis._playerOtherInstance = args[0];
+                    }
+                });
+            } catch (e) {
+                console.log("[Hook] Failed to hook SetSelectGameObject: " + e);
+            }
+
             Interceptor.attach(il2cppBase.add(0xFB6994), {
                 onEnter: function(args) {
                     globalThis._tickCount++;
@@ -3025,6 +3038,48 @@ rpc.exports.attackPlayerHooked = function(cid, skillId, isPhysic, dismount) {
 
 rpc.exports.pkLast = function() {
     return { last: globalThis._skillLastFire || '(chua)' };
+};
+
+// --- Clear Focus ---
+rpc.exports.clearFocus = function() {
+    var pmRes = readPlayerMainDirect();
+    if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
+
+    try {
+        var clearRunFn = new NativeFunction(il2cppBase.add(0xE4B928), 'void', ['pointer']);
+        var stopPathFn = new NativeFunction(il2cppBase.add(0xE43094), 'void', ['pointer']);
+        var killTargetFn = new NativeFunction(il2cppBase.add(0xE42E78), 'void', ['pointer']); // KillTargetBySkillResetWeaponType
+        var setSelectFn = new NativeFunction(il2cppBase.add(0xE4EDB0), 'void', ['pointer', 'pointer']);
+        
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                // Stop running and chasing if PlayerMain is available
+                if (globalThis._playerMainInstance) {
+                    clearRunFn(globalThis._playerMainInstance);
+                    stopPathFn(globalThis._playerMainInstance);
+                    killTargetFn(globalThis._playerMainInstance);
+                    
+                    // Force clear PlayerMain.target field (offset 0xA0)
+                    globalThis._playerMainInstance.add(0xA0).writePointer(ptr(0));
+                }
+                
+                // Clear UI selection circle if PlayerOther instance was captured
+                if (globalThis._playerOtherInstance) {
+                    try {
+                        setSelectFn(globalThis._playerOtherInstance, ptr(0));
+                    } catch(err) {
+                        console.log("[clearFocus] setSelectFn error: " + err);
+                    }
+                }
+            } catch (e) {
+                console.log("[clearFocus] Error: " + e);
+            }
+        });
+        return { ok: true, queued: true };
+    } catch (e) {
+        return { ok: false, error: '' + e };
+    }
 };
 
 // ══ rpc/ui-control.js ══
