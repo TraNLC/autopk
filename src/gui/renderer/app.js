@@ -177,26 +177,16 @@ function selectDevice(id) {
   accSettingsPanel.style.display = 'block';
   
   // Load config
-  const cfg = dev.tkConfig || { side: 'auto', lacs: [], delay: 0 };
+  const cfg = dev.tkConfig || { side: 'auto', lacs: [], autoBaoDanh: true };
   selSide.value = cfg.side || 'auto';
   chkLac1.checked = cfg.lacs ? cfg.lacs.includes('45') : false;
   chkLac2.checked = cfg.lacs ? cfg.lacs.includes('51') : false;
   chkLac3.checked = cfg.lacs ? cfg.lacs.includes('50') : false;
   
-  const selDelay = document.getElementById('sel-delay');
-  if (selDelay) {
-    selDelay.value = (cfg.delay !== undefined) ? cfg.delay.toString() : '0';
+  const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+  if (chkBaoDanh) {
+    chkBaoDanh.checked = cfg.autoBaoDanh !== false;
   }
-
-  // Load PK config
-  document.getElementById('chk-priority-range-enabled').checked = cfg.usePriorityRange !== false;
-  document.getElementById('num-priority-range').value = cfg.priorityRange !== undefined ? cfg.priorityRange : 512;
-  document.getElementById('num-extended-range').value = cfg.extendedRange !== undefined ? cfg.extendedRange : 800;
-  document.getElementById('num-skill-range').value = cfg.skillRange !== undefined ? cfg.skillRange : 512;
-  document.getElementById('chk-outer-range-enabled').checked = cfg.useOuterRange !== false;
-  document.getElementById('num-outer-range').value = cfg.outerRange !== undefined ? cfg.outerRange : 700;
-  document.getElementById('chk-dismount-fight').checked = cfg.dismountOnFight !== false;
-  document.getElementById('chk-ignore-invulnerable').checked = cfg.ignoreInvulnerable !== false;
 }
 
 // Save Acc Settings
@@ -205,18 +195,16 @@ btnSaveAcc.addEventListener('click', () => {
   const dev = devicesMap.get(currentSelectedDeviceId);
   if (!dev) return;
   
-  const lacs = [];
-  if (chkLac1.checked) lacs.push('45');
-  if (chkLac2.checked) lacs.push('51');
-  if (chkLac3.checked) lacs.push('50');
-  
   dev.tkConfig = dev.tkConfig || {};
   dev.tkConfig.side = selSide.value;
-  dev.tkConfig.lacs = lacs;
-  dev.tkConfig.delay = parseInt(document.getElementById('sel-delay').value, 10) || 0;
+  
+  const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+  if (chkBaoDanh) {
+    dev.tkConfig.autoBaoDanh = chkBaoDanh.checked;
+  }
   
   updateGlobalTK();
-  addLog(`[${currentSelectedDeviceId}] Đã lưu cấu hình Tống Kim.`, 'info');
+  addLog(`[${currentSelectedDeviceId}] Da luu cau hinh Tong Kim.`, 'info');
 });
 
 // Save PK Settings
@@ -224,24 +212,50 @@ const btnSavePk = document.getElementById('btn-save-pk');
 if (btnSavePk) {
   btnSavePk.addEventListener('click', () => {
     if (!currentSelectedDeviceId) {
-      addLog('Chưa chọn nhân vật để lưu cấu hình PK.', 'error');
+      addLog('Chua chon nhan vat de luu cau hinh PK.', 'error');
       return;
     }
     const dev = devicesMap.get(currentSelectedDeviceId);
     if (!dev) return;
 
-    dev.tkConfig = dev.tkConfig || { side: 'auto', lacs: [], delay: 0 };
-    dev.tkConfig.usePriorityRange = document.getElementById('chk-priority-range-enabled').checked;
-    dev.tkConfig.priorityRange = parseInt(document.getElementById('num-priority-range').value, 10) || 512;
-    dev.tkConfig.extendedRange = parseInt(document.getElementById('num-extended-range').value, 10) || 800;
-    dev.tkConfig.skillRange = parseInt(document.getElementById('num-skill-range').value, 10) || 512;
-    dev.tkConfig.useOuterRange = document.getElementById('chk-outer-range-enabled').checked;
-    dev.tkConfig.outerRange = parseInt(document.getElementById('num-outer-range').value, 10) || 700;
-    dev.tkConfig.dismountOnFight = document.getElementById('chk-dismount-fight').checked;
-    dev.tkConfig.ignoreInvulnerable = document.getElementById('chk-ignore-invulnerable').checked;
+    dev.tkConfig = dev.tkConfig || { side: 'auto', lacs: [] };
+
+    // Save lacs as they are now relocated to the Attack tab
+    const lacs = [];
+    if (chkLac1.checked) lacs.push('45');
+    if (chkLac2.checked) lacs.push('51');
+    if (chkLac3.checked) lacs.push('50');
+    dev.tkConfig.lacs = lacs;
 
     updateGlobalTK();
-    addLog(`[${currentSelectedDeviceId}] Đã lưu cấu hình Tấn Công (PK).`, 'success');
+    addLog(`[${currentSelectedDeviceId}] Da luu cau hinh Tan Cong (PK) & Lac.`, 'success');
+  });
+}
+
+// Collect Points (Gom Diem)
+const btnCollectPoints = document.getElementById('btn-collect-points');
+if (btnCollectPoints) {
+  btnCollectPoints.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      addLog('Chua chon nhan vat de thuc hien gom diem.', 'error');
+      return;
+    }
+    btnCollectPoints.disabled = true;
+    const oldText = btnCollectPoints.innerText;
+    btnCollectPoints.innerText = 'Dang Gom Diem...';
+    try {
+      const res = await window.api.collectPoints(currentSelectedDeviceId);
+      if (res && res.ok) {
+        addLog(`[${currentSelectedDeviceId}] Gom diem hoan tat!`, 'success');
+      } else {
+        addLog(`[${currentSelectedDeviceId}] Gom diem that bai: ${res ? res.error : 'Loi khong xac dinh'}`, 'error');
+      }
+    } catch(e) {
+      addLog(`[${currentSelectedDeviceId}] Loi: ${e.message}`, 'error');
+    } finally {
+      btnCollectPoints.disabled = false;
+      btnCollectPoints.innerText = oldText;
+    }
   });
 }
 
@@ -442,6 +456,87 @@ if (btnTestBuff) {
       addLog(`Lỗi test buff: ${e.message}`, 'error');
     }
     btnTestBuff.disabled = false;
+  });
+}
+
+// --- NPC Test & Interaction buttons ---
+const btnGetNpc = document.getElementById('btn-get-npc');
+if (btnGetNpc) {
+  btnGetNpc.addEventListener('click', async () => {
+    const devId = getTestDeviceId();
+    if (!devId) return;
+    const resContainer = document.getElementById('result-get-npc');
+    resContainer.innerText = 'Đang quét NPC xung quanh...';
+    try {
+      const res = await window.api.testNpcNearNames(devId);
+      if (res && res.ok && res.npcMap) {
+        let lines = [];
+        const entries = Object.entries(res.npcMap);
+        lines.push(`Bản đồ hiện tại (Map ID): ${res.mapId || 0}`);
+        lines.push(`Tìm thấy ${entries.length} NPC(s):`);
+        for (const [id, name] of entries) {
+          lines.push(`  ID: ${id} -> Name: ${name}`);
+        }
+        resContainer.innerText = lines.join('\n');
+      } else {
+        resContainer.innerText = 'Lỗi quét NPC: ' + JSON.stringify(res);
+      }
+    } catch(e) {
+      resContainer.innerText = 'Lỗi ngoại lệ: ' + e.message;
+    }
+  });
+}
+
+const btnInteractNpc = document.getElementById('btn-interact-npc');
+if (btnInteractNpc) {
+  btnInteractNpc.addEventListener('click', async () => {
+    const devId = getTestDeviceId();
+    if (!devId) return;
+    const npcId = document.getElementById('txt-interact-npc-id').value.trim();
+    if (!npcId) {
+      addLog('Vui lòng nhập ID NPC để tương tác.', 'error');
+      return;
+    }
+    const resContainer = document.getElementById('result-interact-npc');
+    resContainer.innerText = 'Đang gửi lệnh tương tác...';
+    try {
+      const res = await window.api.npcInteract(devId, npcId);
+      resContainer.innerText = 'Kết quả: ' + JSON.stringify(res);
+      if (res && res.ok) {
+        addLog(`[${devId}] Đã tương tác với NPC ID ${npcId}.`, 'success');
+      } else {
+        addLog(`[${devId}] Tương tác NPC thất bại: ${res ? res.error : 'Unknown'}`, 'error');
+      }
+    } catch(e) {
+      resContainer.innerText = 'Lỗi: ' + e.message;
+    }
+  });
+}
+
+const btnSelectDialogOption = document.getElementById('btn-select-dialog-option');
+if (btnSelectDialogOption) {
+  btnSelectDialogOption.addEventListener('click', async () => {
+    const devId = getTestDeviceId();
+    if (!devId) return;
+    const optionIdxStr = document.getElementById('num-dialog-option').value;
+    if (optionIdxStr === '') {
+      addLog('Vui lòng nhập chỉ mục option.', 'error');
+      return;
+    }
+    const optionIdx = parseInt(optionIdxStr, 10);
+    const resContainer = document.getElementById('result-select-dialog-option');
+    resContainer.innerText = `Đang gửi lệnh chọn option ${optionIdx}...`;
+    try {
+      const res = await window.api.npcSelectOption(devId, optionIdx);
+      resContainer.innerText = 'Kết quả: ' + JSON.stringify(res);
+      if (res && res.ok) {
+        addLog(`[${devId}] Đã gửi gói chọn option ${optionIdx} của dialog.`, 'success');
+      } else {
+        addLog(`[${devId}] Chọn option thất bại: ${res ? res.error : 'Unknown'}`, 'error');
+      }
+    } catch(e) {
+      resContainer.innerText = 'Lỗi: ' + e.message;
+    }
   });
 }
 

@@ -78,21 +78,24 @@ rpc.exports.clearFocus = function() {
         globalThis._mainThreadActions.push(function() {
             try {
                 // Stop running and chasing if PlayerMain is available
-                if (globalThis._playerMainInstance) {
-                    clearRunFn(globalThis._playerMainInstance);
-                    stopPathFn(globalThis._playerMainInstance);
-                    killTargetFn(globalThis._playerMainInstance);
+                if (_playerMainInstance) {
+                    clearRunFn(_playerMainInstance);
+                    stopPathFn(_playerMainInstance);
+                    killTargetFn(_playerMainInstance);
                     
-                    // Force clear PlayerMain.target field (offset 0xA0)
-                    globalThis._playerMainInstance.add(0xA0).writePointer(ptr(0));
-                }
-                
-                // Clear UI selection circle if PlayerOther instance was captured
-                if (globalThis._playerOtherInstance) {
-                    try {
-                        setSelectFn(globalThis._playerOtherInstance, ptr(0));
-                    } catch(err) {
-                        console.log("[clearFocus] setSelectFn error: " + err);
+                    // Đọc pointer của mục tiêu hiện tại trước khi xóa
+                    var currentTarget = _playerMainInstance.add(0xA0).readPointer();
+                    
+                    // Xóa mục tiêu trong bộ nhớ
+                    _playerMainInstance.add(0xA0).writePointer(ptr(0));
+
+                    // Tắt vòng tròn chọn mục tiêu trên UI
+                    if (currentTarget && !currentTarget.isNull()) {
+                        try {
+                            setSelectFn(currentTarget, ptr(0));
+                        } catch(err) {
+                            console.log("[clearFocus] setSelectFn error: " + err);
+                        }
                     }
                 }
             } catch (e) {

@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld('api', {
   show5HanhDetail: (data) => ipcRenderer.send('show-5hanh-detail', data),
   testCastSkill: (deviceId) => ipcRenderer.invoke('test-cast-skill', deviceId),
   testBuff: (deviceId) => ipcRenderer.invoke('test-buff', deviceId),
+  testNpcFindByName: (deviceId, npcName) => ipcRenderer.invoke('test-npc-find-by-name', deviceId, npcName),
+  testNpcGetAll: (deviceId) => ipcRenderer.invoke('test-npc-get-all', deviceId),
+  testNpcNearNames: (deviceId) => ipcRenderer.invoke('test-npc-near-names', deviceId),
+  npcInteract: (deviceId, npcId) => ipcRenderer.invoke('npc-interact', deviceId, npcId),
+  npcSelectOption: (deviceId, index) => ipcRenderer.invoke('npc-select-option', deviceId, index),
+  collectPoints: (deviceId) => ipcRenderer.invoke('collect-points', deviceId),
   onScanDatauProgress: (callback) => ipcRenderer.on('datau-progress', (event, msg) => callback(msg)),
   
   // Event listeners

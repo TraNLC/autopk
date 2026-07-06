@@ -24,21 +24,21 @@ class AutoPK {
     this.hpThreshold = 0.65;
     this.mpThreshold = 0.30;
     
-    // Dynamic configurations (applied from GUI profile)
-    this.priorityRange = 400;
-    this.extendedRange = 800;
-    this.skillRange = 512;
-    this.outerRange = 700;
-    this.usePriorityRange = true;
-    this.useOuterRange = true;
-    this.ignoreInvulnerable = true;
-    this.dismountOnFight = true;
     this.attackCriteria = 'nearest'; // nearest | lowest_level | highest_level
 
     // Default skills to execute
     this.attackSkills = [1];
     this.currentSkillIndex = 0;
     this.lastLagFixTime = 0;
+  }
+
+  log(msg, type = 'info') {
+    const timeStr = new Date().toLocaleTimeString();
+    const formattedMsg = `[AutoPK] ${msg}`;
+    console.log(`[TRACE] [${timeStr}] [${this.deviceId}] ${formattedMsg}`);
+    if (globalThis._mainWindow) {
+      globalThis._mainWindow.webContents.send('tab-log', { msg: `[${this.deviceId}] ${formattedMsg}`, type });
+    }
   }
 
   /**
@@ -54,7 +54,7 @@ class AutoPK {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.profile) {
           this.profileGuid = parsed.profile;
-          console.log(`[AutoPK] Loaded profile GUID: ${this.profileGuid}`);
+          this.log(`Loaded profile GUID: ${this.profileGuid}`);
           return;
         }
       }
@@ -64,7 +64,7 @@ class AutoPK {
     
     // Default fallback GUIDs seen in logs
     this.profileGuid = '1dc8514c'; 
-    console.log(`[AutoPK] Using default fallback profile GUID: ${this.profileGuid}`);
+    this.log(`Using default fallback profile GUID: ${this.profileGuid}`);
   }
 
   /**
@@ -75,7 +75,12 @@ class AutoPK {
     this.running = true;
     this.loadProfile();
 
-    console.log('[AutoPK] Starting Auto PK Loop...');
+    this.log('Starting Auto PK Loop...', 'success');
+
+    // Reset target focus to prevent chasing previous targets
+    try {
+      await this.session.callRpc('clearFocus');
+    } catch(e) {}
 
     // Warm up the auto-play system (prevent wipes by applying profile)
     try {
@@ -105,7 +110,7 @@ class AutoPK {
       clearTimeout(this.loopTimer);
       this.loopTimer = null;
     }
-    console.log('[AutoPK] Stopping Auto PK Loop.');
+    this.log('Stopping Auto PK Loop.', 'warn');
     try {
       await this.injector.sendApplyAutoplayProfile(false, this.profileGuid);
     } catch (e) {}
@@ -145,7 +150,7 @@ class AutoPK {
     let score = 0;
 
     // 1. Đánh giá khoảng cách (Chuẩn hóa về khoảng 0 - 1)
-    const maxRange = this.extendedRange;
+    const maxRange = 800;
     const distance = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
     const distanceScore = distance < maxRange ? (1 - (distance / maxRange)) : 0;
     score += distanceScore * WEIGHT_DISTANCE;
@@ -175,16 +180,15 @@ class AutoPK {
    * - useOuterRange=true:      Filter max = outerRange (chỉ tìm mục tiêu có thể đánh)
    */
   findBestTarget(player, enemyList) {
-    // Phạm vi filter hiệu quả: nếu bật outerRange thì dùng outerRange, không thì extendedRange
-    const effectiveMaxRange = this.useOuterRange ? this.outerRange : this.extendedRange;
-
     // Lọc theo khoảng cách và trạng thái đặc biệt
     const filteredEnemies = enemyList.filter(enemy => {
       const dist = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
       
-      if (dist > effectiveMaxRange) return false;
+      // Giới hạn phạm vi dò tìm cứng ở 700
+      if (dist > 700) return false;
 
-      if (this.ignoreInvulnerable && enemy.states && (enemy.states.includes(2) || enemy.states.includes(52))) {
+      // Loại bỏ đối thủ đang ở trạng thái bất tử (2 hoặc 52)
+      if (enemy.states && (enemy.states.includes(2) || enemy.states.includes(52))) {
         return false;
       }
       return true;
@@ -192,28 +196,14 @@ class AutoPK {
 
     if (filteredEnemies.length === 0) return null;
 
-    // Nếu KHÔNG dùng phạm vi ưu tiên → đánh gần nhất thuần
-    if (!this.usePriorityRange) {
-      let nearest = null;
-      let nearestDist = 99999;
-      for (const enemy of filteredEnemies) {
-        const dist = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearest = enemy;
-        }
-      }
-      return nearest;
-    }
-
-    // === CÓ dùng phạm vi ưu tiên: 2 tầng ===
+    // === Tầng 1: Tìm các mục tiêu trong phạm vi ưu tiên 400 ===
     const priorityEnemies = filteredEnemies.filter(enemy => {
       const dist = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
-      return dist <= this.priorityRange;
+      return dist <= 400;
     });
 
     if (priorityEnemies.length > 0) {
-      // === TRONG PHẠM VI ƯU TIÊN: khắc hệ ngũ hành ===
+      // Tìm đối thủ gần nhất trong phạm vi ưu tiên
       let nearest = null;
       let nearestDist = 99999;
       for (const enemy of priorityEnemies) {
@@ -224,6 +214,7 @@ class AutoPK {
         }
       }
 
+      // Ưu tiên đối thủ khắc hệ ngũ hành (nếu đứng gần đó)
       const nearThreshold = nearestDist * 1.2;
       let bestKicHe = nearest;
       let bestKicHeDist = nearestDist;
@@ -238,14 +229,9 @@ class AutoPK {
           bestKicHeDist = dist;
         }
       }
-
-      if (bestKicHe !== nearest) {
-        console.log(`[AutoPK] 🎯 [Ưu tiên] Khắc hệ: ${bestKicHe.name || '???'} (${bestKicHeDist.toFixed(0)}m) < gần nhất ${nearest.name || '???'} (${nearestDist.toFixed(0)}m)`);
-      }
       return bestKicHe;
-
     } else {
-      // === NGOÀI PHẠM VI ƯU TIÊN (priorityRange → effectiveMaxRange): gần nhất ===
+      // === Tầng 2: Ngoài phạm vi ưu tiên (400 → 700), chọn đối thủ gần nhất ===
       let nearest = null;
       let nearestDist = 99999;
       for (const enemy of filteredEnemies) {
@@ -255,7 +241,6 @@ class AutoPK {
           nearest = enemy;
         }
       }
-      console.log(`[AutoPK] 🎯 [Mở rộng] Gần nhất: ${nearest.name || '???'} (${nearestDist.toFixed(0)}m)`);
       return nearest;
     }
   }
@@ -273,8 +258,8 @@ class AutoPK {
     }
 
     // 1. Tự động xuống ngựa khi phát hiện mục tiêu chiến đấu
-    if (this.dismountOnFight && info.riding) {
-      console.log(`[AutoPK] Phát hiện cưỡi ngựa khi chiến đấu. Tự động xuống ngựa...`);
+    if (info.riding) {
+      this.log(`Phat hien cuoi ngua khi chien dau. Tu dong xuong ngua...`, 'warn');
       await this.session.callRpc('switchHorse');
       // Chờ 300ms để hoạt cảnh xuống ngựa hoàn tất
       await new Promise(r => setTimeout(r, 300));
@@ -312,14 +297,14 @@ class AutoPK {
       this.hadTarget = true;
       // Dùng vị trí từ getNearEnemies (localX/Y) đồng bộ với findBestTarget
       const dist = Math.sqrt(Math.pow(bestTarget.x - playerState.x, 2) + Math.pow(bestTarget.y - playerState.y, 2));
-      const targetRange = this.useOuterRange ? this.outerRange : this.skillRange;
+      const targetRange = 700;
 
       if (dist <= targetRange) {
-        if (dist > this.skillRange && this.useOuterRange) {
-          console.log(`[AutoPK] ⚡ Tấn công ngoài tầm chiêu (${dist.toFixed(0)}m > ${this.skillRange}m). Đứng im xả chiêu vào tọa độ (${bestTarget.x}, ${bestTarget.y})`);
+        if (dist > 512) {
+          this.log(`Tan cong ngoai tam chieu (${dist.toFixed(0)}m > 512m). Dung im xa chieu vao toa do (${bestTarget.x}, ${bestTarget.y})`, 'info');
           await this.injector.sendDoSkillTargetPosition(skillId, bestTarget.x, bestTarget.y);
         } else {
-          console.log(`[AutoPK] ⚔️ Địch trong tầm chiêu. Tấn công: ${bestTarget.name || '???'} (${dist.toFixed(0)}m)`);
+          this.log(`Dich trong tam chieu. Tan cong: ${bestTarget.name || '???'} (${dist.toFixed(0)}m)`, 'success');
           await this.injector.sendDoSkillTargetPlayer(skillId, bestTarget.id);
         }
       }
@@ -327,7 +312,7 @@ class AutoPK {
       // Khi không có mục tiêu: KHÔNG cast để tiết kiệm mana, chỉ sync vị trí đã làm ở trên
       if (this.hadTarget) {
         this.hadTarget = false;
-        console.log(`[AutoPK] 🎯 Mất mục tiêu hoặc mục tiêu đã bay màu. Đang Reset Focus để chống chạy bậy...`);
+        this.log(`Mat muc tieu hoac muc tieu da bay mau. Dang Reset Focus de chong chay bay...`, 'warn');
         await this.session.callRpc('clearFocus');
       }
     }

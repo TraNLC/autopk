@@ -224,3 +224,17 @@ select, input[type="text"] {
 .icon-btn:hover {
   background: #d0d0d0;
 }
+
+/* Responsive Tong Kim Tab Layout to maximize logs visibility */
+#tab-tongkim.active {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+#tab-tongkim .log-container {
+  flex: 1;
+  height: auto;
+  min-height: 250px;
+  margin-top: 10px;
+}

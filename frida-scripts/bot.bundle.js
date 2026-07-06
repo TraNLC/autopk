@@ -363,6 +363,47 @@ function readPlayerMainDirect() {
     var now = Date.now();
     _lastPlayerMainScanTime = now;
     
+    // Try native IL2CPP functions first (highly reliable and doesn't require global-metadata.dat)
+    try {
+        var libBase = il2cppBase || (typeof getIl2CppBase !== 'undefined' ? getIl2CppBase() : null);
+        if (libBase) {
+            var fn_domain_get = Module.findExportByName('libil2cpp.so', 'il2cpp_domain_get') || (typeof findElfExport !== 'undefined' ? findElfExport(libBase, 'il2cpp_domain_get') : null);
+            var fn_domain_assembly_open = Module.findExportByName('libil2cpp.so', 'il2cpp_domain_assembly_open') || (typeof findElfExport !== 'undefined' ? findElfExport(libBase, 'il2cpp_domain_assembly_open') : null);
+            var fn_assembly_get_image = Module.findExportByName('libil2cpp.so', 'il2cpp_assembly_get_image') || (typeof findElfExport !== 'undefined' ? findElfExport(libBase, 'il2cpp_assembly_get_image') : null);
+            var fn_class_from_name = Module.findExportByName('libil2cpp.so', 'il2cpp_class_from_name') || (typeof findElfExport !== 'undefined' ? findElfExport(libBase, 'il2cpp_class_from_name') : null);
+            
+            if (fn_domain_get && fn_domain_assembly_open && fn_assembly_get_image && fn_class_from_name) {
+                var get_domain = new NativeFunction(fn_domain_get, 'pointer', []);
+                var assembly_open = new NativeFunction(fn_domain_assembly_open, 'pointer', ['pointer', 'pointer']);
+                var get_image = new NativeFunction(fn_assembly_get_image, 'pointer', ['pointer']);
+                var class_from_name = new NativeFunction(fn_class_from_name, 'pointer', ['pointer', 'pointer', 'pointer']);
+                
+                var domain = get_domain();
+                if (domain && !domain.isNull()) {
+                    var assembly = assembly_open(domain, Memory.allocUtf8String("Assembly-CSharp"));
+                    if (assembly && !assembly.isNull()) {
+                        var image = get_image(assembly);
+                        if (image && !image.isNull()) {
+                            var klass = class_from_name(image, Memory.allocUtf8String(""), Memory.allocUtf8String("PlayerMain"));
+                            if (klass && !klass.isNull()) {
+                                var staticFields = klass.add(0xB8).readPointer();
+                                if (staticFields && !staticFields.isNull()) {
+                                    var instance = staticFields.readPointer();
+                                    if (instance && !instance.isNull() && parseInt(instance.toString()) > 0x10000) {
+                                        _playerMainInstance = instance;
+                                        return { ok: true, playerMain: _playerMainInstance.toString(), source: 'native_il2cpp' };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch(e) {
+        // Fallback to metadata scanning if native resolution fails
+    }
+    
     // Resolve dynamically!
     try {
         var pattern = '50 6c 61 79 65 72 4d 61 69 6e'; // "PlayerMain"
@@ -437,18 +478,6 @@ function readPlayerMainDirect() {
         try {
             // Hook Controller.Update at 0xFB6994 for reliable tick
             globalThis._tickCount = 0;
-            globalThis._playerOtherInstance = null;
-            
-            try {
-                // Hook PlayerOther.SetSelectGameObject (0xE4EDB0) to capture PlayerOther instance
-                Interceptor.attach(il2cppBase.add(0xE4EDB0), {
-                    onEnter: function (args) {
-                        globalThis._playerOtherInstance = args[0];
-                    }
-                });
-            } catch (e) {
-                console.log("[Hook] Failed to hook SetSelectGameObject: " + e);
-            }
 
             Interceptor.attach(il2cppBase.add(0xFB6994), {
                 onEnter: function(args) {
@@ -2230,7 +2259,7 @@ rpc.exports.selectDialogOption = function(index) {
     });
 };
 
-// ══ rpc/shop/ShopScanner.js ══
+// ══ rpc/ShopScanner.js ══
 // frida-scripts/rpc/shop/ShopScanner.js -- Nearby shops and stall interactions
 
 var _charManagerClass = null;
@@ -2913,6 +2942,196 @@ rpc.exports.getShopItems = function(stallIndex, nameStr, namePtrStr, cidPtrStr, 
     });
 };
 
+// ══ rpc/NPCScanner.js ══
+// frida-scripts/rpc/npc/NPCScanner.js
+// NPC (Trinh Sat, Quan Nhu) la NpcRes.Normal → khac klass voi player (NpcRes.Special)
+// Tim Normal klass tu metadata, scan heap voi klass do
+
+function __findClassFromMetadata(className) {
+    try {
+        var maps = File.readAllText('/proc/self/maps').split('\n');
+        var metaBase = null, metaSize = 0;
+        for (var i = 0; i < maps.length; i++) {
+            if (maps[i].indexOf('global-metadata.dat') !== -1) {
+                var parts = maps[i].split(' ')[0].split('-');
+                metaBase = ptr('0x' + parts[0]);
+                metaSize = parseInt('0x' + parts[1]) - parseInt('0x' + parts[0]);
+                break;
+            }
+        }
+        if (!metaBase) return null;
+
+        var ns = "";
+        var name = className;
+        var dotIdx = className.lastIndexOf('.');
+        if (dotIdx !== -1) {
+            ns = className.substring(0, dotIdx);
+            name = className.substring(dotIdx + 1);
+        }
+
+        // Find name string in metadata
+        var hexName = '';
+        for (var i = 0; i < name.length; i++) hexName += ('0' + name.charCodeAt(i).toString(16)).slice(-2);
+        var results = Memory.scanSync(metaBase, metaSize, hexName);
+        if (results.length === 0) return null;
+        
+        var nameAddr = null;
+        for (var r = 0; r < results.length; r++) {
+            var str = results[r].address.readUtf8String();
+            if (str === name) {
+                nameAddr = results[r].address;
+                break;
+            }
+        }
+        if (!nameAddr) return null;
+
+        // Find namespace string in metadata if specified
+        var nsAddr = null;
+        if (ns !== "") {
+            var hexNs = '';
+            for (var i = 0; i < ns.length; i++) hexNs += ('0' + ns.charCodeAt(i).toString(16)).slice(-2);
+            var nsResults = Memory.scanSync(metaBase, metaSize, hexNs);
+            for (var r = 0; r < nsResults.length; r++) {
+                var str = nsResults[r].address.readUtf8String();
+                if (str === ns) {
+                    nsAddr = nsResults[r].address;
+                    break;
+                }
+            }
+            if (!nsAddr) return null;
+        }
+
+        // Find Il2CppClass: scan rw- for pointer to nameAddr at +0x10
+        var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+        var ptrHex = nameAddr.toString(16);
+        while (ptrHex.length < 16) ptrHex = '0' + ptrHex;
+        var pat = [];
+        for (var j = 14; j >= 0; j -= 2) pat.push(ptrHex.substring(j, j + 2));
+        var namePtrPattern = pat.join(' ');
+        
+        for (var r = 0; r < allRanges.length; r++) {
+            try {
+                var range = allRanges[r];
+                if (range.size < 0x1000) continue;
+                var matches = Memory.scanSync(range.base, range.size, namePtrPattern);
+                for (var m = 0; m < matches.length; m++) {
+                    var cand = matches[m].address.sub(0x10);
+                    if (cand.compare(range.base) < 0) continue;
+                    try {
+                        if (cand.add(0x10).readPointer().toString() === nameAddr.toString()) {
+                            var checkNsPtr = cand.add(0x18).readPointer();
+                            if (ns === "") {
+                                if (checkNsPtr.isNull() || checkNsPtr.readUtf8String() === "") {
+                                    return cand;
+                                }
+                            } else {
+                                if (!checkNsPtr.isNull() && checkNsPtr.toString() === nsAddr.toString()) {
+                                    return cand;
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                }
+            } catch(e) {}
+        }
+        return null;
+    } catch(e) { return null; }
+}
+
+rpc.exports.getNearNpcNames = function() {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    var mapId = 0;
+    try {
+        mapId = _playerMainInstance.add(0xE4).readS32();
+    } catch(e) {}
+
+    var npcMap = {};
+
+    // Try cac class name kha thi cho NPC (quét 1 lần đầu tiên)
+    var npcKlass = globalThis.cachedNpcKlass || null;
+    if (!npcKlass) {
+        var classNames = ['NpcRes.Normal', 'Normal', 'NpcController', 'game.resource.settings.npcres.Controller'];
+        for (var ci = 0; ci < classNames.length; ci++) {
+            npcKlass = __findClassFromMetadata(classNames[ci]);
+            if (npcKlass) {
+                console.log('[NPCScanner] Found klass for "' + classNames[ci] + '": ' + npcKlass);
+                globalThis.cachedNpcKlass = npcKlass;
+                break;
+            }
+        }
+    }
+    if (!npcKlass) return { ok: false, error: 'No NPC klass found in metadata', mapId: mapId };
+
+    // Helper to read C# string from pointer
+    function readIl2CppString(strPtr) {
+        if (!strPtr || strPtr.isNull() || parseInt(strPtr.toString()) < 0x10000) return '';
+        try {
+            var len = strPtr.add(0x10).readInt();
+            if (len > 0 && len < 1000) {
+                return strPtr.add(0x14).readUtf16String(len);
+            }
+        } catch(e) {}
+        return '';
+    }
+
+    // Scan heap (asynchronous, non-blocking, and optimized to skip mapped files)
+    var kh = npcKlass.toString(16);
+    while (kh.length < 16) kh = '0' + kh;
+    var pat = [];
+    for (var j = 14; j >= 0; j -= 2) pat.push(kh.substring(j, j + 2));
+
+    return new Promise(function(resolve) {
+        var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+        var filteredRanges = [];
+        for (var i = 0; i < allRanges.length; i++) {
+            var r = allRanges[i];
+            // Skip mapped files to only scan anonymous heap memory (prevents character freezing)
+            if (r.file) continue;
+            if (r.size < 0x4000 || r.size > 0x05000000) continue;
+            filteredRanges.push(r);
+        }
+
+        var found = 0;
+        var rangeIdx = 0;
+
+        function scanNextRange() {
+            if (rangeIdx >= filteredRanges.length || found >= 200) {
+                return resolve({ ok: true, npcMap: npcMap, count: found, mapId: mapId });
+            }
+            var range = filteredRanges[rangeIdx++];
+            try {
+                Memory.scan(range.base, range.size, pat.join(' '), {
+                    onMatch: function(address, size) {
+                        try {
+                            var obj = address;
+                            var npcId = readIl2CppString(obj.add(0x28).readPointer());
+                            if (npcId && !npcMap[npcId]) {
+                                var name = readIl2CppString(obj.add(0x30).readPointer());
+                                if (name) {
+                                    npcMap[npcId] = name;
+                                    found++;
+                                }
+                            }
+                        } catch(e) {}
+                    },
+                    onError: function(reason) {
+                        scanNextRange();
+                    },
+                    onComplete: function() {
+                        scanNextRange();
+                    }
+                });
+            } catch(e) {
+                scanNextRange();
+            }
+        }
+
+        scanNextRange();
+    });
+};
+
 // ══ rpc/movement.js ══
 // frida-scripts/rpc/movement.js — Movement RPC exports (bridge-free)
 
@@ -3055,21 +3274,24 @@ rpc.exports.clearFocus = function() {
         globalThis._mainThreadActions.push(function() {
             try {
                 // Stop running and chasing if PlayerMain is available
-                if (globalThis._playerMainInstance) {
-                    clearRunFn(globalThis._playerMainInstance);
-                    stopPathFn(globalThis._playerMainInstance);
-                    killTargetFn(globalThis._playerMainInstance);
+                if (_playerMainInstance) {
+                    clearRunFn(_playerMainInstance);
+                    stopPathFn(_playerMainInstance);
+                    killTargetFn(_playerMainInstance);
                     
-                    // Force clear PlayerMain.target field (offset 0xA0)
-                    globalThis._playerMainInstance.add(0xA0).writePointer(ptr(0));
-                }
-                
-                // Clear UI selection circle if PlayerOther instance was captured
-                if (globalThis._playerOtherInstance) {
-                    try {
-                        setSelectFn(globalThis._playerOtherInstance, ptr(0));
-                    } catch(err) {
-                        console.log("[clearFocus] setSelectFn error: " + err);
+                    // Đọc pointer của mục tiêu hiện tại trước khi xóa
+                    var currentTarget = _playerMainInstance.add(0xA0).readPointer();
+                    
+                    // Xóa mục tiêu trong bộ nhớ
+                    _playerMainInstance.add(0xA0).writePointer(ptr(0));
+
+                    // Tắt vòng tròn chọn mục tiêu trên UI
+                    if (currentTarget && !currentTarget.isNull()) {
+                        try {
+                            setSelectFn(currentTarget, ptr(0));
+                        } catch(err) {
+                            console.log("[clearFocus] setSelectFn error: " + err);
+                        }
                     }
                 }
             } catch (e) {
@@ -3083,7 +3305,116 @@ rpc.exports.clearFocus = function() {
 };
 
 // ══ rpc/ui-control.js ══
-// frida-scripts/rpc/ui-control.js — UI control RPCs (bridge-free)
+function getPopUpCanvasInstanceLocal() {
+    var pattern = '50 6f 70 55 70 43 61 6e 76 61 73'; // "PopUpCanvas"
+    var maps = File.readAllText('/proc/self/maps').split('\n');
+    var metaRange = null;
+    for (var i = 0; i < maps.length; i++) {
+        var line = maps[i];
+        if (line.indexOf('global-metadata.dat') !== -1) {
+            var parts = line.split(' ')[0].split('-');
+            metaRange = { base: ptr('0x' + parts[0]), size: parseInt('0x' + parts[1]) - parseInt('0x' + parts[0]) };
+            break;
+        }
+    }
+    if (!metaRange) return null;
+    var results = Memory.scanSync(metaRange.base, metaRange.size, pattern);
+    var nameStrAddr = null;
+    for (var rIdx = 0; rIdx < results.length; rIdx++) {
+        if (results[rIdx].address.readUtf8String() === "PopUpCanvas") {
+            nameStrAddr = results[rIdx].address;
+            break;
+        }
+    }
+    if (!nameStrAddr) return null;
+    
+    var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+    var hex = nameStrAddr.toString(16);
+    while (hex.length < 16) hex = '0' + hex;
+    var parts = [];
+    for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
+    var ptrPattern = parts.join(' ');
+    
+    var popUpCanvasClass = null;
+    for (var k = 0; k < allRanges.length; k++) {
+        try {
+            var matches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
+            if (matches.length > 0) {
+                for (var m = 0; m < matches.length; m++) {
+                    var cand = matches[m].address.sub(0x10);
+                    try {
+                        var checkNamePtr = cand.add(0x10).readPointer();
+                        if (checkNamePtr.toString() === nameStrAddr.toString()) {
+                            popUpCanvasClass = cand;
+                            break;
+                        }
+                    } catch(e) {}
+                }
+            }
+        } catch(e) {}
+        if (popUpCanvasClass) break;
+    }
+    if (!popUpCanvasClass) return null;
+    var staticFields = popUpCanvasClass.add(0xB8).readPointer();
+    if (staticFields.isNull()) return null;
+    return staticFields.readPointer();
+}
+
+rpc.exports.closeOnlyNpcDialog = function() {
+    try {
+        var canvas = getPopUpCanvasInstanceLocal();
+        if (!canvas || canvas.isNull()) {
+            // Fallback to standard native call directly if canvas scan is not ready
+            globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+            globalThis._mainThreadActions.push(function() {
+                try {
+                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
+                    if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
+                        closeNpcDialogFn(_playerMainInstance);
+                    }
+                } catch(e) {}
+            });
+            return { ok: true, fallback: true };
+        }
+        
+        var npcDialogPc = canvas.add(0x128).readPointer();
+        var npcDialog10Pc = canvas.add(0x130).readPointer();
+        var npcDialogInfiPc = canvas.add(0x138).readPointer();
+        
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                if (npcDialogPc && !npcDialogPc.isNull()) {
+                    var closeFn = new NativeFunction(il2cppBase.add(0xE82838), 'void', ['pointer']);
+                    closeFn(npcDialogPc);
+                }
+            } catch(e) {}
+            try {
+                if (npcDialog10Pc && !npcDialog10Pc.isNull()) {
+                    var closeFn = new NativeFunction(il2cppBase.add(0xE80744), 'void', ['pointer']);
+                    closeFn(npcDialog10Pc);
+                }
+            } catch(e) {}
+            try {
+                if (npcDialogInfiPc && !npcDialogInfiPc.isNull()) {
+                    var closeFn = new NativeFunction(il2cppBase.add(0xE816A0), 'void', ['pointer']);
+                    closeFn(npcDialogInfiPc);
+                }
+            } catch(e) {}
+            
+            // Also call standard CloseNpcDialog for safety
+            try {
+                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
+                if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
+                    closeNpcDialogFn(_playerMainInstance);
+                }
+            } catch(e) {}
+        });
+        return { ok: true, queued: true };
+    } catch(e) {
+        return { ok: false, error: e.message };
+    }
+};
 
 rpc.exports.closeDialogPopups = function() {
     var pmRes = readPlayerMainDirect();
@@ -3091,15 +3422,18 @@ rpc.exports.closeDialogPopups = function() {
     if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
 
     try {
-        var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
-        var closeNpcShopFn = new NativeFunction(il2cppBase.add(0xE4535C), 'void', ['pointer']);
-        var closeBagarateFn = new NativeFunction(il2cppBase.add(0xE45104), 'void', ['pointer']);
-        var closeStorageBoxFn = new NativeFunction(il2cppBase.add(0xE44B8C), 'void', ['pointer']);
+        var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
+        var closeNpcShopFn = new NativeFunction(il2cppBase.add(0xE454A0), 'void', ['pointer']);
+        var closeBagarateFn = new NativeFunction(il2cppBase.add(0xE45230), 'void', ['pointer']);
+        var closeStorageBoxFn = new NativeFunction(il2cppBase.add(0xE44CCC), 'void', ['pointer']);
 
-        closeNpcDialogFn(_playerMainInstance);
-        closeNpcShopFn(_playerMainInstance);
-        closeBagarateFn(_playerMainInstance);
-        closeStorageBoxFn(_playerMainInstance);
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try { closeNpcDialogFn(_playerMainInstance); } catch(e){}
+            try { closeNpcShopFn(_playerMainInstance); } catch(e){}
+            try { closeBagarateFn(_playerMainInstance); } catch(e){}
+            try { closeStorageBoxFn(_playerMainInstance); } catch(e){}
+        });
 
         globalThis._closePopupResult = { closed: { dialog: 1, shop: 1, bag: 1, storage: 1 }, found: {}, ts: Date.now() };
 
