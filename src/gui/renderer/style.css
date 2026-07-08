@@ -229,12 +229,11 @@ select, input[type="text"] {
 #tab-tongkim.active {
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
 #tab-tongkim .log-container {
-  flex: 1;
-  height: auto;
-  min-height: 250px;
+  height: 220px !important;
+  max-height: 220px !important;
+  overflow-y: auto !important;
   margin-top: 10px;
 }

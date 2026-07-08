@@ -86,23 +86,22 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         const shared = findSharedNpcIds(deviceId, mapId, campValue, false);
         if (shared && shared.baodanhId) {
           cache.baodanhId = shared.baodanhId;
-          sendLog(`[${deviceId}] Lay ID Bao Danh (${shared.baodanhId}) tu cua so khac cung map.`, 'success');
         }
       }
       const baodanhId = cache && cache.baodanhId;
       if (!baodanhId) {
-        sendLog(`[${deviceId}] Chua co ID NPC Bao Danh. Hay click tay vao Chieu Binh Quan / Mo Binh Quan 1 lan.`, 'warn');
+        sendLog(`[${deviceId}] Chưa có ID NPC Báo Danh. Hãy click tay vào Chiêu Binh / Mộ Binh 1 lần.`, 'warn');
         return;
       }
-      sendLog(`[${deviceId}] Goi NPC Bao Danh (ID: ${baodanhId})...`, 'info');
+      sendLog(`[${deviceId}] Đang thực hiện báo danh Tống Kim...`, 'info');
       try {
         await injector.sendNpcDialogue(baodanhId);
         await new Promise(r => setTimeout(r, 500));
         await injector.sendNpcSelect(0);
         await new Promise(r => setTimeout(r, 1000));
-        sendLog(`[${deviceId}] OK da goi Bao Danh.`, 'success');
+        sendLog(`[${deviceId}] Báo danh Tống Kim thành công!`, 'success');
       } catch(e) {
-        sendLog(`[${deviceId}] Loi bao danh: ${e.message}`, 'error');
+        sendLog(`[${deviceId}] Lỗi báo danh: ${e.message}`, 'error');
       }
       return;
     }
@@ -126,7 +125,6 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         if (cache.campValue !== undefined && cache.campValue !== campValue) {
           cache.trinhSatId = null;
           cache.learnedIds = [];
-          sendLog(`[${deviceId}] Doi phe -> reset NPC cache.`, 'info');
         }
         cache.campValue = campValue;
 
@@ -147,12 +145,10 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
             if (!trinhSatId && shared.trinhSatId) {
               trinhSatId = shared.trinhSatId;
               cache.trinhSatId = shared.trinhSatId;
-              sendLog(`[${deviceId}] Lay ID Trinh Sat (${shared.trinhSatId}) tu cua so khac cung map.`, 'success');
             }
             if (!quanNhuId && shared.quanNhuId) {
               quanNhuId = shared.quanNhuId;
               cache.quanNhuId = shared.quanNhuId;
-              sendLog(`[${deviceId}] Lay ID Quan Nhu (${shared.quanNhuId}) tu cua so khac cung map.`, 'success');
             }
           }
         }
@@ -170,7 +166,6 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
                   if (!trinhSatId) {
                     trinhSatId = npcId;
                     cache.trinhSatId = npcId;
-                    sendLog(`[${deviceId}] Tim thay Trinh Sat qua bo nho: ID=${npcId} (${npcName})`, 'success');
                   }
                 }
                 // So khớp Quân Nhu
@@ -178,14 +173,11 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
                   if (!quanNhuId) {
                     quanNhuId = npcId;
                     cache.quanNhuId = npcId;
-                    sendLog(`[${deviceId}] Tim thay Quan Nhu qua bo nho: ID=${npcId} (${npcName})`, 'success');
                   }
                 }
               }
             }
-          } catch(e) {
-            sendLog(`[${deviceId}] NPC scan error: ${e.message}`, 'error');
-          }
+          } catch(e) {}
         }
 
         // ── Thống kê thời gian giãn cách 2.5s mỗi lần gọi Trình Sát để tránh bị rate-limit ──
@@ -197,7 +189,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         cache._lastCallTime = now;
 
         if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 3 * 60 * 1000)) {
-          sendLog(`[${deviceId}] Goi Quan Nhu (ID=${quanNhuId})...`, 'info');
+          sendLog(`[${deviceId}] [Ra Trận] Đang nhận thuốc Quân Nhu...`, 'info');
           try {
             await injector.sendNpcDialogue(quanNhuId);
             await new Promise(r => setTimeout(r, 800));
@@ -205,9 +197,9 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
             await new Promise(r => setTimeout(r, 400));
             await session.callRpc('sendPacket', 232, '');
             await new Promise(r => setTimeout(r, 400));
-            sendLog(`[${deviceId}] OK da nhan thuoc tu Quan Nhu.`, 'success');
+            sendLog(`[${deviceId}] [Ra Trận] Nhận thuốc Quân Nhu thành công!`, 'success');
           } catch(e) {
-            sendLog(`[${deviceId}] Loi Quan Nhu: ${e.message}`, 'error');
+            sendLog(`[${deviceId}] [Ra Trận] Lỗi nhận thuốc: ${e.message}`, 'error');
           }
           cache._lastHealTime = now;
 
@@ -221,13 +213,10 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           const sectSkillMap = { 0: 102, 1: 111, 2: 129, 3: 139, 4: 159, 5: 109, 6: 179, 7: 189, 8: 209, 9: 219 };
           const buffSkillId = sectSkillMap[sect];
           if (buffSkillId && buffSkillId > 1) {
-            sendLog(`[${deviceId}] Buff tran phai (skill ${buffSkillId})...`, 'info');
             await injector.sendDoSkillTargetPosition(buffSkillId, info.x || 0, info.y || 0);
             await new Promise(r => setTimeout(r, 400));
           }
-        } catch(e) {
-          sendLog(`[${deviceId}] Loi buff tran phai: ${e.message}`, 'error');
-        }
+        } catch(e) {}
 
         // Dong popup truoc khi goi Trinh Sat
         try { await session.callRpc('closeDialogPopups'); } catch(e) {}
@@ -243,18 +232,33 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           } else {
             battleOption = (campValue === 2) ? 1 : 0;
           }
-          sendLog(`[${deviceId}] Goi Trinh Sat (ID=${trinhSatId}) -> Phe ${battleOption === 1 ? 'Kim' : 'Tong'} (Option ${battleOption})...`, 'info');
+          sendLog(`[${deviceId}] [Ra Trận] Đang qua cửa Trình Sát ra chiến trường...`, 'info');
           await injector.sendNpcDialogue(trinhSatId);
           await new Promise(r => setTimeout(r, 500));
           await injector.sendNpcSelect(battleOption);
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 600)); // Đợi 0.6 giây sau tương tác NPC
+          try {
+            await session.callRpc('closeDialogPopups'); // Đóng popup NPC, không che màn hình
+          } catch(err) {}
+          await new Promise(r => setTimeout(r, 400)); // Đợi nốt cự ly đồng bộ map
           try {
             await session.callRpc('clearFocus');
-            sendLog(`[${deviceId}] Reset focus thanh cong sau khi qua cua Trinh Sat.`, 'success');
           } catch(err) {}
         } catch(e) {
-          sendLog(`[${deviceId}] Loi goi Trinh Sat: ${e.message}`, 'error');
+          sendLog(`[${deviceId}] [Ra Trận] Lỗi qua cửa Trình Sát: ${e.message}`, 'error');
         }
+
+        // Buff tran phai sau khi ra san (sau khi qua cua Trinh Sat)
+        try {
+          const sect = info.sect !== undefined ? info.sect : -1;
+          const sectSkillMap = { 0: 102, 1: 111, 2: 129, 3: 139, 4: 159, 5: 109, 6: 179, 7: 189, 8: 209, 9: 219 };
+          const buffSkillId = sectSkillMap[sect];
+          if (buffSkillId && buffSkillId > 1) {
+            sendLog(`[${deviceId}] [Ra Trận] Đang thực hiện buff hỗ trợ...`, 'info');
+            await injector.sendDoSkillTargetPosition(buffSkillId, info.x || 0, info.y || 0);
+            await new Promise(r => setTimeout(r, 400));
+          }
+        } catch(e) {}
 
       } catch(e) {
         sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');
@@ -270,7 +274,7 @@ async function collectPoints(deviceId, session, sendLog) {
   const cache = ensureCache(deviceId);
   
   try {
-    sendLog(`[${deviceId}] Bat dau thuc hien gom diem tich luy...`, 'info');
+    sendLog(`[${deviceId}] [Gom Điểm] Bước 1: Bắt đầu gom điểm tích lũy...`, 'info');
     const injector = new PacketInjector(session);
     
     // Step 1: Quét tìm NPC Mộ binh / Chiêu binh / Quân nhu
@@ -302,67 +306,60 @@ async function collectPoints(deviceId, session, sendLog) {
       }
     }
     
-    sendLog(`[${deviceId}] Tuong tac voi NPC: ${npcName} (ID: ${npcId})...`, 'info');
+    const info = await session.callRpc('getPlayerInfo');
+    const camp = (info && info.campValue) ? info.campValue : 1;
     
-    // Step 2: Gửi đối thoại với NPC
-    try { await session.callRpc('closeDialogPopups'); } catch(e) {}
-    await new Promise(r => setTimeout(r, 400));
-    await injector.sendNpcDialogue(npcId);
-    await new Promise(r => setTimeout(r, 1000));
+    // Động xác định quy trình mở shop dựa theo tên NPC
+    const lowerNpcName = npcName.toLowerCase();
+    const isStagingNpc = lowerNpcName.includes('quốc') || lowerNpcName.includes('quoc');
     
-    // Step 3: Chọn dòng "Điểm tích lũy" (Option index 1)
-    sendLog(`[${deviceId}] Chon muc: Diem tich luy (Option 1)...`, 'info');
-    await injector.sendNpcSelect(1);
-    await new Promise(r => setTimeout(r, 1000));
-    
-    // Step 4: Chọn dòng "Mở shop" (Option index 0)
-    sendLog(`[${deviceId}] Chon muc: Mo shop (Option 0)...`, 'info');
-    
-    cache.lastNpcShopKey = null; // Reset shopkey cũ
-    await injector.sendNpcSelect(0);
-    await new Promise(r => setTimeout(r, 400));
-    
-    // Đóng chỉ popup đối thoại để tránh che giao diện shop
-    try {
-      await session.callRpc('closeOnlyNpcDialog');
-      sendLog(`[${deviceId}] Da dong popup doi thoai de lo shop UI.`, 'info');
-    } catch(e) {
-      sendLog(`[${deviceId}] Canh bao: Khong the tu dong dong dialog: ${e.message}`, 'warn');
-    }
-    
-    // Đợi tối đa 2 giây để nhận shopkey từ server
-    let waitShopkey = 0;
-    while (!cache.lastNpcShopKey && waitShopkey < 20) {
-      await new Promise(r => setTimeout(r, 100));
-      waitShopkey++;
-    }
-    
-    let shopKey = cache.lastNpcShopKey;
-    if (!shopKey) {
-      shopKey = "tong.kim.point.shop"; 
-      sendLog(`[${deviceId}] Canh bao: Khong bat duoc shopKey, dung mac dinh: ${shopKey}`, 'warn');
+    if (isStagingNpc) {
+      // NPC ở map Staging (Tống Quốc Quân nhu quan / Kim Quốc Quân nhu quan)
+      // Mở shop trực tiếp bằng Option 1 trên màn hình đầu tiên
+      sendLog(`[${deviceId}] [Gom Điểm] Bước 2: Tương tác với ${npcName} (Map chuẩn bị)...`, 'info');
+      try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+      await new Promise(r => setTimeout(r, 400));
+      await injector.sendNpcDialogue(npcId);
+      await new Promise(r => setTimeout(r, 1000));
+      
+      cache.lastNpcShopKey = null; // Reset shopkey cũ
+      await injector.sendNpcSelect(1); // Option 1: Mở shop
+      await new Promise(r => setTimeout(r, 600));
     } else {
-      sendLog(`[${deviceId}] Nhan duoc shopKey tu game: ${shopKey}`, 'success');
+      // NPC ở Map 324 (Quân Nhu quan, Mộ binh quan, Chiêu binh quan)
+      // Màn hình 1: Chọn Option 1 (Xem điểm tích lũy)
+      // Màn hình 2: Chọn Option 0 (Mở shop)
+      sendLog(`[${deviceId}] [Gom Điểm] Bước 2: Tương tác với ${npcName} (Map 324)...`, 'info');
+      try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+      await new Promise(r => setTimeout(r, 400));
+      await injector.sendNpcDialogue(npcId);
+      await new Promise(r => setTimeout(r, 1000));
+      
+      await injector.sendNpcSelect(1); // Option 1: Xem điểm tích lũy
+      await new Promise(r => setTimeout(r, 1000));
+      
+      cache.lastNpcShopKey = null; // Reset shopkey cũ
+      await injector.sendNpcSelect(0); // Option 0: Mở shop
+      await new Promise(r => setTimeout(r, 600));
     }
     
-    // Step 5: Mua Phiếu Tích Lũy Tống Kim (Item index 0, số lượng 999)
-    sendLog(`[${deviceId}] Dang gui lenh mua Phieu Tich Luy Tong Kim (Item index 0, So luong: 999)...`, 'info');
+    // Đợi 400ms để shop UI hoàn toàn render
+    await new Promise(r => setTimeout(r, 400));
     
-    const { encodeField } = require('../packet-injector');
-    const p1 = encodeField(1, 'string', shopKey);
-    const p2 = encodeField(2, 'int32', 0);
-    const p3 = encodeField(3, 'int32', 999);
-    const bodyHex = Buffer.concat([p1, p2, p3]).toString('hex');
+    sendLog(`[${deviceId}] [Gom Điểm] Bước 3: Đang chọn vật phẩm Phiếu Tích Lũy Tống Kim...`, 'info');
+    await session.callRpc('clickFirstShopItem');
+    await new Promise(r => setTimeout(r, 800)); // Đợi popup Số lượng hiện lên
     
-    await injector.sendRaw(148, bodyHex);
+    sendLog(`[${deviceId}] [Gom Điểm] Đang gửi lệnh mua số lượng tối đa...`, 'info');
+    await session.callRpc('buyActiveShopItem', 999);
     await new Promise(r => setTimeout(r, 800));
     
     // Đóng toàn bộ popup sau khi hoàn tất
     try { await session.callRpc('closeDialogPopups'); } catch(e) {}
     
-    sendLog(`[${deviceId}] Da hoan tat mua Phieu Tich Luy Tong Kim!`, 'success');
+    sendLog(`[${deviceId}] [Gom Điểm] Bước 4: Hoàn tất gom điểm tích lũy thành công!`, 'success');
   } catch (err) {
-    sendLog(`[${deviceId}] Loi khi thuc hien gom diem: ${err.message}`, 'error');
+    sendLog(`[${deviceId}] [Gom Điểm] Lỗi khi thực hiện gom điểm: ${err.message}`, 'error');
   }
 }
 

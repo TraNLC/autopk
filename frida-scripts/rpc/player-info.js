@@ -257,13 +257,15 @@ rpc.exports.getMySkills = function() {
 
 rpc.exports.getPlayerInfo = function() {
     var pmRes = readPlayerMainDirect();
-    var pos = _lastPosition;
+    var pos = typeof _lastPosition !== 'undefined' ? _lastPosition : { x: 0, y: 0, eid: 0, ts: Date.now() };
     var res = {
         ok: pmRes.ok,
         playerMain: pmRes.playerMain || null,
         source: pmRes.source || null,
         error: pmRes.error || null,
-        position: { x: pos.x, y: pos.y, eid: pos.eid, age: Date.now() - pos.ts },
+        x: pos.x || 0,
+        y: pos.y || 0,
+        position: { x: pos.x || 0, y: pos.y || 0, eid: pos.eid || '', age: Date.now() - (pos.ts || 0) },
         recvTotal: _recvTotal,
         sendTotal: _sendTotal,
         gameFd: gameFd,
@@ -272,6 +274,22 @@ rpc.exports.getPlayerInfo = function() {
     if (pmRes.ok && _playerMainInstance) {
         try {
             res.mapId = _playerMainInstance.add(0xE4).readS32();
+
+            // ── Đọc x, y từ npcontroller chain (đáng tin cậy hơn _lastPosition) ──
+            try {
+                var npctrl = _playerMainInstance.add(0x20).readPointer();
+                if (npctrl && !npctrl.isNull()) {
+                    var posPtr = npctrl.add(0x10).readPointer();
+                    if (posPtr && !posPtr.isNull()) {
+                        var mapPos = posPtr.add(0x28).readPointer();
+                        if (mapPos && !mapPos.isNull()) {
+                            res.x = mapPos.add(0x10).readInt();
+                            res.y = mapPos.add(0x14).readInt();
+                            res.position = { x: res.x, y: res.y, eid: pos.eid || '', age: 0 };
+                        }
+                    }
+                }
+            } catch(e) {}
             
             var npcontroller = _playerMainInstance.add(0x20).readPointer();
             if (!npcontroller.isNull()) {

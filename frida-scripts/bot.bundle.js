@@ -1176,29 +1176,47 @@ function hexToBytes(hex) {
 // frida-scripts/rpc/core/Il2CppUtils.js -- Utilities for IL2CPP memory and native exports
 
 function findElfExport(base, targetName) {
-    if (!base || base.isNull()) return ptr(0);
-    
     // Try built-in resolver globally first
     try {
         var exp = Module.findExportByName(null, targetName);
         if (exp && !exp.isNull()) {
             return exp;
         }
-    } catch(e) {
-        // Module.findExportByName might be unsupported in this older frida/duktape
+    } catch(e) {}
+    
+    // Check if the passed base already points to a valid ELF header
+    var isBaseElf = false;
+    if (base && !base.isNull()) {
+        try {
+            var magic = base.readByteArray(4);
+            var u8 = new Uint8Array(magic);
+            if (u8[0] === 0x7f && u8[1] === 0x45 && u8[2] === 0x4c && u8[3] === 0x46) {
+                isBaseElf = true;
+            }
+        } catch(e) {}
     }
     
-    // Fallback to manual parsing if completely stripped
-    var mod = null;
-    var lines = File.readAllText('/proc/self/maps').split('\n');
-    for (var i = 0; i < lines.length; i++) {
-        var line = lines[i];
-        if (line.indexOf('libil2cpp.so') !== -1 && line.indexOf('r--p') !== -1) {
-            var parts = line.trim().split(/\s+/);
-            if (parts[2] === '00000000') {
-                base = ptr('0x' + parts[0].split('-')[0]);
-                break;
+    // Only parse maps if base is not already resolved/valid
+    if (!isBaseElf) {
+        var lines = File.readAllText('/proc/self/maps').split('\n');
+        var foundBase = null;
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.indexOf('libil2cpp.so') !== -1 && line.indexOf('r--p') !== -1) {
+                var parts = line.trim().split(/\s+/);
+                if (parts.length >= 3) {
+                    var offsetVal = parseInt(parts[2], 16);
+                    if (offsetVal === 0) {
+                        foundBase = ptr('0x' + parts[0].split('-')[0]);
+                        break;
+                    }
+                }
             }
+        }
+        if (foundBase) {
+            base = foundBase;
+        } else {
+            return ptr(0);
         }
     }
     
@@ -3196,6 +3214,38 @@ rpc.exports.joystickSet = function(idx, dx, dy) {
 // ══ rpc/combat.js ══
 // frida-scripts/rpc/combat.js — Combat RPC exports (bridge-free)
 
+// ── PrivateFightTarget blocker ──
+// Khi bật, chặn server set target PK → client không nhận target mới
+globalThis._blockPrivateFightTarget = false;
+
+// Hook PrivateFightTarget @ 0xE472CC — cài 1 lần khi il2cppBase có
+function ensurePrivateFightHook() {
+    if (!il2cppBase) return;
+    if (globalThis._privateFightHooked) return;
+    globalThis._privateFightHooked = true;
+
+    try {
+        Interceptor.attach(il2cppBase.add(0xE472CC), {
+            onEnter: function(args) {
+                if (globalThis._blockPrivateFightTarget) {
+                    // Bỏ qua: không cho server set target
+                    this.skip = true;
+                }
+            }
+        });
+        console.log("[PrivateFightTarget] Hook installed @ 0xE472CC");
+    } catch(e) {
+        console.log("[PrivateFightTarget] Hook failed: " + e);
+        globalThis._privateFightHooked = false;
+    }
+}
+
+rpc.exports.blockPrivateFightTarget = function(block) {
+    ensurePrivateFightHook();
+    globalThis._blockPrivateFightTarget = !!block;
+    return { ok: true, blocked: globalThis._blockPrivateFightTarget };
+};
+
 rpc.exports.doSkillHooked = function(skillId) {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
@@ -3260,40 +3310,40 @@ rpc.exports.pkLast = function() {
 };
 
 // --- Clear Focus ---
+// Target.Clear() @ 0xF20280 KHÔNG hoạt động (tested).
+// Dùng direct memory write thay vì gọi game engine function.
 rpc.exports.clearFocus = function() {
-    var pmRes = readPlayerMainDirect();
     if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
+    if (!_playerMainInstance || _playerMainInstance.isNull()) {
+        return { ok: false, error: 'no PlayerMain instance' };
+    }
 
     try {
-        var clearRunFn = new NativeFunction(il2cppBase.add(0xE4B928), 'void', ['pointer']);
-        var stopPathFn = new NativeFunction(il2cppBase.add(0xE43094), 'void', ['pointer']);
-        var killTargetFn = new NativeFunction(il2cppBase.add(0xE42E78), 'void', ['pointer']); // KillTargetBySkillResetWeaponType
-        var setSelectFn = new NativeFunction(il2cppBase.add(0xE4EDB0), 'void', ['pointer', 'pointer']);
-        
+        var clearRunFn = new NativeFunction(il2cppBase.add(0xE42A48), 'void', ['pointer']);
+        var stopPathFn = new NativeFunction(il2cppBase.add(0xE4B76C), 'void', ['pointer']);
+
         globalThis._mainThreadActions = globalThis._mainThreadActions || [];
         globalThis._mainThreadActions.push(function() {
             try {
-                // Stop running and chasing if PlayerMain is available
-                if (_playerMainInstance) {
-                    clearRunFn(_playerMainInstance);
-                    stopPathFn(_playerMainInstance);
-                    killTargetFn(_playerMainInstance);
-                    
-                    // Đọc pointer của mục tiêu hiện tại trước khi xóa
-                    var currentTarget = _playerMainInstance.add(0xA0).readPointer();
-                    
-                    // Xóa mục tiêu trong bộ nhớ
-                    _playerMainInstance.add(0xA0).writePointer(ptr(0));
+                if (!_playerMainInstance || _playerMainInstance.isNull()) return;
+                var pm = _playerMainInstance;
 
-                    // Tắt vòng tròn chọn mục tiêu trên UI
-                    if (currentTarget && !currentTarget.isNull()) {
-                        try {
-                            setSelectFn(currentTarget, ptr(0));
-                        } catch(err) {
-                            console.log("[clearFocus] setSelectFn error: " + err);
-                        }
-                    }
-                }
+                // 1. Dừng movement
+                clearRunFn(pm);
+                stopPathFn(pm);
+
+                // 2. Xóa Target reference khỏi PlayerMain
+                pm.add(0xA0).writePointer(ptr(0));
+
+                // 3. Xóa runFollowTargetCid
+                pm.add(0x100).writePointer(ptr(0));
+
+                // 4. Xóa pathfinding state
+                pm.add(0x128).writePointer(ptr(0));
+                pm.add(0x158).writeU8(0);
+                pm.add(0x159).writeU8(0);
+
+                console.log("[clearFocus] OK - direct memory write");
             } catch (e) {
                 console.log("[clearFocus] Error: " + e);
             }
@@ -3304,60 +3354,247 @@ rpc.exports.clearFocus = function() {
     }
 };
 
+// --- Debug: Read current target state ---
+rpc.exports.debugReadTarget = function() {
+    if (!_playerMainInstance || _playerMainInstance.isNull()) {
+        return { ok: false, error: 'no PlayerMain' };
+    }
+    try {
+        var targetPtr = _playerMainInstance.add(0xA0).readPointer();
+        var result = {
+            ok: true,
+            target: targetPtr.isNull() ? 'NULL' : targetPtr.toString(),
+        };
+
+        // Đọc sâu vào Target object
+        if (!targetPtr.isNull()) {
+            var ctrl = targetPtr.add(0x10).readPointer();
+            result.targetController = ctrl.isNull() ? 'NULL' : ctrl.toString();
+
+            // Đọc tên từ Controller → Character → name
+            if (!ctrl.isNull()) {
+                try {
+                    var charPtr = ctrl.add(0xA0).readPointer();
+                    if (charPtr && !charPtr.isNull()) {
+                        var namePtr = charPtr.add(0x18).readPointer();
+                        if (namePtr && !namePtr.isNull()) {
+                            var nameLen = namePtr.add(0x10).readInt();
+                            if (nameLen > 0 && nameLen < 256) {
+                                result.targetName = namePtr.add(0x14).readUtf16String(nameLen);
+                            }
+                        }
+                    }
+                } catch(e) {}
+            }
+        }
+
+        // Follow CID
+        var cidPtr = _playerMainInstance.add(0x100).readPointer();
+        if (cidPtr && !cidPtr.isNull()) {
+            try {
+                var len = cidPtr.add(0x10).readInt();
+                if (len > 0 && len < 256) {
+                    result.runFollowTargetCid = cidPtr.add(0x14).readUtf8String(len);
+                }
+            } catch(e) { result.runFollowTargetCid = cidPtr.toString(); }
+        } else {
+            result.runFollowTargetCid = '(null)';
+        }
+
+        result.findingPathIsRunning = _playerMainInstance.add(0x158).readU8();
+        result.findingPathUpdate = _playerMainInstance.add(0x159).readU8();
+        return result;
+    } catch(e) {
+        return { ok: false, error: '' + e };
+    }
+};
+
+// --- Test: Gọi Target.Clear() trực tiếp ---
+rpc.exports.testTargetClear = function() {
+    if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
+    if (!_playerMainInstance || _playerMainInstance.isNull()) {
+        return { ok: false, error: 'no PlayerMain' };
+    }
+    try {
+        var targetObj = _playerMainInstance.add(0xA0).readPointer();
+        if (!targetObj || targetObj.isNull()) {
+            return { ok: false, error: 'target already NULL' };
+        }
+
+        // Đọc controller trước khi clear để report
+        var controllerPtr = targetObj.add(0x10).readPointer();
+        var cidBefore = '(unknown)';
+        if (controllerPtr && !controllerPtr.isNull()) {
+            try {
+                var charPtr = controllerPtr.add(0xA0).readPointer();
+                if (charPtr && !charPtr.isNull()) {
+                    var namePtr = charPtr.add(0x18).readPointer();
+                    if (namePtr && !namePtr.isNull()) {
+                        var nameLen = namePtr.add(0x10).readInt();
+                        if (nameLen > 0 && nameLen < 256) {
+                            cidBefore = namePtr.add(0x14).readUtf8String(nameLen);
+                        }
+                    }
+                }
+            } catch(e) { cidBefore = controllerPtr.toString(); }
+        }
+
+        var targetClearFn = new NativeFunction(il2cppBase.add(0xF20280), 'void', ['pointer']);
+
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                var tObj = _playerMainInstance.add(0xA0).readPointer();
+                if (tObj && !tObj.isNull()) {
+                    targetClearFn(tObj);
+                    console.log("[testTargetClear] Target.Clear() called OK");
+                }
+            } catch(e) {
+                console.log("[testTargetClear] Error: " + e);
+            }
+        });
+
+        return {
+            ok: true,
+            queued: true,
+            targetBefore: targetObj.toString(),
+            controllerBefore: controllerPtr.isNull() ? 'NULL' : controllerPtr.toString(),
+            cidBefore: cidBefore
+        };
+    } catch(e) {
+        return { ok: false, error: '' + e };
+    }
+};
+
 // ══ rpc/ui-control.js ══
 function getPopUpCanvasInstanceLocal() {
-    var pattern = '50 6f 70 55 70 43 61 6e 76 61 73'; // "PopUpCanvas"
-    var maps = File.readAllText('/proc/self/maps').split('\n');
-    var metaRange = null;
-    for (var i = 0; i < maps.length; i++) {
-        var line = maps[i];
-        if (line.indexOf('global-metadata.dat') !== -1) {
-            var parts = line.split(' ')[0].split('-');
-            metaRange = { base: ptr('0x' + parts[0]), size: parseInt('0x' + parts[1]) - parseInt('0x' + parts[0]) };
-            break;
+    try {
+        if (globalThis._popUpCanvasInstance && !globalThis._popUpCanvasInstance.isNull()) {
+            return globalThis._popUpCanvasInstance;
         }
+    } catch(e) {
+        globalThis._popUpCanvasInstance = null;
     }
-    if (!metaRange) return null;
-    var results = Memory.scanSync(metaRange.base, metaRange.size, pattern);
-    var nameStrAddr = null;
-    for (var rIdx = 0; rIdx < results.length; rIdx++) {
-        if (results[rIdx].address.readUtf8String() === "PopUpCanvas") {
-            nameStrAddr = results[rIdx].address;
-            break;
-        }
-    }
-    if (!nameStrAddr) return null;
-    
-    var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
-    var hex = nameStrAddr.toString(16);
-    while (hex.length < 16) hex = '0' + hex;
-    var parts = [];
-    for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
-    var ptrPattern = parts.join(' ');
-    
-    var popUpCanvasClass = null;
-    for (var k = 0; k < allRanges.length; k++) {
-        try {
-            var matches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
-            if (matches.length > 0) {
-                for (var m = 0; m < matches.length; m++) {
-                    var cand = matches[m].address.sub(0x10);
-                    try {
-                        var checkNamePtr = cand.add(0x10).readPointer();
-                        if (checkNamePtr.toString() === nameStrAddr.toString()) {
-                            popUpCanvasClass = cand;
-                            break;
+
+    console.log("[PopUpCanvas] Resolving PopUpCanvas instance...");
+    try {
+        var fn_domain_get = Module.findExportByName('libil2cpp.so', 'il2cpp_domain_get');
+        var fn_domain_assembly_open = Module.findExportByName('libil2cpp.so', 'il2cpp_domain_assembly_open');
+        var fn_assembly_get_image = Module.findExportByName('libil2cpp.so', 'il2cpp_assembly_get_image');
+        var fn_class_from_name = Module.findExportByName('libil2cpp.so', 'il2cpp_class_from_name');
+        
+        if (fn_domain_get && fn_domain_assembly_open && fn_assembly_get_image && fn_class_from_name) {
+            var get_domain = new NativeFunction(fn_domain_get, 'pointer', []);
+            var assembly_open = new NativeFunction(fn_domain_assembly_open, 'pointer', ['pointer', 'pointer']);
+            var get_image = new NativeFunction(fn_assembly_get_image, 'pointer', ['pointer']);
+            var class_from_name = new NativeFunction(fn_class_from_name, 'pointer', ['pointer', 'pointer', 'pointer']);
+            
+            var domain = get_domain();
+            if (domain && !domain.isNull()) {
+                var assembly = assembly_open(domain, Memory.allocUtf8String("Assembly-CSharp"));
+                if (assembly && !assembly.isNull()) {
+                    var image = get_image(assembly);
+                    if (image && !image.isNull()) {
+                        var klass = class_from_name(image, Memory.allocUtf8String(""), Memory.allocUtf8String("PopUpCanvas"));
+                        if (klass && !klass.isNull()) {
+                            var staticFields = klass.add(0xB8).readPointer();
+                            if (staticFields && !staticFields.isNull()) {
+                                var inst = staticFields.readPointer();
+                                if (inst && !inst.isNull() && parseInt(inst.toString()) > 0x10000) {
+                                    globalThis._popUpCanvasInstance = inst;
+                                    console.log("[PopUpCanvas] Found via Native IL2CPP: " + inst);
+                                    return globalThis._popUpCanvasInstance;
+                                }
+                            }
                         }
-                    } catch(e) {}
+                    }
                 }
             }
-        } catch(e) {}
-        if (popUpCanvasClass) break;
+        }
+    } catch(e) {
+        console.log("[PopUpCanvas] Native IL2CPP resolution error: " + e);
     }
-    if (!popUpCanvasClass) return null;
-    var staticFields = popUpCanvasClass.add(0xB8).readPointer();
-    if (staticFields.isNull()) return null;
-    return staticFields.readPointer();
+
+    // Fallback: Dynamic metadata scan
+    console.log("[PopUpCanvas] Native lookup failed, attempting dynamic metadata scan...");
+    try {
+        var pattern = '50 6f 70 55 70 43 61 6e 76 61 73'; // "PopUpCanvas"
+        var nameStrAddr = null;
+        
+        var maps = File.readAllText('/proc/self/maps').split('\n');
+        var metaRange = null;
+        for (var i = 0; i < maps.length; i++) {
+            var line = maps[i];
+            if (line.indexOf('global-metadata.dat') !== -1) {
+                var parts = line.split(' ')[0].split('-');
+                metaRange = {
+                    base: ptr('0x' + parts[0]),
+                    size: parseInt('0x' + parts[1]) - parseInt('0x' + parts[0])
+                };
+                break;
+            }
+        }
+        
+        if (metaRange) {
+            console.log("[PopUpCanvas] Scanning global-metadata.dat at base: " + metaRange.base + ", size: " + metaRange.size);
+            var results = Memory.scanSync(metaRange.base, metaRange.size, pattern);
+            if (results.length > 0) {
+                nameStrAddr = results[0].address;
+                console.log("[PopUpCanvas] Found class name string at: " + nameStrAddr);
+                var hex = nameStrAddr.toString(16);
+                while (hex.length < 16) hex = '0' + hex;
+                var parts = [];
+                for (var j = 14; j >= 0; j -= 2) parts.push(hex.substring(j, j + 2));
+                var ptrPattern = parts.join(' ');
+                
+                var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+                var classPtr = null;
+                console.log("[PopUpCanvas] Scanning rw- memory ranges for pointer to class name...");
+                for (var k = 0; k < allRanges.length; k++) {
+                    try {
+                        var matches = Memory.scanSync(allRanges[k].base, allRanges[k].size, ptrPattern);
+                        if (matches.length > 0) {
+                            for (var m = 0; m < matches.length; m++) {
+                                var cand = matches[m].address.sub(0x10);
+                                var nsPtr = cand.add(0x18).readPointer();
+                                var nsName = nsPtr.isNull() ? '' : nsPtr.readUtf8String();
+                                var checkNamePtr = cand.add(0x10).readPointer();
+                                if (checkNamePtr.toString() === nameStrAddr.toString() && nsName === '') {
+                                    classPtr = cand;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                    if (classPtr) break;
+                }
+                
+                if (classPtr) {
+                    console.log("[PopUpCanvas] Found class pointer: " + classPtr);
+                    var staticFields = classPtr.add(0xB8).readPointer();
+                    if (staticFields && !staticFields.isNull()) {
+                        var inst = staticFields.readPointer();
+                        if (inst && !inst.isNull() && parseInt(inst.toString()) > 0x10000) {
+                            globalThis._popUpCanvasInstance = inst;
+                            console.log("[PopUpCanvas] Dynamic scan success! PopUpCanvas.instance: " + inst);
+                            return globalThis._popUpCanvasInstance;
+                        }
+                    }
+                } else {
+                    console.log("[PopUpCanvas] Class pointer search failed.");
+                }
+            } else {
+                console.log("[PopUpCanvas] Class name pattern not found in global-metadata.dat.");
+            }
+        } else {
+            console.log("[PopUpCanvas] global-metadata.dat not found in maps.");
+        }
+    } catch(e) {
+        console.log("[PopUpCanvas] Dynamic scan error: " + e);
+    }
+    
+    console.log("[PopUpCanvas] Failed to resolve PopUpCanvas instance.");
+    return null;
 }
 
 rpc.exports.closeOnlyNpcDialog = function() {
@@ -3368,7 +3605,7 @@ rpc.exports.closeOnlyNpcDialog = function() {
             globalThis._mainThreadActions = globalThis._mainThreadActions || [];
             globalThis._mainThreadActions.push(function() {
                 try {
-                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
+                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
                     if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
                         closeNpcDialogFn(_playerMainInstance);
                     }
@@ -3404,7 +3641,7 @@ rpc.exports.closeOnlyNpcDialog = function() {
             
             // Also call standard CloseNpcDialog for safety
             try {
-                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
+                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
                 if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
                     closeNpcDialogFn(_playerMainInstance);
                 }
@@ -3422,62 +3659,88 @@ rpc.exports.closeDialogPopups = function() {
     if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
 
     try {
-        var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
-        var closeNpcShopFn = new NativeFunction(il2cppBase.add(0xE454A0), 'void', ['pointer']);
-        var closeBagarateFn = new NativeFunction(il2cppBase.add(0xE45230), 'void', ['pointer']);
-        var closeStorageBoxFn = new NativeFunction(il2cppBase.add(0xE44CCC), 'void', ['pointer']);
-
+        var canvas = getPopUpCanvasInstanceLocal();
+        
         globalThis._mainThreadActions = globalThis._mainThreadActions || [];
         globalThis._mainThreadActions.push(function() {
-            try { closeNpcDialogFn(_playerMainInstance); } catch(e){}
-            try { closeNpcShopFn(_playerMainInstance); } catch(e){}
-            try { closeBagarateFn(_playerMainInstance); } catch(e){}
-            try { closeStorageBoxFn(_playerMainInstance); } catch(e){}
-        });
-
-        globalThis._closePopupResult = { closed: { dialog: 1, shop: 1, bag: 1, storage: 1 }, found: {}, ts: Date.now() };
-
-        // Aggressive popup close: thử tất cả class có thể là popup "Về thành dưỡng sức"
-        if (typeof Il2Cpp !== 'undefined') {
-            try {
-                Il2Cpp.perform(function() {
-                    var assembly = Il2Cpp.domain.assembly("Assembly-CSharp").image;
-                    
-                    // Danh sách tất cả class có thể là popup cần đóng
-                    var classNames = [
-                        "PlayerDie", "PopUpCanvas", "MessageBox",
-                        "ConfirmDialog", "ConfirmBox", "NoticeDialog", "NoticeBox",
-                        "GameNotice", "SystemNotice", "CommonDialog", "UIDialog",
-                        "PopupDialog", "DialogBase", "NpcDialog", "TipDialog",
-                        "MessageDialog", "AlertDialog", "OkCancelDialog"
-                    ];
-                    
-                    for (var ci = 0; ci < classNames.length; ci++) {
-                        try {
-                            var cls = assembly.class(classNames[ci]);
-                            if (!cls) continue;
-                            var instances = Il2Cpp.api.Object.FindObjectsOfType(cls.type, false);
-                            if (!instances || instances.length === 0) continue;
-                            
-                            for (var j = 0; j < instances.length; j++) {
-                                var obj = new Il2Cpp.Object(instances[j]);
-                                if (!obj || obj.isNull()) continue;
-                                
-                                // Thử tất cả phương thức đóng có thể
-                                try { obj.method("Close").invoke(obj); } catch(e) {}
-                                try { obj.method("OnClose").invoke(obj); } catch(e) {}
-                                try { obj.method("OnBtnOk").invoke(obj); } catch(e) {}
-                                try { obj.method("OnBtnConfirm").invoke(obj); } catch(e) {}
-                                try { obj.method("OnBtnYes").invoke(obj); } catch(e) {}
-                                try { obj.method("Dispose").invoke(obj); } catch(e) {}
-                                // Fallback: set inactive
-                                try { obj.method("SetActive").invoke(obj, false); } catch(e) {}
-                            }
-                        } catch(e) {}
+            // 1. Close UI dialogs visually if canvas is resolved
+            if (canvas && !canvas.isNull()) {
+                try {
+                    var npcDialogPc = canvas.add(0x128).readPointer();
+                    if (npcDialogPc && !npcDialogPc.isNull() && npcDialogPc.add(0xA0).readU8() === 1) {
+                        var closeFn = new NativeFunction(il2cppBase.add(0xE82838), 'void', ['pointer']);
+                        closeFn(npcDialogPc);
                     }
-                });
-            } catch(ex) {}
-        }
+                } catch(e) {}
+                try {
+                    var npcDialog10Pc = canvas.add(0x130).readPointer();
+                    if (npcDialog10Pc && !npcDialog10Pc.isNull() && npcDialog10Pc.add(0x78).readU8() === 1) {
+                        var closeFn = new NativeFunction(il2cppBase.add(0xE80744), 'void', ['pointer']);
+                        closeFn(npcDialog10Pc);
+                    }
+                } catch(e) {}
+                try {
+                    var npcDialogInfiPc = canvas.add(0x138).readPointer();
+                    if (npcDialogInfiPc && !npcDialogInfiPc.isNull() && npcDialogInfiPc.add(0x88).readU8() === 1) {
+                        var closeFn = new NativeFunction(il2cppBase.add(0xE816A0), 'void', ['pointer']);
+                        closeFn(npcDialogInfiPc);
+                    }
+                } catch(e) {}
+                
+                // 2. Close UI shops visually
+                try {
+                    var npcPointShop = canvas.add(0x148).readPointer();
+                    if (npcPointShop && !npcPointShop.isNull()) {
+                        var showOffFn = new NativeFunction(il2cppBase.add(0xE88694), 'void', ['pointer']);
+                        showOffFn(npcPointShop);
+                    }
+                } catch(e) {}
+                try {
+                    var npcMoneyShop = canvas.add(0xC0).readPointer();
+                    if (npcMoneyShop && !npcMoneyShop.isNull()) {
+                        var showOffFn = new NativeFunction(il2cppBase.add(0xE86CF4), 'void', ['pointer']);
+                        showOffFn(npcMoneyShop);
+                    }
+                } catch(e) {}
+                try {
+                    var npcKnbShop = canvas.add(0xC8).readPointer();
+                    if (npcKnbShop && !npcKnbShop.isNull()) {
+                        var showOffFn = new NativeFunction(il2cppBase.add(0xE8448C), 'void', ['pointer']);
+                        showOffFn(npcKnbShop);
+                    }
+                } catch(e) {}
+
+                // 3. Close StandardConfirmPc (revive popup) by pressing Cancel
+                try {
+                    var standardConfirmPc = canvas.add(0xE8).readPointer();
+                    if (standardConfirmPc && !standardConfirmPc.isNull()) {
+                        var cancelButton = standardConfirmPc.add(0x40).readPointer();
+                        if (cancelButton && !cancelButton.isNull()) {
+                            var pressButtonFn = new NativeFunction(il2cppBase.add(0x1ED7EF4), 'void', ['pointer']);
+                            pressButtonFn(cancelButton);
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            // 4. Close logic states on PlayerMain
+            try {
+                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                closeNpcDialogFn(_playerMainInstance);
+            } catch(e){}
+            try {
+                var closeNpcShopFn = new NativeFunction(il2cppBase.add(0xE4535C), 'void', ['pointer']);
+                closeNpcShopFn(_playerMainInstance);
+            } catch(e){}
+            try {
+                var closeBagarateFn = new NativeFunction(il2cppBase.add(0xE45104), 'void', ['pointer']);
+                closeBagarateFn(_playerMainInstance);
+            } catch(e){}
+            try {
+                var closeStorageBoxFn = new NativeFunction(il2cppBase.add(0xE44B8C), 'void', ['pointer']);
+                closeStorageBoxFn(_playerMainInstance);
+            } catch(e){}
+        });
 
         return { ok: true, closed: true };
     } catch (e) {
@@ -3502,6 +3765,123 @@ rpc.exports.equipHooked = function(idx) {
 rpc.exports.equipLastFire = function() { return { fire: '(disabled)' }; };
 
 rpc.exports.shopOpenLog = function() { return { log: globalThis._shopOpenLog || [] }; };
+
+rpc.exports.clickFirstShopItem = function() {
+    return new Promise(function(resolve) {
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                var canvas = getPopUpCanvasInstanceLocal();
+                if (!canvas || canvas.isNull()) return;
+                var shop = canvas.add(0x148).readPointer(); // npcPointShop
+                if (!shop || shop.isNull()) return;
+                var cellListing = shop.add(0x80).readPointer();
+                if (!cellListing || cellListing.isNull()) return;
+                var size = cellListing.add(0x18).readInt();
+                if (size > 0) {
+                    var itemsArr = cellListing.add(0x10).readPointer();
+                    if (itemsArr && !itemsArr.isNull()) {
+                        var cell = itemsArr.add(0x20).readPointer();
+                        if (cell && !cell.isNull()) {
+                            var button = cell.add(0x50).readPointer();
+                            if (button && !button.isNull()) {
+                                var pressButtonFn = new NativeFunction(il2cppBase.add(0x1ED7EF4), 'void', ['pointer']);
+                                pressButtonFn(button);
+                            }
+                        }
+                    }
+                }
+            } catch(e) {}
+        });
+        resolve({ ok: true });
+    });
+};
+
+rpc.exports.buyActiveShopItem = function(qty) {
+    return new Promise(function(resolve) {
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                var canvas = getPopUpCanvasInstanceLocal();
+                if (!canvas || canvas.isNull()) return;
+                var itemDetailPc = canvas.add(0xB8).readPointer();
+                if (!itemDetailPc || itemDetailPc.isNull()) return;
+                var buyDetails = itemDetailPc.add(0x40).readPointer();
+                if (!buyDetails || buyDetails.isNull()) return;
+                
+                var sendBuyItemFn = new NativeFunction(il2cppBase.add(0xE74BF8), 'void', ['pointer', 'int']);
+                sendBuyItemFn(buyDetails, qty);
+            } catch(e) {}
+        });
+        resolve({ ok: true });
+    });
+};
+
+globalThis._blockNpcDialog = false;
+
+rpc.exports.setBlockNpcDialog = function(block) {
+    globalThis._blockNpcDialog = !!block;
+    return { ok: true, blocked: globalThis._blockNpcDialog };
+};
+
+// Vòng lặp quét đóng các bảng hội thoại siêu nhẹ (200ms) chạy trực tiếp trong Frida
+setInterval(function() {
+    if (globalThis._blockNpcDialog && typeof il2cppBase !== 'undefined' && il2cppBase) {
+        try {
+            var canvas = getPopUpCanvasInstanceLocal();
+            if (canvas && !canvas.isNull()) {
+                var dialog = canvas.add(0x128).readPointer();
+                var dialog10 = canvas.add(0x130).readPointer();
+                var dialogInfi = canvas.add(0x138).readPointer();
+
+                // Kiểm tra trạng thái hoạt động (isStarted) trực tiếp trên bộ nhớ RAM
+                var isDialogActive = dialog && !dialog.isNull() && dialog.add(0xA0).readU8() === 1;
+                var isDialog10Active = dialog10 && !dialog10.isNull() && dialog10.add(0x78).readU8() === 1;
+                var isDialogInfiActive = dialogInfi && !dialogInfi.isNull() && dialogInfi.add(0x88).readU8() === 1;
+
+                if (isDialogActive || isDialog10Active || isDialogInfiActive) {
+                    globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+                    if (globalThis._mainThreadActions.length === 0) {
+                        globalThis._mainThreadActions.push(function() {
+                            try {
+                                if (canvas && !canvas.isNull()) {
+                                    if (isDialogActive) {
+                                        var d = canvas.add(0x128).readPointer();
+                                        if (d && !d.isNull() && d.add(0xA0).readU8() === 1) {
+                                            var closeFn = new NativeFunction(il2cppBase.add(0xE82838), 'void', ['pointer']);
+                                            closeFn(d);
+                                        }
+                                    }
+                                    if (isDialog10Active) {
+                                        var d10 = canvas.add(0x130).readPointer();
+                                        if (d10 && !d10.isNull() && d10.add(0x78).readU8() === 1) {
+                                            var closeFn = new NativeFunction(il2cppBase.add(0xE80744), 'void', ['pointer']);
+                                            closeFn(d10);
+                                        }
+                                    }
+                                    if (isDialogInfiActive) {
+                                        var dInfi = canvas.add(0x138).readPointer();
+                                        if (dInfi && !dInfi.isNull() && dInfi.add(0x88).readU8() === 1) {
+                                            var closeFn = new NativeFunction(il2cppBase.add(0xE816A0), 'void', ['pointer']);
+                                            closeFn(dInfi);
+                                        }
+                                    }
+                                }
+                                // Tự động đóng logic state hội thoại của PlayerMain
+                                if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
+                                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                                    closeNpcDialogFn(_playerMainInstance);
+                                    var closeNpcShopFn = new NativeFunction(il2cppBase.add(0xE4535C), 'void', ['pointer']);
+                                    closeNpcShopFn(_playerMainInstance);
+                                }
+                            } catch(e) {}
+                        });
+                    }
+                }
+            }
+        } catch(e) {}
+    }
+}, 200);
 
 // ══ rpc/diagnostics.js ══
 // frida-scripts/rpc/diagnostics.js — Diagnostic RPC exports

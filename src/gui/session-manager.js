@@ -30,10 +30,11 @@ function parseShopKeyFromProto(hexStr) {
     if (!hexStr) return null;
     const hex = hexStr.replace(/\s+/g, '');
     const bytes = Buffer.from(hex, 'hex');
-    if (bytes.length >= 2 && bytes[0] === 0x0a) {
-        const len = bytes[1];
-        if (bytes.length >= 2 + len) {
-            return bytes.slice(2, 2 + len).toString('ascii');
+    // Bỏ qua 6 byte header (4 byte length + 2 byte opcode)
+    if (bytes.length >= 8 && bytes[6] === 0x0a) {
+        const len = bytes[7];
+        if (bytes.length >= 8 + len) {
+            return bytes.slice(8, 8 + len).toString('ascii');
         }
     }
     return null;
@@ -43,28 +44,26 @@ function parseShopKeyFromProto(hexStr) {
  * Kết nối thiết bị qua Frida
  */
 async function connectDevice(deviceId, pkgName, sendLog) {
-    traceLog(deviceId, `Bat dau khoi chay attach thiet bi...`, 'info', sendLog);
+    traceLog(deviceId, `Đang kết nối thiết bị...`, 'info', sendLog);
     if (sessions.has(deviceId)) {
-        traceLog(deviceId, `Thiet bi da duoc ket noi truoc do. Bo qua.`, 'warn', sendLog);
+        traceLog(deviceId, `Thiết bị đã được kết nối trước đó.`, 'warn', sendLog);
         return { ok: true };
     }
 
     const session = new FridaSession(deviceId);
     let ok = false;
     try {
-        traceLog(deviceId, `Goi session.connect cho package: ${pkgName}`, 'info', sendLog);
         ok = await session.connect(pkgName);
     } catch (err) {
-        traceLog(deviceId, `Loi ket noi Frida: ${err.message}`, 'error', sendLog);
+        traceLog(deviceId, `Lỗi kết nối Frida: ${err.message}`, 'error', sendLog);
         return { ok: false, error: err.message };
     }
 
     if (!ok) {
-        traceLog(deviceId, `Loi ket noi (game chua mo?).`, 'error', sendLog);
+        traceLog(deviceId, `Lỗi kết nối (game chưa mở?).`, 'error', sendLog);
         return { ok: false, error: 'Connection failed' };
     }
 
-    traceLog(deviceId, `Attach Frida thanh cong. Dang tao cac module helper...`, 'info', sendLog);
     const sniffer = new PacketSniffer(session);
     const injector = new PacketInjector(session);
     const memory = new MemoryReader(session);
@@ -73,25 +72,18 @@ async function connectDevice(deviceId, pkgName, sendLog) {
     const state = { session, info: null, interval: null, sniffer, injector, memory, autoPK, lastLoggedError: null };
     sessions.set(deviceId, state);
 
-    // Bật sniffer chạy ngầm
-    traceLog(deviceId, `Bat dau khoi dong PacketSniffer...`, 'info', sendLog);
+    // Bật sniffer chạy ngầm lặng lẽ
     sniffer.start(200);
 
-    traceLog(deviceId, `Thiet lap Frida onMessage listener de bat goi tin hoc NPC...`, 'info', sendLog);
     session.onMessage((payload, data) => {
         if (payload) {
             if (payload.log) {
+                // Chỉ hiển thị log thực sự quan trọng của Frida lên UI
                 traceLog(deviceId, `[Frida Log] ${payload.log}`, 'info');
                 return;
             }
-            if (payload.event) {
-                traceLog(deviceId, `[Frida Event] ${payload.event}`, 'info');
-            }
-            if (payload.msg) {
-                traceLog(deviceId, `[Frida Msg] ${payload.msg}`, 'warn');
-            }
             if (payload.type === 'il2cpp_ready') {
-                traceLog(deviceId, `[Frida] IL2CPP Base: ${payload.base || 'null'} (${payload.lib || ''})`, 'info');
+                traceLog(deviceId, `Kết nối thành công! (IL2CPP Base: ${payload.base || 'null'})`, 'success');
             }
             if (payload.type === 'shop_data') {
                 const shopKey = parseShopKeyFromProto(payload.hex);
@@ -252,6 +244,69 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                     });
                 }
             }
+
+            // Giải mã gói tin Cast Skill nhắm mục tiêu (Focus Target)
+            if ((payload.opcode === 238 || payload.opcode === 239) && payload.hex) {
+                try {
+                    const hexStr = payload.hex.replace(/\s+/g, '');
+                    const bytes = Buffer.from(hexStr, 'hex');
+                    let offset = 6; // Bỏ qua 6 bytes TCP header (4 byte length + 2 byte opcode)
+
+                    // Hàm đọc varint từ buffer bytes
+                    function readVarint() {
+                        let result = 0n;
+                        let shift = 0n;
+                        while (offset < bytes.length) {
+                            const b = bytes[offset++];
+                            result |= BigInt(b & 0x7f) << shift;
+                            if (!(b & 0x80)) break;
+                            shift += 7n;
+                        }
+                        return result;
+                    }
+
+                    let skillId = 0;
+                    let targetId = '';
+
+                    while (offset < bytes.length) {
+                        const tag = Number(readVarint());
+                        const fieldNum = tag >> 3;
+                        const wireType = tag & 0x7;
+
+                        if (fieldNum === 1) {
+                            if (wireType === 0) {
+                                skillId = Number(readVarint());
+                            } else {
+                                offset = bytes.length; // Lỗi format
+                            }
+                        } else if (fieldNum === 2) {
+                            if (wireType === 2) {
+                                const len = Number(readVarint());
+                                if (offset + len <= bytes.length) {
+                                    targetId = bytes.slice(offset, offset + len).toString('utf-8');
+                                    offset += len;
+                                }
+                            } else if (wireType === 0) { // Trường hợp targetId lưu dạng varint
+                                targetId = readVarint().toString();
+                            } else {
+                                offset = bytes.length;
+                            }
+                        } else {
+                            // Bỏ qua các field khác
+                            if (wireType === 0) readVarint();
+                            else if (wireType === 2) offset += Number(readVarint());
+                            else offset = bytes.length;
+                        }
+                    }
+
+                    if (targetId) {
+                        const targetTypeName = payload.opcode === 238 ? 'PLAYER' : 'NPC/MONSTER';
+                        traceLog(deviceId, `[FOCUS DETECTED] Đang tấn công ${targetTypeName}: ID = ${targetId} (Kỹ năng: ${skillId})`, 'success');
+                    }
+                } catch (e) {
+                    console.warn(`[Sniffer Focus Error] Parse target packet failed: ${e.message}`);
+                }
+            }
         }
     });
 
@@ -259,6 +314,11 @@ async function connectDevice(deviceId, pkgName, sendLog) {
     traceLog(deviceId, `Dang load script tu duong dan: ${scriptPath}`, 'info', sendLog);
     await session.loadScript(scriptPath);
     traceLog(deviceId, `Tai script thanh cong. Dang doc du lieu nhan vat...`, 'success', sendLog);
+
+    // Bật chặn popup NPC tự động nếu Auto TK đang bật toàn cục
+    if (isAutoTKEnabled) {
+        session.callRpc('setBlockNpcDialog', true).catch(() => {});
+    }
 
     // Khoi chay status polling cu moi 2s
     traceLog(deviceId, `Khoi chay vong lap doc trang thai nhan vat (Player Info Polling 2s)...`, 'info');
@@ -338,6 +398,10 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
 
     if (enable) {
         traceLog('SYSTEM', `BAT Auto Tong Kim toan cuc.`, 'success', sendLog);
+        // Bật chặn popup NPC tự động cho tất cả thiết bị
+        for (const [deviceId, state] of sessions.entries()) {
+            state.session.callRpc('setBlockNpcDialog', true).catch(() => {});
+        }
         if (!globalAutoTKInterval) {
             globalAutoTKInterval = setInterval(async () => {
                 for (const [deviceId, state] of sessions.entries()) {
@@ -369,6 +433,10 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
         }
     } else {
         traceLog('SYSTEM', `TAT Auto Tong Kim toan cuc.`, 'warn', sendLog);
+        // Tắt chặn popup NPC để cho phép tương tác tay bình thường
+        for (const [deviceId, state] of sessions.entries()) {
+            state.session.callRpc('setBlockNpcDialog', false).catch(() => {});
+        }
         if (globalAutoTKInterval) {
             clearInterval(globalAutoTKInterval);
             globalAutoTKInterval = null;

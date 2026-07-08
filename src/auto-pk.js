@@ -30,6 +30,15 @@ class AutoPK {
     this.attackSkills = [1];
     this.currentSkillIndex = 0;
     this.lastLagFixTime = 0;
+    this.lastTargetId = null;
+    this.lastX = 0;
+    this.lastY = 0;
+    this.lastMapId = 0;
+    this._focusClearPending = false;  // Cờ: vừa clearFocus, bỏ qua tick sau để game sync
+
+    // Skill dùng để reset target (ví dụ skill slot 9 - buff/AoE không cần target)
+    // Đặt = 0 để tắt, hoặc set skill ID (vd: 102, 111, 129...) để cast khi clearFocus
+    this.resetFocusSkillId = 0;
   }
 
   log(msg, type = 'info') {
@@ -246,6 +255,35 @@ class AutoPK {
   }
 
   /**
+   * Reset target: clearFocus memory + GotoPosition (universal, không cần skill)
+   * GotoPosition gửi lệnh "đứng yên tại đây" lên server → server hủy pursuit
+   * Cách này hoạt động với MỌI phái, không cần skill buff.
+   * @param {number} x - player pos X
+   * @param {number} y - player pos Y
+   */
+  async resetTarget(x, y) {
+    // 1. Client-side: clear memory
+    try { await this.session.callRpc('clearFocus'); } catch(e) {}
+
+    // 2. Server-side: gửi GotoPosition → server hủy lệnh đuổi target (UNIVERSAL)
+    if (x !== undefined && y !== undefined) {
+      try {
+        await this.injector.sendGotoPosition(x, y);
+      } catch(e) {
+        // Bỏ qua
+      }
+    }
+
+    // 3. Bonus: nếu có config skill reset (ví dụ Tuyết ảnh 109), cast thêm
+    if (this.resetFocusSkillId > 0 && x !== undefined && y !== undefined) {
+      try {
+        await this.injector.sendDoSkillTargetPosition(this.resetFocusSkillId, x, y);
+        this.log(`Reset target: da cast skill ${this.resetFocusSkillId}.`, 'info');
+      } catch(e) {}
+    }
+  }
+
+  /**
    * Core logic run at each tick interval.
    */
   async tick() {
@@ -255,6 +293,51 @@ class AutoPK {
     // 0. Kiểm tra chết: nếu HP=0 thì dừng tick, để autoTongKimLoop xử lý hồi sinh
     if (info.hp !== undefined && info.hp <= 0) {
       return; // Không cast skill khi đã chết
+    }
+
+    // ── Kiểm tra thay đổi bản đồ (vừa ra trận hoặc chuyển map) ──
+    if (this.lastMapId !== info.mapId) {
+      this.log(`Phat hien thay doi ban do (${this.lastMapId || 'None'} -> ${info.mapId}). Thuc hien reset target...`, 'warn');
+      this.lastTargetId = null;
+      this.lastMapId = info.mapId;
+      await this.resetTarget(info.x, info.y);
+      try {
+        await this.injector.sendApplyAutoplayProfile(false, this.profileGuid);
+        await new Promise(r => setTimeout(r, 300));
+        await this.injector.sendApplyAutoplayProfile(true, this.profileGuid);
+      } catch(e) {}
+      this.lastX = info.x;
+      this.lastY = info.y;
+      return; // Bỏ qua tick này để game engine xử lý reset xong
+    }
+
+    // ── Kiểm tra teleport / dịch chuyển đột ngột ──
+    const now = Date.now();
+    const teleportThreshold = 500;
+    if (this.lastX !== 0 && this.lastY !== 0) {
+      const jumpDist = Math.sqrt(Math.pow(info.x - this.lastX, 2) + Math.pow(info.y - this.lastY, 2));
+      if (jumpDist > teleportThreshold) {
+        this.log(`Phat hien dich chuyen xa (${jumpDist.toFixed(0)}m). Reset focus...`, 'warn');
+        this.lastTargetId = null;
+        this._focusClearPending = true;
+        await this.resetTarget(info.x, info.y);
+        try {
+          await this.injector.sendApplyAutoplayProfile(false, this.profileGuid);
+          await new Promise(r => setTimeout(r, 300));
+          await this.injector.sendApplyAutoplayProfile(true, this.profileGuid);
+        } catch(e) {}
+        this.lastX = info.x;
+        this.lastY = info.y;
+        return; // Bỏ qua tick này, game đang load map mới
+      }
+    }
+    this.lastX = info.x;
+    this.lastY = info.y;
+
+    // ── Nếu focusClearPending: bỏ qua 1 tick để game engine xử lý xong clearFocus ──
+    if (this._focusClearPending) {
+      this._focusClearPending = false;
+      return; // Skip tick, tick tiếp theo sẽ tìm target mới bình thường
     }
 
     // 1. Tự động xuống ngựa khi phát hiện mục tiêu chiến đấu
@@ -268,7 +351,6 @@ class AutoPK {
 
     // 2. Fix lag vị trí: chỉ đồng bộ khi KHÔNG có mục tiêu (tránh giật khi đang đánh)
     //    Khi đang tấn công, gói tin cast skill đã tự động cập nhật vị trí cho server
-    const now = Date.now();
     const enemiesRes = await this.memory.getNearEnemies();
     let bestTarget = null;
     let hasEnemy = false;
@@ -294,17 +376,29 @@ class AutoPK {
     this.currentSkillIndex = (this.currentSkillIndex + 1) % this.attackSkills.length;
 
     if (bestTarget) {
-      this.hadTarget = true;
-      // Dùng vị trí từ getNearEnemies (localX/Y) đồng bộ với findBestTarget
       const dist = Math.sqrt(Math.pow(bestTarget.x - playerState.x, 2) + Math.pow(bestTarget.y - playerState.y, 2));
+
+      // ── Khi đổi target → clearFocus game engine trước khi tấn công target mới ──
+      if (bestTarget.id !== this.lastTargetId) {
+        if (this.lastTargetId !== null) {
+          this.log(`Chuyen doi muc tieu: ${this.lastTargetId} → ${bestTarget.id}. Clear focus truoc...`, 'info');
+          await this.resetTarget(playerState.x, playerState.y);
+          // Bỏ qua tick này, để game engine xóa target cũ xong rồi tick sau mới đánh
+          this._focusClearPending = true;
+          this.lastTargetId = bestTarget.id;
+          return;
+        }
+        this.lastTargetId = bestTarget.id;
+        this.log(`Bắt đầu tấn công mục tiêu: ${bestTarget.name || '???'} (Cự ly: ${dist.toFixed(0)}m)`, 'success');
+      }
+
+      this.hadTarget = true;
       const targetRange = 700;
 
       if (dist <= targetRange) {
         if (dist > 512) {
-          this.log(`Tan cong ngoai tam chieu (${dist.toFixed(0)}m > 512m). Dung im xa chieu vao toa do (${bestTarget.x}, ${bestTarget.y})`, 'info');
           await this.injector.sendDoSkillTargetPosition(skillId, bestTarget.x, bestTarget.y);
         } else {
-          this.log(`Dich trong tam chieu. Tan cong: ${bestTarget.name || '???'} (${dist.toFixed(0)}m)`, 'success');
           await this.injector.sendDoSkillTargetPlayer(skillId, bestTarget.id);
         }
       }
@@ -312,8 +406,9 @@ class AutoPK {
       // Khi không có mục tiêu: KHÔNG cast để tiết kiệm mana, chỉ sync vị trí đã làm ở trên
       if (this.hadTarget) {
         this.hadTarget = false;
-        this.log(`Mat muc tieu hoac muc tieu da bay mau. Dang Reset Focus de chong chay bay...`, 'warn');
-        await this.session.callRpc('clearFocus');
+        this.lastTargetId = null;
+        this.log(`Đã tiêu diệt hoặc mất dấu mục tiêu.`, 'warn');
+        await this.resetTarget(info.x, info.y);
       }
     }
   }
