@@ -27,20 +27,20 @@ function formatMoney(amount) {
  * @param {function} sendLog 
  */
 async function scanDatauItems(deviceId, session, mapId, itemNameQuery, filters, event, sendLog) {
-  if (!session) return { ok: false, error: 'Chưa kết nối thiết bị.' };
+  if (!session) return { ok: false, error: 'Chua ket noi thiet bi.' };
   
-  sendLog(`[${deviceId}] Bắt đầu quét các sạp hàng xung quanh...`, 'info');
+  sendLog(`[${deviceId}] Bat dau quet cac sap hang xung quanh...`, 'info');
   
   try {
     const queryNormalized = itemNameQuery ? removeAccents(itemNameQuery) : '';
     const res = await session.callRpc('getNearbyShops');
     if (!res || !res.ok) {
-      sendLog(`[${deviceId}] Lỗi không lấy được danh sách sạp: ${res ? res.error : 'Unknown'}`, 'error');
+      sendLog(`[${deviceId}] Loi khong lay duoc danh sach sap: ${res ? res.error : 'Unknown'}`, 'error');
       return { ok: false, error: res ? res.error : 'Unknown' };
     }
     
     const shops = res.shops || [];
-    sendLog(`[${deviceId}] Tìm thấy ${shops.length} sạp xung quanh.`, 'info');
+    sendLog(`[${deviceId}] Tim thay ${shops.length} sap xung quanh.`, 'info');
     
     let foundItems = [];
     if (!shopCache[mapId]) shopCache[mapId] = {};
@@ -49,15 +49,15 @@ async function scanDatauItems(deviceId, session, mapId, itemNameQuery, filters, 
     const maxShops = Math.min(shops.length, limit);
     
     if (limit < shops.length) {
-       sendLog(`[${deviceId}] Giới hạn quét: Chọn ${maxShops} sạp gần nhất trong ${shops.length} sạp.`, 'info');
+       sendLog(`[${deviceId}] Gioi han quet: Chon ${maxShops} sap gan nhat trong ${shops.length} sap.`, 'info');
     }
     
     for (let i = 0; i < maxShops; i++) {
       const shop = shops[i];
-      sendLog(`[${deviceId}] Đang mở sạp "${shop.name}" (${i+1}/${maxShops})...`, 'info');
+      sendLog(`[${deviceId}] Dang mo sap "${shop.name}" (${i+1}/${maxShops})...`, 'info');
       
       if (event) {
-        event.sender.send('datau-progress', `Đang quét sạp của "${shop.name}" (${i+1}/${maxShops})...`);
+        event.sender.send('datau-progress', `Dang quet sap cua "${shop.name}" (${i+1}/${maxShops})...`);
       }
       
       const itemsRes = await session.callRpc('getShopItems', 0, shop.name, shop.namePtrStr, shop.cidPtrStr, shop.controllerPtrStr);
@@ -160,7 +160,7 @@ async function scanDatauItems(deviceId, session, mapId, itemNameQuery, filters, 
           items: fullShopItems
         };
       } else {
-        sendLog(`[${deviceId}] Bỏ qua sạp "${shop.name}": Không đọc được vật phẩm.`, 'warn');
+        sendLog(`[${deviceId}] Bo qua sap "${shop.name}": Khong doc duoc vat pham.`, 'warn');
       }
       
       await session.callRpc('closeDialogPopups').catch(() => {});
@@ -176,11 +176,11 @@ async function scanDatauItems(deviceId, session, mapId, itemNameQuery, filters, 
       console.error('Failed to save shop cache:', e);
     }
     
-    sendLog(`[${deviceId}] Quét hoàn tất. Tìm thấy ${foundItems.length} vật phẩm phù hợp.`, 'success');
+    sendLog(`[${deviceId}] Quet hoan tat. Tim thay ${foundItems.length} vat pham phu hop.`, 'success');
     return { ok: true, items: foundItems };
     
   } catch (err) {
-    sendLog(`[${deviceId}] Lỗi ngoại lệ khi quét Dã Tẩu: ${err.message}`, 'error');
+    sendLog(`[${deviceId}] Loi ngoai le khi quet Da Tau: ${err.message}`, 'error');
     return { ok: false, error: err.message };
   }
 }
@@ -193,23 +193,23 @@ function getShopDetails(mapId, sellerId) {
 }
 
 async function buyDatauItem(deviceId, session, sellerId, itemIdx, price, sendLog) {
-  if (!session) return { ok: false, error: 'Chưa kết nối thiết bị.' };
+  if (!session) return { ok: false, error: 'Chua ket noi thiet bi.' };
   
-  sendLog(`[${deviceId}] Đang gửi yêu cầu mua vật phẩm (ID: ${itemIdx}, Giá: ${price}) từ sạp (Chủ: ${sellerId})...`, 'info');
+  sendLog(`[${deviceId}] Dang gui yeu cau mua vat pham (ID: ${itemIdx}, Gia: ${price}) tu sap (Chu: ${sellerId})...`, 'info');
   
   try {
     // Send buy packet using Opcode 206
     const res = await session.callRpc('buyOtherStallItem', sellerId, itemIdx, price || 0);
     
     if (res && res.ok) {
-      sendLog(`[${deviceId}] Đã gửi lệnh mua hàng thành công. Vui lòng kiểm tra hành trang!`, 'success');
+      sendLog(`[${deviceId}] Da gui lenh mua hang thanh cong. Vui long kiem tra hanh trang!`, 'success');
       return { ok: true };
     } else {
-      sendLog(`[${deviceId}] Lỗi mua đồ: ${res ? res.error : 'Unknown'}`, 'error');
+      sendLog(`[${deviceId}] Loi mua do: ${res ? res.error : 'Unknown'}`, 'error');
       return { ok: false, error: res ? res.error : 'Unknown' };
     }
   } catch (err) {
-    sendLog(`[${deviceId}] Lỗi ngoại lệ khi mua đồ: ${err.message}`, 'error');
+    sendLog(`[${deviceId}] Loi ngoai le khi mua do: ${err.message}`, 'error');
     return { ok: false, error: err.message };
   }
 }

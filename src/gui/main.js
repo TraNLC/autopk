@@ -14,6 +14,7 @@ function createWindow() {
     minHeight: 600,
     resizable: true,
     frame: true,
+    autoHideMenuBar: true,
     title: 'GST Auto TK ver 1.0',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -22,6 +23,7 @@ function createWindow() {
     }
   });
 
+  mainWindow.setMenu(null);
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   // Dang ky tat ca cac IPC handlers/listeners

@@ -148,41 +148,6 @@ class AutoPK {
   }
 
   /**
-   * Hàm chấm điểm cho một mục tiêu
-   */
-  calculateTargetScore(player, enemy) {
-    // Cấu hình các trọng số ưu tiên (Weights)
-    const WEIGHT_DISTANCE = 0.4; // Trọng số khoảng cách (càng gần càng tốt)
-    const WEIGHT_HP = 0.3;       // Trọng số máu thấp (tiện dứt điểm)
-    const WEIGHT_ELEMENT = 0.3;  // Trọng số khắc hệ ngũ hành
-
-    let score = 0;
-
-    // 1. Đánh giá khoảng cách (Chuẩn hóa về khoảng 0 - 1)
-    const maxRange = 800;
-    const distance = Math.sqrt(Math.pow(enemy.x - player.x, 2) + Math.pow(enemy.y - player.y, 2));
-    const distanceScore = distance < maxRange ? (1 - (distance / maxRange)) : 0;
-    score += distanceScore * WEIGHT_DISTANCE;
-
-    // 2. Đánh giá lượng máu (HP càng thấp điểm càng cao để tối ưu KS mạng)
-    const hpRatio = enemy.maxHp > 0 ? (enemy.hp / enemy.maxHp) : 1;
-    const hpScore = 1 - hpRatio; 
-    score += hpScore * WEIGHT_HP;
-
-    // 3. Đánh giá hệ Ngũ Hành
-    const relation = this.getElementRelation(player.series, enemy.series);
-    let elementScore = 0.5; // Mặc định trung tính
-    if (relation === 1) {
-      elementScore = 1.0; // Khắc hệ mục tiêu
-    } else if (relation === -1) {
-      elementScore = 0.1; // Tránh đánh đứa khắc mình
-    }
-    score += elementScore * WEIGHT_ELEMENT;
-
-    return score;
-  }
-
-  /**
    * Hàm quét và tìm mục tiêu tối ưu nhất
    * - usePriorityRange=true:  Phạm vi ưu tiên → khắc hệ; còn lại → gần nhất
    * - usePriorityRange=false: Toàn bộ phạm vi → gần nhất thuần
@@ -378,10 +343,10 @@ class AutoPK {
     if (bestTarget) {
       const dist = Math.sqrt(Math.pow(bestTarget.x - playerState.x, 2) + Math.pow(bestTarget.y - playerState.y, 2));
 
-      // ── Khi đổi target → clearFocus game engine trước khi tấn công target mới ──
+      // ── Khi đổi target -> clearFocus game engine trước khi tấn công target mới ──
       if (bestTarget.id !== this.lastTargetId) {
         if (this.lastTargetId !== null) {
-          this.log(`Chuyen doi muc tieu: ${this.lastTargetId} → ${bestTarget.id}. Clear focus truoc...`, 'info');
+          this.log(`Chuyen doi muc tieu: ${this.lastTargetId} -> ${bestTarget.id}. Clear focus truoc...`, 'info');
           await this.resetTarget(playerState.x, playerState.y);
           // Bỏ qua tick này, để game engine xóa target cũ xong rồi tick sau mới đánh
           this._focusClearPending = true;
@@ -389,7 +354,7 @@ class AutoPK {
           return;
         }
         this.lastTargetId = bestTarget.id;
-        this.log(`Bắt đầu tấn công mục tiêu: ${bestTarget.name || '???'} (Cự ly: ${dist.toFixed(0)}m)`, 'success');
+        this.log(`Bat dau tan cong muc tieu: ${bestTarget.name || '???'} (Cu ly: ${dist.toFixed(0)}m)`, 'success');
       }
 
       this.hadTarget = true;
@@ -407,7 +372,7 @@ class AutoPK {
       if (this.hadTarget) {
         this.hadTarget = false;
         this.lastTargetId = null;
-        this.log(`Đã tiêu diệt hoặc mất dấu mục tiêu.`, 'warn');
+        this.log(`Da tieu diet hoac mat dau muc tieu.`, 'warn');
         await this.resetTarget(info.x, info.y);
       }
     }

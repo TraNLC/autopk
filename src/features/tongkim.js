@@ -39,7 +39,7 @@ function findSharedNpcIds(deviceId, mapId, campValue, isStaging) {
 /**
  * Auto Tống Kim loop — được gọi từ loop chính trong main.js
  */
-async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, autoBaoDanh) {
+async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, autoBaoDanh, autoThuoc) {
   if (!session || !info) return;
   if (busyDevices.has(deviceId)) return;
   busyDevices.add(deviceId);
@@ -90,18 +90,18 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
       }
       const baodanhId = cache && cache.baodanhId;
       if (!baodanhId) {
-        sendLog(`[${deviceId}] Chưa có ID NPC Báo Danh. Hãy click tay vào Chiêu Binh / Mộ Binh 1 lần.`, 'warn');
+        sendLog(`[${deviceId}] Chua co ID NPC Bao Danh. Hay click tay vao Chieu Binh / Mo Binh 1 lan.`, 'warn');
         return;
       }
-      sendLog(`[${deviceId}] Đang thực hiện báo danh Tống Kim...`, 'info');
+      sendLog(`[${deviceId}] Dang thuc hien bao danh Tong Kim...`, 'info');
       try {
         await injector.sendNpcDialogue(baodanhId);
         await new Promise(r => setTimeout(r, 500));
         await injector.sendNpcSelect(0);
         await new Promise(r => setTimeout(r, 1000));
-        sendLog(`[${deviceId}] Báo danh Tống Kim thành công!`, 'success');
+        sendLog(`[${deviceId}] Bao danh Tong Kim thanh cong!`, 'success');
       } catch(e) {
-        sendLog(`[${deviceId}] Lỗi báo danh: ${e.message}`, 'error');
+        sendLog(`[${deviceId}] Loi bao danh: ${e.message}`, 'error');
       }
       return;
     }
@@ -180,31 +180,52 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           } catch(e) {}
         }
 
-        // ── Thống kê thời gian giãn cách 2.5s mỗi lần gọi Trình Sát để tránh bị rate-limit ──
+        // ── Thống kê thời gian giãn cách 2.5s (hoặc 5s sau mỗi 2 phút) ──
         const now = Date.now();
-        const callInterval = 2500;
+        
+        // Khởi tạo mốc thời gian 5s ban đầu nếu chưa có
+        if (!cache._lastFiveSecTime) {
+          cache._lastFiveSecTime = now;
+        }
+
+        let callInterval = 2500;
+        // Kiểm tra xem đã đến chu kỳ 2 phút để áp dụng giãn cách 5 giây chưa
+        const isFiveSecTick = (now - cache._lastFiveSecTime) > 2 * 60 * 1000;
+
+        if (isFiveSecTick) {
+          callInterval = 5000; // Ép giãn cách lên 5s cho lần này
+        }
+
         if (cache._lastCallTime && (now - cache._lastCallTime) < callInterval) {
           return; // Chưa tới lượt
         }
+
+        // Cập nhật lại mốc 2 phút khi đã thỏa mãn và chuẩn bị gọi Trình Sát
+        if (isFiveSecTick) {
+          cache._lastFiveSecTime = now;
+          sendLog(`[He Thong] Kich hoat gian cach 5s mot lan (het chu ky 2 phut, quay lai 2.5s)...`, 'info');
+        }
         cache._lastCallTime = now;
 
-        if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 3 * 60 * 1000)) {
-          sendLog(`[${deviceId}] [Ra Trận] Đang nhận thuốc Quân Nhu...`, 'info');
-          try {
-            await injector.sendNpcDialogue(quanNhuId);
-            await new Promise(r => setTimeout(r, 800));
-            await injector.sendNpcSelect(0);
-            await new Promise(r => setTimeout(r, 400));
-            await session.callRpc('sendPacket', 232, '');
-            await new Promise(r => setTimeout(r, 400));
-            sendLog(`[${deviceId}] [Ra Trận] Nhận thuốc Quân Nhu thành công!`, 'success');
-          } catch(e) {
-            sendLog(`[${deviceId}] [Ra Trận] Lỗi nhận thuốc: ${e.message}`, 'error');
-          }
-          cache._lastHealTime = now;
+        if (autoThuoc !== false) {
+          if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 3 * 60 * 1000)) {
+            sendLog(`[${deviceId}] [Ra Tran] Dang nhan thuoc Quan Nhu...`, 'info');
+            try {
+              await injector.sendNpcDialogue(quanNhuId);
+              await new Promise(r => setTimeout(r, 800));
+              await injector.sendNpcSelect(0);
+              await new Promise(r => setTimeout(r, 400));
+              await session.callRpc('sendPacket', 232, '');
+              await new Promise(r => setTimeout(r, 400));
+              sendLog(`[${deviceId}] [Ra Tran] Nhan thuoc Quan Nhu thanh cong!`, 'success');
+            } catch(e) {
+              sendLog(`[${deviceId}] [Ra Tran] Loi nhan thuoc: ${e.message}`, 'error');
+            }
+            cache._lastHealTime = now;
 
-          try { await session.callRpc('closeDialogPopups'); } catch(e) {}
-          await new Promise(r => setTimeout(r, 200));
+            try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+            await new Promise(r => setTimeout(r, 200));
+          }
         }
 
         // Buff tran phai
@@ -232,7 +253,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           } else {
             battleOption = (campValue === 2) ? 1 : 0;
           }
-          sendLog(`[${deviceId}] [Ra Trận] Đang qua cửa Trình Sát ra chiến trường...`, 'info');
+          sendLog(`[${deviceId}] [Ra Tran] Dang qua cua Trinh Sat ra chien truong...`, 'info');
           await injector.sendNpcDialogue(trinhSatId);
           await new Promise(r => setTimeout(r, 500));
           await injector.sendNpcSelect(battleOption);
@@ -245,7 +266,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
             await session.callRpc('clearFocus');
           } catch(err) {}
         } catch(e) {
-          sendLog(`[${deviceId}] [Ra Trận] Lỗi qua cửa Trình Sát: ${e.message}`, 'error');
+          sendLog(`[${deviceId}] [Ra Tran] Loi qua cua Trinh Sat: ${e.message}`, 'error');
         }
 
         // Buff tran phai sau khi ra san (sau khi qua cua Trinh Sat)
@@ -254,14 +275,14 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           const sectSkillMap = { 0: 102, 1: 111, 2: 129, 3: 139, 4: 159, 5: 109, 6: 179, 7: 189, 8: 209, 9: 219 };
           const buffSkillId = sectSkillMap[sect];
           if (buffSkillId && buffSkillId > 1) {
-            sendLog(`[${deviceId}] [Ra Trận] Đang thực hiện buff hỗ trợ...`, 'info');
+            sendLog(`[${deviceId}] [Ra Tran] Dang thuc hien buff ho tro...`, 'info');
             await injector.sendDoSkillTargetPosition(buffSkillId, info.x || 0, info.y || 0);
             await new Promise(r => setTimeout(r, 400));
           }
         } catch(e) {}
 
       } catch(e) {
-        sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');
+        sendLog(`[${deviceId}] Loi Auto Tong Kim: ${e.message}`, 'error');
       }
     }
 
@@ -274,7 +295,7 @@ async function collectPoints(deviceId, session, sendLog) {
   const cache = ensureCache(deviceId);
   
   try {
-    sendLog(`[${deviceId}] [Gom Điểm] Bước 1: Bắt đầu gom điểm tích lũy...`, 'info');
+    sendLog(`[${deviceId}] [Gom Diem] Buoc 1: Bat dau gom diem tich luy...`, 'info');
     const injector = new PacketInjector(session);
     
     // Step 1: Quét tìm NPC Mộ binh / Chiêu binh / Quân nhu
@@ -316,7 +337,7 @@ async function collectPoints(deviceId, session, sendLog) {
     if (isStagingNpc) {
       // NPC ở map Staging (Tống Quốc Quân nhu quan / Kim Quốc Quân nhu quan)
       // Mở shop trực tiếp bằng Option 1 trên màn hình đầu tiên
-      sendLog(`[${deviceId}] [Gom Điểm] Bước 2: Tương tác với ${npcName} (Map chuẩn bị)...`, 'info');
+      sendLog(`[${deviceId}] [Gom Diem] Buoc 2: Tuong tac voi ${npcName} (Map chuan bi)...`, 'info');
       try { await session.callRpc('closeDialogPopups'); } catch(e) {}
       await new Promise(r => setTimeout(r, 400));
       await injector.sendNpcDialogue(npcId);
@@ -329,7 +350,7 @@ async function collectPoints(deviceId, session, sendLog) {
       // NPC ở Map 324 (Quân Nhu quan, Mộ binh quan, Chiêu binh quan)
       // Màn hình 1: Chọn Option 1 (Xem điểm tích lũy)
       // Màn hình 2: Chọn Option 0 (Mở shop)
-      sendLog(`[${deviceId}] [Gom Điểm] Bước 2: Tương tác với ${npcName} (Map 324)...`, 'info');
+      sendLog(`[${deviceId}] [Gom Diem] Buoc 2: Tuong tac voi ${npcName} (Map 324)...`, 'info');
       try { await session.callRpc('closeDialogPopups'); } catch(e) {}
       await new Promise(r => setTimeout(r, 400));
       await injector.sendNpcDialogue(npcId);
@@ -346,20 +367,20 @@ async function collectPoints(deviceId, session, sendLog) {
     // Đợi 400ms để shop UI hoàn toàn render
     await new Promise(r => setTimeout(r, 400));
     
-    sendLog(`[${deviceId}] [Gom Điểm] Bước 3: Đang chọn vật phẩm Phiếu Tích Lũy Tống Kim...`, 'info');
+    sendLog(`[${deviceId}] [Gom Diem] Buoc 3: Dang chon vat pham Phieu Tich Luy Tong Kim...`, 'info');
     await session.callRpc('clickFirstShopItem');
     await new Promise(r => setTimeout(r, 800)); // Đợi popup Số lượng hiện lên
     
-    sendLog(`[${deviceId}] [Gom Điểm] Đang gửi lệnh mua số lượng tối đa...`, 'info');
+    sendLog(`[${deviceId}] [Gom Diem] Dang gui lenh mua so luong toi da...`, 'info');
     await session.callRpc('buyActiveShopItem', 999);
     await new Promise(r => setTimeout(r, 800));
     
     // Đóng toàn bộ popup sau khi hoàn tất
     try { await session.callRpc('closeDialogPopups'); } catch(e) {}
     
-    sendLog(`[${deviceId}] [Gom Điểm] Bước 4: Hoàn tất gom điểm tích lũy thành công!`, 'success');
+    sendLog(`[${deviceId}] [Gom Diem] Buoc 4: Hoan tat gom diem tich luy thanh cong!`, 'success');
   } catch (err) {
-    sendLog(`[${deviceId}] [Gom Điểm] Lỗi khi thực hiện gom điểm: ${err.message}`, 'error');
+    sendLog(`[${deviceId}] [Gom Diem] Loi khi thuc hien gom diem: ${err.message}`, 'error');
   }
 }
 

@@ -22,7 +22,7 @@ tabBtns.forEach(btn => {
 });
 
 // TK Settings Elements
-const pkFightSwitch = document.getElementById('pk-fight-switch');
+const btnToggleAutoTk = document.getElementById('btn-toggle-auto-tk');
 const lblSelectedAcc = document.getElementById('lbl-selected-acc');
 const accSettingsPanel = document.getElementById('acc-settings-panel');
 const selSide = document.getElementById('sel-side');
@@ -31,16 +31,95 @@ const chkLac2 = document.getElementById('chk-lac2');
 const chkLac3 = document.getElementById('chk-lac3');
 const btnSaveAcc = document.getElementById('btn-save-acc');
 
+let isAutoTKEnabled = false;
+
+if (btnToggleAutoTk) {
+  btnToggleAutoTk.addEventListener('click', () => {
+    isAutoTKEnabled = !isAutoTKEnabled;
+    updateAutoTkButtonState();
+    updateGlobalTK();
+  });
+}
+
+function updateAutoTkButtonState() {
+  if (!btnToggleAutoTk) return;
+  if (isAutoTKEnabled) {
+    btnToggleAutoTk.innerText = 'TAM DUNG AUTO TONG KIM';
+    btnToggleAutoTk.style.backgroundColor = '#c0392b';
+  } else {
+    btnToggleAutoTk.innerText = 'BAT DAU AUTO TONG KIM';
+    btnToggleAutoTk.style.backgroundColor = '#27ae60';
+  }
+}
+
 // State
 let devicesMap = new Map(); // id -> { name, status, info, tkConfig }
 let currentSelectedDeviceId = null;
 
+const logsMap = new Map();
+
 function addLog(msg, type = 'info') {
+  // Trích xuất deviceId nếu có (ví dụ "[emulator-5554] ...")
+  let deviceId = 'SYSTEM';
+  const match = msg.match(/^\[([^\]]+)\]/);
+  if (match) {
+    const rawId = match[1];
+    if (rawId !== 'SYSTEM' && rawId !== 'System') {
+      let foundId = null;
+      for (const [id, dev] of devicesMap.entries()) {
+        const name = (dev.info && dev.info.name) ? dev.info.name : id;
+        if (id === rawId || name === rawId) {
+          foundId = id;
+          break;
+        }
+      }
+      deviceId = foundId || rawId;
+    }
+  }
+
+  // Lưu vào buffer của từng thiết bị
+  if (!logsMap.has(deviceId)) {
+    logsMap.set(deviceId, []);
+  }
+  const deviceLogs = logsMap.get(deviceId);
+  deviceLogs.push({ msg, type });
+  
+  if (deviceLogs.length > 500) deviceLogs.shift();
+
+  // Hiển thị nếu thiết bị đang được chọn (hoặc mặc định SYSTEM nếu chưa chọn)
+  const activeId = currentSelectedDeviceId || 'SYSTEM';
+  if (deviceId === activeId) {
+    appendLogToUI(msg, type);
+  }
+}
+
+function appendLogToUI(msg, type) {
   const entry = document.createElement('div');
   entry.className = `log-entry log-${type}`;
   entry.innerText = msg;
   globalLogContainer.appendChild(entry);
   globalLogContainer.scrollTop = globalLogContainer.scrollHeight;
+}
+
+function renderLogsForSelectedDevice(id) {
+  globalLogContainer.innerHTML = '';
+  const activeId = id || 'SYSTEM';
+  
+  const lblLogTitle = document.getElementById('lbl-log-title');
+  if (lblLogTitle) {
+    if (id && devicesMap.has(id)) {
+      const dev = devicesMap.get(id);
+      const name = (dev.info && dev.info.name) ? dev.info.name : id;
+      lblLogTitle.innerText = `Nhat ky hoat dong: ${name}`;
+    } else {
+      lblLogTitle.innerText = 'Nhat ky hoat dong: He thong';
+    }
+  }
+  
+  const logs = logsMap.get(activeId) || [];
+  logs.forEach(log => {
+    appendLogToUI(log.msg, log.type);
+  });
 }
 
 // Setup IPC Listeners
@@ -96,7 +175,11 @@ function renderTable() {
     tr.addEventListener('click', (e) => {
       // Don't trigger if clicking checkbox
       if (e.target.tagName.toLowerCase() === 'input') return;
-      selectDevice(id);
+      if (currentSelectedDeviceId === id) {
+        selectDevice(null); // Click lại để bỏ chọn và hiện log hệ thống
+      } else {
+        selectDevice(id);
+      }
     });
     
     // Toggle (#)
@@ -161,20 +244,35 @@ function renderTable() {
 }
 
 // Select Device Logic
+const lblSelectedAccGlobals = document.querySelectorAll('.lbl-selected-acc-global');
+
 function selectDevice(id) {
   currentSelectedDeviceId = id;
   renderTable(); // Update selection styling
   
+  const name = (id && devicesMap.has(id)) 
+    ? ((devicesMap.get(id).info && devicesMap.get(id).info.name) ? devicesMap.get(id).info.name : id) 
+    : 'Chua chon';
+  
+  lblSelectedAcc.innerText = name;
+  lblSelectedAccGlobals.forEach(el => {
+    el.innerText = name;
+  });
+  
+  // Kết xuất lại logs của thiết bị được chọn
+  renderLogsForSelectedDevice(id);
+  
   if (!id || !devicesMap.has(id)) {
-    lblSelectedAcc.innerText = 'Chưa chọn';
-    accSettingsPanel.style.display = 'none';
+    selSide.value = 'auto';
+    chkLac1.checked = false;
+    chkLac2.checked = false;
+    chkLac3.checked = false;
+    const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+    if (chkBaoDanh) chkBaoDanh.checked = true;
     return;
   }
   
   const dev = devicesMap.get(id);
-  const name = (dev.info && dev.info.name) ? dev.info.name : id;
-  lblSelectedAcc.innerText = name;
-  accSettingsPanel.style.display = 'block';
   
   // Load config
   const cfg = dev.tkConfig || { side: 'auto', lacs: [], autoBaoDanh: true };
@@ -186,6 +284,11 @@ function selectDevice(id) {
   const chkBaoDanh = document.getElementById('chk-auto-baodanh');
   if (chkBaoDanh) {
     chkBaoDanh.checked = cfg.autoBaoDanh !== false;
+  }
+  
+  const chkAutoThuoc = document.getElementById('chk-auto-thuoc');
+  if (chkAutoThuoc) {
+    chkAutoThuoc.checked = !!cfg.autoThuoc;
   }
 }
 
@@ -203,34 +306,20 @@ btnSaveAcc.addEventListener('click', () => {
     dev.tkConfig.autoBaoDanh = chkBaoDanh.checked;
   }
   
+  const chkAutoThuoc = document.getElementById('chk-auto-thuoc');
+  if (chkAutoThuoc) {
+    dev.tkConfig.autoThuoc = chkAutoThuoc.checked;
+  }
+  
+  const lacs = [];
+  if (chkLac1.checked) lacs.push('45');
+  if (chkLac2.checked) lacs.push('51');
+  if (chkLac3.checked) lacs.push('50');
+  dev.tkConfig.lacs = lacs;
+  
   updateGlobalTK();
-  addLog(`[${currentSelectedDeviceId}] Da luu cau hinh Tong Kim.`, 'info');
+  addLog(`[${currentSelectedDeviceId}] Da luu cau hinh nhan vat.`, 'success');
 });
-
-// Save PK Settings
-const btnSavePk = document.getElementById('btn-save-pk');
-if (btnSavePk) {
-  btnSavePk.addEventListener('click', () => {
-    if (!currentSelectedDeviceId) {
-      addLog('Chua chon nhan vat de luu cau hinh PK.', 'error');
-      return;
-    }
-    const dev = devicesMap.get(currentSelectedDeviceId);
-    if (!dev) return;
-
-    dev.tkConfig = dev.tkConfig || { side: 'auto', lacs: [] };
-
-    // Save lacs as they are now relocated to the Attack tab
-    const lacs = [];
-    if (chkLac1.checked) lacs.push('45');
-    if (chkLac2.checked) lacs.push('51');
-    if (chkLac3.checked) lacs.push('50');
-    dev.tkConfig.lacs = lacs;
-
-    updateGlobalTK();
-    addLog(`[${currentSelectedDeviceId}] Da luu cau hinh Tan Cong (PK) & Lac.`, 'success');
-  });
-}
 
 // Collect Points (Gom Diem)
 const btnCollectPoints = document.getElementById('btn-collect-points');
@@ -263,27 +352,25 @@ if (btnCollectPoints) {
 
 // Auto TK Logic
 function updateGlobalTK() {
-  const enable = pkFightSwitch.checked;
   const tkConfigs = {};
   for (const [id, dev] of devicesMap.entries()) {
     if (dev.tkConfig) tkConfigs[id] = dev.tkConfig;
   }
-  window.api.toggleAutoTK(enable, tkConfigs);
+  window.api.toggleAutoTK(isAutoTKEnabled, tkConfigs);
 }
-
-pkFightSwitch.addEventListener('change', updateGlobalTK);
 
 // Top Buttons
 btnRefresh.addEventListener('click', scanDevices);
 btnRestart.addEventListener('click', () => {
-  addLog('[System] Khởi động lại toàn bộ kết nối...', 'warn');
+  addLog('[System] Khoi dong lai toan bo ket noi...', 'warn');
   for (const [id, dev] of devicesMap.entries()) {
     if (dev.connected) {
       dev.connected = false;
       window.api.toggleDevice(id, false);
     }
   }
-  pkFightSwitch.checked = false;
+  isAutoTKEnabled = false;
+  updateAutoTkButtonState();
   updateGlobalTK();
   setTimeout(scanDevices, 1000);
 });
@@ -322,8 +409,12 @@ if (btnScanDatau) {
     try {
       const limitInput = document.getElementById('num-shops-to-scan');
       const limit = limitInput ? (parseInt(limitInput.value, 10) || 50) : 50;
-      // Scan without filters (wildcard)
-      const res = await window.api.scanDatau(devId, '', { series: -1, level: -1, itemType: -1, gender: 'all', limit });
+      
+      const kwInput = document.getElementById('txt-datau-keyword');
+      const keyword = kwInput ? kwInput.value.trim() : '';
+
+      // Scan with optional keyword
+      const res = await window.api.scanDatau(devId, keyword, { series: -1, level: -1, itemType: -1, gender: 'all', limit });
       if (res && res.ok) {
         if (loadingText) {
           loadingText.innerText = `Quét xong! Tìm thấy ${res.items ? res.items.length : 0} vật phẩm. Mở cửa sổ chi tiết...`;
@@ -425,121 +516,302 @@ function getTestDeviceId() {
   return null;
 }
 
-const btnTestCast = document.getElementById('btn-test-cast');
-if (btnTestCast) {
-  btnTestCast.addEventListener('click', async () => {
-    if (!currentSelectedDeviceId) {
-      addLog('Chưa chọn nhân vật để test cast skill.', 'error');
-      return;
-    }
-    btnTestCast.disabled = true;
-    try {
-      await window.api.testCastSkill(currentSelectedDeviceId);
-    } catch (e) {
-      addLog(`Lỗi test cast: ${e.message}`, 'error');
-    }
-    btnTestCast.disabled = false;
+// --- Auto Login Tab Logic ---
+const btnAutoLogin = document.getElementById('btn-auto-login');
+const txtAccountsList = document.getElementById('txt-accounts-list');
+
+// Load danh sach tai khoan tu localStorage luc khoi dong
+if (txtAccountsList) {
+  const saved = localStorage.getItem('auto_login_accounts_list');
+  if (saved) {
+    txtAccountsList.value = saved;
+  }
+  txtAccountsList.addEventListener('input', () => {
+    localStorage.setItem('auto_login_accounts_list', txtAccountsList.value);
   });
 }
 
-const btnTestBuff = document.getElementById('btn-test-buff');
-if (btnTestBuff) {
-  btnTestBuff.addEventListener('click', async () => {
+if (btnAutoLogin) {
+  btnAutoLogin.addEventListener('click', async () => {
     if (!currentSelectedDeviceId) {
-      addLog('Chưa chọn nhân vật để test buff.', 'error');
+      addLog('Chua chon nhan vat/thiet bi de dang nhap.', 'error');
       return;
     }
-    btnTestBuff.disabled = true;
-    try {
-      await window.api.testBuff(currentSelectedDeviceId);
-    } catch (e) {
-      addLog(`Lỗi test buff: ${e.message}`, 'error');
-    }
-    btnTestBuff.disabled = false;
-  });
-}
 
-// --- NPC Test & Interaction buttons ---
-const btnGetNpc = document.getElementById('btn-get-npc');
-if (btnGetNpc) {
-  btnGetNpc.addEventListener('click', async () => {
-    const devId = getTestDeviceId();
-    if (!devId) return;
-    const resContainer = document.getElementById('result-get-npc');
-    resContainer.innerText = 'Đang quét NPC xung quanh...';
-    try {
-      const res = await window.api.testNpcNearNames(devId);
-      if (res && res.ok && res.npcMap) {
-        let lines = [];
-        const entries = Object.entries(res.npcMap);
-        lines.push(`Bản đồ hiện tại (Map ID): ${res.mapId || 0}`);
-        lines.push(`Tìm thấy ${entries.length} NPC(s):`);
-        for (const [id, name] of entries) {
-          lines.push(`  ID: ${id} -> Name: ${name}`);
+    const rawList = txtAccountsList ? txtAccountsList.value : '';
+    const lines = rawList.split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    if (lines.length === 0) {
+      addLog('Vui long nhap hoac dan danh sach tai khoan.', 'error');
+      return;
+    }
+
+    // Tim index cua thiet bi hien tai trong danh sach thiet bi da quet duoc
+    const deviceIds = Array.from(devicesMap.keys());
+    const devIdx = deviceIds.indexOf(currentSelectedDeviceId);
+
+    if (devIdx === -1) {
+      addLog('Loi: Thiet bi dang chon khong hop le.', 'error');
+      return;
+    }
+
+    if (devIdx >= lines.length) {
+      addLog(`Loi: So luong tai khoan da nhap (${lines.length}) it hon chi muc thiet bi (${devIdx + 1}).`, 'error');
+      return;
+    }
+
+    // Doc tai khoan & mat khau o dong tuong ung
+    const credentialsLine = lines[devIdx];
+    const parts = credentialsLine.split(/\s+/);
+    if (parts.length < 2) {
+      addLog(`Loi: Dong thu ${devIdx + 1} khong dung dinh dang (TaiKhoan MatKhau).`, 'error');
+      return;
+    }
+
+    const username = parts[0];
+    const password = parts[1];
+
+    addLog(`[${currentSelectedDeviceId}] Bắt đầu Auto Login cho dòng ${devIdx + 1}: ${username}...`, 'info');
+    btnAutoLogin.disabled = true;
+    
+    const statusCard = document.getElementById('login-status-card');
+    const lblStatus = document.getElementById('lbl-login-status');
+    
+    const updateStatusUI = (type, msg) => {
+      if (!statusCard) return;
+      statusCard.style.display = 'block';
+      statusCard.className = `status-card ${type}`;
+      lblStatus.innerText = msg;
+    };
+    
+    updateStatusUI('', 'Đang khởi tạo kết nối...');
+
+    let attempts = 0;
+    const maxAttempts = 30; // Max ~75 seconds
+    const interval = setInterval(async () => {
+      try {
+        attempts++;
+        const res = await window.api.performAutoLogin(currentSelectedDeviceId, username, password);
+        
+        if (res && res.state) {
+          if (res.state === 'ERROR') {
+            addLog(`[${currentSelectedDeviceId}] Lỗi AutoLogin: ${res.error}`, 'error');
+            updateStatusUI('error', `Lỗi: ${res.error}`);
+            // If it's the first attempt and fails, maybe the device isn't connected
+            if (attempts === 1 && res.error.includes('chua ket noi')) {
+              alert(`Lỗi: Thiết bị chưa được kết nối!\nVui lòng check vào ô vuông bên cạnh tên thiết bị ở danh sách phía trên để kết nối trước khi Đăng nhập.`);
+            }
+            clearInterval(interval);
+            btnAutoLogin.disabled = false;
+          } else if (res.state === 'STATE_IN_GAME') {
+            addLog(`[${currentSelectedDeviceId}] Tuyệt vời! Đã vào game an toàn.`, 'success');
+            updateStatusUI('success', 'Tuyệt vời! Đã vào game an toàn.');
+            clearInterval(interval);
+            btnAutoLogin.disabled = false;
+          } else if (res.state !== 'STATE_UNKNOWN') {
+            addLog(`[${currentSelectedDeviceId}] Tiến trình: ${res.msg}`, 'system');
+            updateStatusUI('', res.msg);
+          } else {
+            updateStatusUI('', res.msg || 'Đang chờ load màn hình...');
+          }
+        } else {
+          addLog(`[${currentSelectedDeviceId}] Phản hồi không xác định.`, 'warn');
+          updateStatusUI('error', 'Phản hồi không xác định từ hệ thống.');
         }
-        resContainer.innerText = lines.join('\n');
-      } else {
-        resContainer.innerText = 'Lỗi quét NPC: ' + JSON.stringify(res);
+
+        if (attempts >= maxAttempts) {
+          addLog(`[${currentSelectedDeviceId}] Hết thời gian chờ Auto Login. Hãy kiểm tra lại game.`, 'error');
+          updateStatusUI('error', 'Hết thời gian chờ Auto Login.');
+          clearInterval(interval);
+          btnAutoLogin.disabled = false;
+        }
+      } catch(e) {
+        addLog(`[${currentSelectedDeviceId}] Ngoại lệ vòng lặp: ${e.message}`, 'error');
+        updateStatusUI('error', `Ngoại lệ: ${e.message}`);
+        clearInterval(interval);
+        btnAutoLogin.disabled = false;
       }
-    } catch(e) {
-      resContainer.innerText = 'Lỗi ngoại lệ: ' + e.message;
-    }
+    }, 2500); // Tick every 2.5 seconds
   });
 }
 
-const btnInteractNpc = document.getElementById('btn-interact-npc');
-if (btnInteractNpc) {
-  btnInteractNpc.addEventListener('click', async () => {
-    const devId = getTestDeviceId();
-    if (!devId) return;
-    const npcId = document.getElementById('txt-interact-npc-id').value.trim();
-    if (!npcId) {
-      addLog('Vui lòng nhập ID NPC để tương tác.', 'error');
-      return;
-    }
-    const resContainer = document.getElementById('result-interact-npc');
-    resContainer.innerText = 'Đang gửi lệnh tương tác...';
-    try {
-      const res = await window.api.npcInteract(devId, npcId);
-      resContainer.innerText = 'Kết quả: ' + JSON.stringify(res);
-      if (res && res.ok) {
-        addLog(`[${devId}] Đã tương tác với NPC ID ${npcId}.`, 'success');
-      } else {
-        addLog(`[${devId}] Tương tác NPC thất bại: ${res ? res.error : 'Unknown'}`, 'error');
-      }
-    } catch(e) {
-      resContainer.innerText = 'Lỗi: ' + e.message;
-    }
+// ----------------------------------------------------
+// Full Auto Launch (MuMu Player) - Interactive Table
+// ----------------------------------------------------
+const accTableBody = document.getElementById('acc-table-body');
+const btnAddAccRow = document.getElementById('btn-add-acc-row');
+const btnImportAcc = document.getElementById('btn-import-acc');
+
+function createAccRow(slot, user = '', pass = '') {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="text-align: center; font-weight: bold;">${slot}</td>
+    <td><input type="text" class="input-acc" value="${user}" placeholder="Tài khoản"></td>
+    <td><input type="password" class="input-pass" value="${pass}" placeholder="Mật khẩu"></td>
+    <td style="text-align: center;">
+      <button class="btn-start-acc" title="Start">▶</button>
+      <button class="btn-stop-acc" title="Stop">⏹</button>
+      <button class="btn-del-acc" title="Delete">✖</button>
+    </td>
+  `;
+  
+  const btnDel = tr.querySelector('.btn-del-acc');
+  btnDel.addEventListener('click', () => {
+    tr.remove();
+    updateSlots();
+  });
+
+  const btnStart = tr.querySelector('.btn-start-acc');
+  btnStart.addEventListener('click', () => handleStartRow(tr));
+  
+  // Stop button implementation depends on backend logic (e.g. killing the mumu instance)
+  // For now, it will just alert or try to kill the ADB session.
+  const btnStop = tr.querySelector('.btn-stop-acc');
+  btnStop.addEventListener('click', () => {
+      alert('Đang cập nhật tính năng Stop Giả Lập!');
+  });
+
+  return tr;
+}
+
+function updateSlots() {
+  if (!accTableBody) return;
+  const rows = accTableBody.querySelectorAll('tr');
+  rows.forEach((row, idx) => {
+    row.children[0].innerText = idx + 1;
   });
 }
 
-const btnSelectDialogOption = document.getElementById('btn-select-dialog-option');
-if (btnSelectDialogOption) {
-  btnSelectDialogOption.addEventListener('click', async () => {
-    const devId = getTestDeviceId();
-    if (!devId) return;
-    const optionIdxStr = document.getElementById('num-dialog-option').value;
-    if (optionIdxStr === '') {
-      addLog('Vui lòng nhập chỉ mục option.', 'error');
-      return;
-    }
-    const optionIdx = parseInt(optionIdxStr, 10);
-    const resContainer = document.getElementById('result-select-dialog-option');
-    resContainer.innerText = `Đang gửi lệnh chọn option ${optionIdx}...`;
-    try {
-      const res = await window.api.npcSelectOption(devId, optionIdx);
-      resContainer.innerText = 'Kết quả: ' + JSON.stringify(res);
-      if (res && res.ok) {
-        addLog(`[${devId}] Đã gửi gói chọn option ${optionIdx} của dialog.`, 'success');
-      } else {
-        addLog(`[${devId}] Chọn option thất bại: ${res ? res.error : 'Unknown'}`, 'error');
+if (accTableBody) {
+  // Init one empty row
+  accTableBody.appendChild(createAccRow(1));
+
+  if (btnAddAccRow) {
+    btnAddAccRow.addEventListener('click', () => {
+      const slot = accTableBody.children.length + 1;
+      accTableBody.appendChild(createAccRow(slot));
+    });
+  }
+
+  if (btnImportAcc) {
+    btnImportAcc.addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text || text.trim() === '') {
+          alert('Chưa có dữ liệu copy trong bộ nhớ. Vui lòng copy 2 cột (User Pass) từ Excel trước.');
+          return;
+        }
+        
+        const lines = text.split('\\n').map(l => l.trim()).filter(l => l !== '');
+        // Clear existing empty rows if any
+        if (accTableBody.children.length === 1) {
+          const firstRow = accTableBody.children[0];
+          const user = firstRow.querySelector('.input-acc').value;
+          if (!user) firstRow.remove();
+        }
+
+        let currentSlot = accTableBody.children.length + 1;
+        lines.forEach(line => {
+          const parts = line.split(/\\s+/);
+          if (parts.length >= 2) {
+            accTableBody.appendChild(createAccRow(currentSlot, parts[0], parts[1]));
+            currentSlot++;
+          }
+        });
+        alert(`Đã dán thành công ${lines.length} dòng!`);
+      } catch (err) {
+        alert('Lỗi đọc clipboard: ' + err.message);
       }
-    } catch(e) {
-      resContainer.innerText = 'Lỗi: ' + e.message;
-    }
-  });
+    });
+  }
 }
 
+async function handleStartRow(tr) {
+  const user = tr.querySelector('.input-acc').value.trim();
+  const pass = tr.querySelector('.input-pass').value.trim();
+  const slot = parseInt(tr.children[0].innerText, 10);
+  
+  if (!user || !pass) {
+    alert('Vui lòng nhập đủ Tài khoản và Mật khẩu.');
+    return;
+  }
 
+  const txtMumuPath = document.getElementById('txt-mumu-path');
+  const mumuPath = txtMumuPath ? txtMumuPath.value.trim() : '';
+  if (!mumuPath) {
+    alert('Vui lòng nhập đường dẫn MuMuManager.exe');
+    return;
+  }
 
+  const index = slot - 1;
+  const port = 16384 + (index * 32);
+  const btnStart = tr.querySelector('.btn-start-acc');
+  
+  btnStart.disabled = true;
+  const statusCard = document.getElementById('login-status-card');
+  const lblStatus = document.getElementById('lbl-login-status');
+  
+  const updateStatusUI = (type, msg) => {
+    if (!statusCard) return;
+    statusCard.style.display = 'block';
+    statusCard.className = `status-card ${type}`;
+    lblStatus.innerText = msg;
+  };
+  
+  updateStatusUI('', `Khởi động MuMu ${index} cho acc ${user}...`);
+  
+  try {
+    const res = await window.api.performFullAutoLaunch(mumuPath, user, pass, port, index);
+    if (res && res.ok) {
+        updateStatusUI('success', `Đã mở game, bắt đầu Đăng Nhập...`);
+        let deviceId = res.deviceId; 
+        
+        let attempts = 0;
+        const maxAttempts = 30;
+        const interval = setInterval(async () => {
+          try {
+            attempts++;
+            const resLogin = await window.api.performAutoLogin(deviceId, user, pass);
+            
+            if (resLogin && resLogin.state) {
+              if (resLogin.state === 'ERROR') {
+                updateStatusUI('error', `Lỗi: ${resLogin.error}`);
+                clearInterval(interval);
+                btnStart.disabled = false;
+              } else if (resLogin.state === 'STATE_IN_GAME') {
+                updateStatusUI('success', 'Tuyệt vời! Đã vào game an toàn.');
+                clearInterval(interval);
+                btnStart.disabled = false;
+              } else if (resLogin.state !== 'STATE_UNKNOWN') {
+                updateStatusUI('', resLogin.msg);
+              } else {
+                updateStatusUI('', resLogin.msg || 'Đang chờ màn hình...');
+              }
+            } else {
+              updateStatusUI('error', 'Phản hồi lạ.');
+            }
+
+            if (attempts >= maxAttempts) {
+              updateStatusUI('error', 'Hết thời gian chờ.');
+              clearInterval(interval);
+              btnStart.disabled = false;
+            }
+          } catch(e) {
+            updateStatusUI('error', `Ngoại lệ: ${e.message}`);
+            clearInterval(interval);
+            btnStart.disabled = false;
+          }
+        }, 2500);
+
+    } else {
+        updateStatusUI('error', res.error || 'Lỗi không xác định.');
+        btnStart.disabled = false;
+    }
+  } catch(e) {
+    updateStatusUI('error', e.message);
+    btnStart.disabled = false;
+  }
+}
 

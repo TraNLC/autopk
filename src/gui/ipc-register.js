@@ -71,8 +71,8 @@ function registerHandlers(win) {
         traceLog('test-buff', deviceId, `Yeu cau test buff nhanh nhan duoc.`);
         const state = sessionManager.sessions.get(deviceId);
         if (!state || !state.session) {
-            sendLog(`[${deviceId}] Lỗi: Máy chưa kết nối.`, 'error');
-            return { ok: false, error: 'Máy chưa kết nối Frida.' };
+            sendLog(`[${deviceId}] Loi: May chua ket noi.`, 'error');
+            return { ok: false, error: 'May chua ket noi Frida.' };
         }
 
         try {
@@ -110,11 +110,11 @@ function registerHandlers(win) {
                 traceLog('test-buff', deviceId, `Warning goi tin fallback gap loi: ${e.message}`);
             }
             
-            sendLog(`[${deviceId}] ✅ Đã test buff (ID: ${targetSkill})!`, 'success');
+            sendLog(`[${deviceId}] Da test buff (ID: ${targetSkill})!`, 'success');
             traceLog('test-buff', deviceId, `Test buff hoan tat.`);
             return { ok: true, skillId: targetSkill };
         } catch (err) {
-            sendLog(`[${deviceId}] ❌ Lỗi test buff: ${err.message}`, 'error');
+            sendLog(`[${deviceId}] Loi test buff: ${err.message}`, 'error');
             traceLog('test-buff', deviceId, `Loi test buff: ${err.message}`);
             return { ok: false, error: err.message };
         }
@@ -125,7 +125,7 @@ function registerHandlers(win) {
         traceLog('test-cast-skill', deviceId, `Yeu cau test cast skill 9x nhan duoc.`);
         const state = sessionManager.sessions.get(deviceId);
         if (!state || !state.injector || !state.info) {
-            sendLog(`[${deviceId}] Lỗi: Chưa kết nối hoặc chưa có dữ liệu nhân vật.`, 'error');
+            sendLog(`[${deviceId}] Loi: Chua ket noi hoac chua co du lieu nhan vat.`, 'error');
             return { ok: false, error: 'Not ready' };
         }
         
@@ -162,21 +162,43 @@ function registerHandlers(win) {
                 await state.session.callRpc('sendTcpPacket', 240, bodyHex);
             } catch(e) {}
 
-            sendLog(`[${deviceId}] ✅ Đã test skill 9x (ID: ${targetSkill})!`, 'success');
+            sendLog(`[${deviceId}] Da test skill 9x (ID: ${targetSkill})!`, 'success');
             traceLog('test-cast-skill', deviceId, `Test cast skill 9x hoan tat.`);
             return { ok: true, skillId: targetSkill };
         } catch(e) {
-            sendLog(`[${deviceId}] Lỗi test skill: ${e.message}`, 'error');
+            sendLog(`[${deviceId}] Loi test skill: ${e.message}`, 'error');
             traceLog('test-cast-skill', deviceId, `Loi test cast skill 9x: ${e.message}`);
             return { ok: false, error: e.message };
         }
+    });
+
+    ipcMain.handle('perform-auto-login', async (event, deviceId, username, password) => {
+        traceLog('perform-auto-login', deviceId, `Yeu cau auto login tick voi user: ${username}`);
+        const state = sessionManager.sessions.get(deviceId);
+        if (!state || !state.session) return { state: 'ERROR', error: 'May chua ket noi' };
+        try {
+            return await state.session.callRpc('autoLoginTick', username, password);
+        } catch(e) {
+            return { state: 'ERROR', error: e.message };
+        }
+    });
+
+    const { performFullAutoLaunch } = require('../features/full-auto-launch');
+    ipcMain.handle('full-auto-launch', async (event, mumuPath, username, password, port, index) => {
+        traceLog('full-auto-launch', `127.0.0.1:${port}`, `Yeu cau Full Auto voi port ${port}, index ${index}, user ${username}`);
+        return await performFullAutoLaunch(mumuPath, username, password, port, index, (msg, type) => {
+            // Forward logs to frontend
+            if (globalThis._mainWindow && !globalThis._mainWindow.isDestroyed()) {
+                globalThis._mainWindow.webContents.send('tab-log', { msg, type });
+            }
+        });
     });
 
     // 5. NPC test và tương tác
     ipcMain.handle('test-npc-find-by-name', async (event, deviceId, npcName) => {
         traceLog('test-npc-find-by-name', deviceId, `Tim NPC theo ten: "${npcName}"`);
         const state = sessionManager.sessions.get(deviceId);
-        if (!state || !state.session) return { ok: false, error: 'Chưa kết nối' };
+        if (!state || !state.session) return { ok: false, error: 'Chua ket noi' };
         try {
             return await state.session.callRpc('findNpcIdByName', npcName || 'Trinh Sat', 2000);
         } catch(e) { return { ok: false, error: e.message }; }

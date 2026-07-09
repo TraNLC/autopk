@@ -3,7 +3,30 @@ const path = require('path');
 
 module.exports = {
   // === ADB ===
-  ADB_PATH: 'C:\\platform-tools\\adb.exe',
+  ADB_PATH: (() => {
+    const fs = require('fs');
+    const { execSync } = require('child_process');
+    const defaultPath = 'C:\\platform-tools\\adb.exe';
+    if (fs.existsSync(defaultPath)) {
+      return defaultPath;
+    }
+    // Check if adb.exe is placed in the tool's root directory
+    const localRootPath = path.join(__dirname, 'adb.exe');
+    if (fs.existsSync(localRootPath)) {
+      return localRootPath;
+    }
+    // Check if adb.exe is placed in the tools directory
+    const localToolsPath = path.join(__dirname, 'tools', 'adb.exe');
+    if (fs.existsSync(localToolsPath)) {
+      return localToolsPath;
+    }
+    // Check if adb is globally available in the system PATH
+    try {
+      execSync('adb --version', { stdio: 'ignore' });
+      return 'adb';
+    } catch (e) {}
+    return defaultPath; // Fallback
+  })(),
   DEVICE_ID: 'emulator-5554',
   
   // === Game ===

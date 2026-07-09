@@ -44,9 +44,9 @@ function parseShopKeyFromProto(hexStr) {
  * Kết nối thiết bị qua Frida
  */
 async function connectDevice(deviceId, pkgName, sendLog) {
-    traceLog(deviceId, `Đang kết nối thiết bị...`, 'info', sendLog);
+    traceLog(deviceId, `Dang ket noi thiet bi...`, 'info', sendLog);
     if (sessions.has(deviceId)) {
-        traceLog(deviceId, `Thiết bị đã được kết nối trước đó.`, 'warn', sendLog);
+        traceLog(deviceId, `Thiet bi da duoc ket noi truoc do.`, 'warn', sendLog);
         return { ok: true };
     }
 
@@ -55,12 +55,12 @@ async function connectDevice(deviceId, pkgName, sendLog) {
     try {
         ok = await session.connect(pkgName);
     } catch (err) {
-        traceLog(deviceId, `Lỗi kết nối Frida: ${err.message}`, 'error', sendLog);
+        traceLog(deviceId, `Loi ket noi Frida: ${err.message}`, 'error', sendLog);
         return { ok: false, error: err.message };
     }
 
     if (!ok) {
-        traceLog(deviceId, `Lỗi kết nối (game chưa mở?).`, 'error', sendLog);
+        traceLog(deviceId, `Loi ket noi (game chua mo?).`, 'error', sendLog);
         return { ok: false, error: 'Connection failed' };
     }
 
@@ -83,7 +83,7 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                 return;
             }
             if (payload.type === 'il2cpp_ready') {
-                traceLog(deviceId, `Kết nối thành công! (IL2CPP Base: ${payload.base || 'null'})`, 'success');
+                traceLog(deviceId, `Ket noi thanh cong! (IL2CPP Base: ${payload.base || 'null'})`, 'success');
             }
             if (payload.type === 'shop_data') {
                 const shopKey = parseShopKeyFromProto(payload.hex);
@@ -183,7 +183,7 @@ async function connectDevice(deviceId, pkgName, sendLog) {
 
                     // Reset cache khi đổi phe hoặc thoát Tống Kim về thành
                     if (cache.campValue !== currentCamp || (cache.mapId !== null && prevInTK && !currInTK)) {
-                        traceLog(deviceId, `Reset NPC cache: camp ${cache.campValue}→${currentCamp} / map ${cache.mapId}→${currentMapId}`, 'warn', sendLog);
+                        traceLog(deviceId, `Reset NPC cache: camp ${cache.campValue}->${currentCamp} / map ${cache.mapId}->${currentMapId}`, 'warn', sendLog);
                         cache.mapId = currentMapId;
                         cache.campValue = currentCamp;
                         cache.trinhSatId = null;
@@ -301,7 +301,7 @@ async function connectDevice(deviceId, pkgName, sendLog) {
 
                     if (targetId) {
                         const targetTypeName = payload.opcode === 238 ? 'PLAYER' : 'NPC/MONSTER';
-                        traceLog(deviceId, `[FOCUS DETECTED] Đang tấn công ${targetTypeName}: ID = ${targetId} (Kỹ năng: ${skillId})`, 'success');
+                        traceLog(deviceId, `[FOCUS DETECTED] Dang tan cong ${targetTypeName}: ID = ${targetId} (Ky nang: ${skillId})`, 'success');
                     }
                 } catch (e) {
                     console.warn(`[Sniffer Focus Error] Parse target packet failed: ${e.message}`);
@@ -423,7 +423,7 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                                 await state.autoPK.stop();
                             }
                             // Goi autoTongKimLoop de mua thuoc / buff / bao danh vao san
-                            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh);
+                            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh, devCfg.autoThuoc);
                         }
                     } catch (e) {
                         traceLog(deviceId, `Loi trong vong lapa Tong Kim: ${e.message}`, 'error', sendLog);

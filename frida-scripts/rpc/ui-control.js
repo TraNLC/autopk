@@ -7,6 +7,24 @@ function getPopUpCanvasInstanceLocal() {
         globalThis._popUpCanvasInstance = null;
     }
 
+    // 1. Sử dụng static fields pointer đã được cache để đọc trực tiếp (tối ưu hóa tối đa, tránh quét lại)
+    if (globalThis._popUpCanvasStaticFieldsPtr && !globalThis._popUpCanvasStaticFieldsPtr.isNull()) {
+        try {
+            var inst = globalThis._popUpCanvasStaticFieldsPtr.readPointer();
+            if (inst && !inst.isNull() && parseInt(inst.toString()) > 0x10000) {
+                globalThis._popUpCanvasInstance = inst;
+                return inst;
+            }
+        } catch(e) {}
+    }
+
+    // 2. Chỉ thực hiện quét dò tìm class tối đa 1 lần mỗi 5 giây (tránh spam CPU/Disk I/O khi game đang tải)
+    var now = Date.now();
+    if (globalThis._lastCanvasResolveTime && (now - globalThis._lastCanvasResolveTime) < 5000) {
+        return null;
+    }
+    globalThis._lastCanvasResolveTime = now;
+
     console.log("[PopUpCanvas] Resolving PopUpCanvas instance...");
     try {
         var fn_domain_get = Module.findExportByName('libil2cpp.so', 'il2cpp_domain_get');
@@ -30,6 +48,7 @@ function getPopUpCanvasInstanceLocal() {
                         if (klass && !klass.isNull()) {
                             var staticFields = klass.add(0xB8).readPointer();
                             if (staticFields && !staticFields.isNull()) {
+                                globalThis._popUpCanvasStaticFieldsPtr = staticFields; // Cache static fields pointer
                                 var inst = staticFields.readPointer();
                                 if (inst && !inst.isNull() && parseInt(inst.toString()) > 0x10000) {
                                     globalThis._popUpCanvasInstance = inst;
@@ -46,7 +65,7 @@ function getPopUpCanvasInstanceLocal() {
         console.log("[PopUpCanvas] Native IL2CPP resolution error: " + e);
     }
 
-    // Fallback: Dynamic metadata scan
+    // Fallback: Dynamic metadata scan (chạy thưa thớt 5s/lần)
     console.log("[PopUpCanvas] Native lookup failed, attempting dynamic metadata scan...");
     try {
         var pattern = '50 6f 70 55 70 43 61 6e 76 61 73'; // "PopUpCanvas"
@@ -104,6 +123,7 @@ function getPopUpCanvasInstanceLocal() {
                     console.log("[PopUpCanvas] Found class pointer: " + classPtr);
                     var staticFields = classPtr.add(0xB8).readPointer();
                     if (staticFields && !staticFields.isNull()) {
+                        globalThis._popUpCanvasStaticFieldsPtr = staticFields; // Cache static fields pointer
                         var inst = staticFields.readPointer();
                         if (inst && !inst.isNull() && parseInt(inst.toString()) > 0x10000) {
                             globalThis._popUpCanvasInstance = inst;
@@ -198,21 +218,21 @@ rpc.exports.closeDialogPopups = function() {
             if (canvas && !canvas.isNull()) {
                 try {
                     var npcDialogPc = canvas.add(0x128).readPointer();
-                    if (npcDialogPc && !npcDialogPc.isNull() && npcDialogPc.add(0xA0).readU8() === 1) {
+                    if (npcDialogPc && !npcDialogPc.isNull()) {
                         var closeFn = new NativeFunction(il2cppBase.add(0xE82838), 'void', ['pointer']);
                         closeFn(npcDialogPc);
                     }
                 } catch(e) {}
                 try {
                     var npcDialog10Pc = canvas.add(0x130).readPointer();
-                    if (npcDialog10Pc && !npcDialog10Pc.isNull() && npcDialog10Pc.add(0x78).readU8() === 1) {
+                    if (npcDialog10Pc && !npcDialog10Pc.isNull()) {
                         var closeFn = new NativeFunction(il2cppBase.add(0xE80744), 'void', ['pointer']);
                         closeFn(npcDialog10Pc);
                     }
                 } catch(e) {}
                 try {
                     var npcDialogInfiPc = canvas.add(0x138).readPointer();
-                    if (npcDialogInfiPc && !npcDialogInfiPc.isNull() && npcDialogInfiPc.add(0x88).readU8() === 1) {
+                    if (npcDialogInfiPc && !npcDialogInfiPc.isNull()) {
                         var closeFn = new NativeFunction(il2cppBase.add(0xE816A0), 'void', ['pointer']);
                         closeFn(npcDialogInfiPc);
                     }
@@ -413,3 +433,144 @@ setInterval(function() {
         } catch(e) {}
     }
 }, 200);
+
+rpc.exports.autoLoginTick = function(username, password) {
+    if (typeof Il2Cpp === 'undefined') return { state: 'ERROR', error: 'no il2cpp' };
+    return Il2Cpp.perform(function () {
+        try {
+            var Res = Il2Cpp.domain.assembly('UnityEngine.CoreModule').image.class('UnityEngine.Resources');
+            var findM = Res.method('FindObjectsOfTypeAll', 1);
+
+            // 1. Check if already in game
+            var PlayerMainClass = Il2Cpp.domain.assembly('Assembly-CSharp').image.class('PlayerMain');
+            if (PlayerMainClass) {
+                var players = findM.invoke(PlayerMainClass.type.object);
+                for (var p = 0; p < players.length; p++) {
+                    var pGo = players.get(p).method('get_gameObject').invoke();
+                    if (pGo.method('get_activeInHierarchy').invoke()) {
+                        return { state: 'STATE_IN_GAME', msg: 'Đã vào game thành công!' };
+                    }
+                }
+            }
+
+            var checkTextAndClick = function(textKeyword1, textKeyword2) {
+                var invokeClick = function(inst) {
+                    var btnKlass = Il2Cpp.domain.assembly('UnityEngine.UI').image.class('UnityEngine.UI.Button');
+                    var btn = inst.method('GetComponentInParent', 1).invoke(btnKlass.type.object);
+                    if (btn) {
+                        try { btn.method('onClick').invoke().method('Invoke').invoke(); } catch(e){}
+                        return true;
+                    }
+                    return false;
+                };
+
+                // Check TMPro
+                try {
+                    var tmproKlass = Il2Cpp.domain.assembly('Unity.TextMeshPro').image.class('TMPro.TextMeshProUGUI');
+                    if (tmproKlass) {
+                        var arr = findM.invoke(tmproKlass.type.object);
+                        for (var i = 0; i < arr.length; i++) {
+                            var inst = arr.get(i);
+                            var go = inst.method('get_gameObject').invoke();
+                            if (go.method('get_activeInHierarchy').invoke()) {
+                                var t = inst.method('get_text').invoke().toString().toLowerCase();
+                                if (t.indexOf(textKeyword1) !== -1 || (textKeyword2 && t.indexOf(textKeyword2) !== -1)) {
+                                    if (invokeClick(inst)) return true;
+                                }
+                            }
+                        }
+                    }
+                } catch(e){}
+
+                // Check UnityEngine.UI.Text
+                try {
+                    var txtKlass = Il2Cpp.domain.assembly('UnityEngine.UI').image.class('UnityEngine.UI.Text');
+                    if (txtKlass) {
+                        var arr = findM.invoke(txtKlass.type.object);
+                        for (var i = 0; i < arr.length; i++) {
+                            var inst = arr.get(i);
+                            var go = inst.method('get_gameObject').invoke();
+                            if (go.method('get_activeInHierarchy').invoke()) {
+                                var t = inst.method('get_text').invoke().toString().toLowerCase();
+                                if (t.indexOf(textKeyword1) !== -1 || (textKeyword2 && t.indexOf(textKeyword2) !== -1)) {
+                                    if (invokeClick(inst)) return true;
+                                }
+                            }
+                        }
+                    }
+                } catch(e){}
+
+                // Check button names
+                try {
+                    var btnClass = Il2Cpp.domain.assembly('UnityEngine.UI').image.class('UnityEngine.UI.Button');
+                    if (btnClass) {
+                        var btnArr = findM.invoke(btnClass.type.object);
+                        for (var k = 0; k < btnArr.length; k++) {
+                            var btn = btnArr.get(k);
+                            var btnGo = btn.method('get_gameObject').invoke();
+                            if (btnGo.method('get_activeInHierarchy').invoke()) {
+                                var name = btnGo.method('get_name').invoke().toString().toLowerCase();
+                                if (name.indexOf(textKeyword1) !== -1 || (textKeyword2 && name.indexOf(textKeyword2) !== -1)) {
+                                    btn.method('onClick').invoke().method('Invoke').invoke();
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                } catch(e){}
+                return false;
+            };
+
+            // 2. Check for InputFields
+            var inputs = [];
+            var getInputs = function(klassName, asmName) {
+                try {
+                    var klass = Il2Cpp.domain.assembly(asmName).image.class(klassName);
+                    if (klass) {
+                        var arr = findM.invoke(klass.type.object);
+                        for (var i = 0; i < arr.length; i++) {
+                            var inst = arr.get(i);
+                            var go = inst.method('get_gameObject').invoke();
+                            if (go.method('get_activeInHierarchy').invoke()) inputs.push(inst);
+                        }
+                    }
+                } catch(e){}
+            };
+            getInputs('UnityEngine.UI.InputField', 'UnityEngine.UI');
+            getInputs('TMPro.TMP_InputField', 'Unity.TextMeshPro');
+
+            if (inputs.length >= 2 && username && password) {
+                var userField = inputs[0], passField = inputs[1];
+                try { userField.method('set_text').invoke(Il2Cpp.string(username)); } 
+                catch(e) { try { userField.field('m_Text').set(Il2Cpp.string(username)); } catch(e2){} }
+                try { passField.method('set_text').invoke(Il2Cpp.string(password)); } 
+                catch(e) { try { passField.field('m_Text').set(Il2Cpp.string(password)); } catch(e2){} }
+                
+                checkTextAndClick('đăng nhập', 'login');
+                return { state: 'STATE_FILLED_LOGIN', msg: 'Đã điền thông tin và bấm Đăng Nhập.' };
+            }
+
+            // 3. Popup Đăng Nhập / Tạo Tài Khoản
+            // We click Đăng Nhập here if found
+            // But wait, "đăng nhập" could match both popup and main form. That's fine.
+            if (checkTextAndClick('đăng nhập', 'đăng nhập')) {
+                return { state: 'STATE_CLICKED_LOGIN_POPUP', msg: 'Đã mở bảng Đăng Nhập.' };
+            }
+
+            // 4. Vào trò chơi
+            if (checkTextAndClick('vào trò chơi', 'enter')) {
+                return { state: 'STATE_ENTERED_GAME', msg: 'Đang kết nối vào game...' };
+            }
+
+            // 5. Nút Tài khoản ở góc
+            if (checkTextAndClick('tài khoản', 'account')) {
+                return { state: 'STATE_CLICKED_ACCOUNT_ICON', msg: 'Đang mở menu Tài khoản...' };
+            }
+
+            return { state: 'STATE_UNKNOWN', msg: 'Đang chờ load màn hình hoặc không nhận diện được giao diện...' };
+        } catch(e) {
+            return { state: 'ERROR', error: e.message || String(e) };
+        }
+    });
+};
+

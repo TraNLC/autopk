@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('api', {
   npcInteract: (deviceId, npcId) => ipcRenderer.invoke('npc-interact', deviceId, npcId),
   npcSelectOption: (deviceId, index) => ipcRenderer.invoke('npc-select-option', deviceId, index),
   collectPoints: (deviceId) => ipcRenderer.invoke('collect-points', deviceId),
+  performAutoLogin: (deviceId, username, password) => ipcRenderer.invoke('perform-auto-login', deviceId, username, password),
+  performFullAutoLaunch: (mumuPath, username, password, port, index) => ipcRenderer.invoke('full-auto-launch', mumuPath, username, password, port, index),
   onScanDatauProgress: (callback) => ipcRenderer.on('datau-progress', (event, msg) => callback(msg)),
   
   // Event listeners

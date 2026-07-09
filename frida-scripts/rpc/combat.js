@@ -56,44 +56,7 @@ rpc.exports.doSkillHooked = function(skillId) {
     }
 };
 
-rpc.exports.skillLastFire = function() {
-    return { fire: globalThis._skillLastFire || '(chua ban)' };
-};
 
-rpc.exports.doSkillDefaultHooked = function(skillId) {
-    // Basic attack is mapped to DoSkill(skillId) natively
-    return rpc.exports.doSkillHooked(skillId || 1);
-};
-
-rpc.exports.defLast = function() {
-    return { last: globalThis._skillLastFire || '(chua)' };
-};
-
-rpc.exports.attackPlayerHooked = function(cid, skillId, isPhysic, dismount) {
-    var pmRes = readPlayerMainDirect();
-    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
-    if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
-
-    try {
-        // Switch horse if dismount is requested
-        if (dismount) {
-            var isHorseEquippedFn = new NativeFunction(il2cppBase.add(0xE46220), 'bool', ['pointer']);
-            var playerSwitchHorseFn = new NativeFunction(il2cppBase.add(0xE493F4), 'void', ['pointer']);
-            if (isHorseEquippedFn(_playerMainInstance)) {
-                playerSwitchHorseFn(_playerMainInstance);
-            }
-        }
-        
-        // Execute skill targeting active opponent
-        return rpc.exports.doSkillHooked(skillId);
-    } catch (e) {
-        return { ok: false, error: 'Attack player failed: ' + e };
-    }
-};
-
-rpc.exports.pkLast = function() {
-    return { last: globalThis._skillLastFire || '(chua)' };
-};
 
 // --- Clear Focus ---
 // Target.Clear() @ 0xF20280 KHÔNG hoạt động (tested).

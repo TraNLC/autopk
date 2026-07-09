@@ -49,7 +49,7 @@ async function checkAndBaoDanhStaging(deviceId, session, info, sideConfig, sendL
             npcMap = res.npcMap;
         }
     } catch(e) {
-        sendLog(`[${deviceId}] [Báo Danh] Không thể quét danh sách NPC: ${e.message}`, 'error');
+        sendLog(`[${deviceId}] [Bao Danh] Khong the quet danh sach NPC: ${e.message}`, 'error');
         return false;
     }
 
@@ -80,7 +80,7 @@ async function checkAndBaoDanhStaging(deviceId, session, info, sideConfig, sendL
         return false; 
     }
 
-    sendLog(`[${deviceId}] [Báo Danh] Đến giờ báo danh (${hourMinute}). Phát hiện NPC ${npcName} (ID: ${npcId}). Đang tiến hành báo danh...`, 'warn');
+    sendLog(`[${deviceId}] [Bao Danh] Den gio bao danh (${hourMinute}). Phat hien NPC ${npcName} (ID: ${npcId}). Dang tien hanh bao danh...`, 'warn');
     
     const injector = new PacketInjector(session);
     try {
@@ -95,11 +95,11 @@ async function checkAndBaoDanhStaging(deviceId, session, info, sideConfig, sendL
 
         try { await session.callRpc('closeDialogPopups'); } catch(e) {}
 
-        sendLog(`[${deviceId}] [Báo Danh] Đã gửi lệnh báo danh thành công.`, 'success');
+        sendLog(`[${deviceId}] [Bao Danh] Da gui lenh bao danh thanh cong.`, 'success');
         registrationAttempts.set(deviceId, hourMinute);
         return true;
     } catch(e) {
-        sendLog(`[${deviceId}] [Báo Danh] Lỗi tương tác NPC báo danh: ${e.message}`, 'error');
+        sendLog(`[${deviceId}] [Bao Danh] Loi tuong tac NPC bao danh: ${e.message}`, 'error');
         return false;
     }
 }

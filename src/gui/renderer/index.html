@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
   <meta charset="UTF-8">
   <title>GST Auto TK ver 1.0</title>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
   <!-- TOP: DataGridView (Table) -->
@@ -30,85 +32,88 @@
   <!-- MIDDLE: TabControl -->
   <div class="tab-control">
     <div class="tab-headers">
-      <button class="tab-btn active" data-tab="tab-tongkim">Tống Kim</button>
-      <button class="tab-btn" data-tab="tab-pk">Setting</button>
-      <button class="tab-btn" data-tab="tab-datau">Tìm Dã Tẩu</button>
-      <button class="tab-btn" data-tab="tab-5hanh">Phối Đồ Ngũ Hành</button>
-      <button class="tab-btn" data-tab="tab-testnpc">Test NPC</button>
+      <button class="tab-btn active" data-tab="tab-tongkim">ĐIỀU KHIỂN</button>
+      <button class="tab-btn" data-tab="tab-pk">TIỆN ÍCH</button>
+      <button class="tab-btn" data-tab="tab-datau">TÌM DÃ TẨU</button>
+      <button class="tab-btn" data-tab="tab-5hanh">NGŨ HÀNH</button>
+      <button class="tab-btn" data-tab="tab-login">TÀI KHOẢN</button>
     </div>
-    
+
     <div class="tab-content">
       <!-- TAB: Tống Kim -->
       <div id="tab-tongkim" class="tab-pane active">
         <div class="tab-pane-header">
-          <span class="tab-title">Cấu hình Tống Kim</span>
-        </div>
-        
-        <div class="groupbox" style="margin-top: 15px;">
-          <span class="groupbox-title">Tự động Ra Trận (Toàn cục)</span>
-          <div class="groupbox-content">
-            <label><input type="checkbox" id="pk-fight-switch"> Bật Auto Tống Kim</label>
-            <div style="font-size: 10px; color: #666; margin-top: 4px;">Tick vào Nhân vật ở bảng trên để bật/tắt Auto riêng lẻ. Bấm vào Tên để cài Lắc.</div>
-          </div>
+          <span class="tab-title">Trang Thai Auto Tong Kim</span>
         </div>
 
-        <div class="groupbox" style="margin-top: 15px;">
-          <span class="groupbox-title">Cài đặt Cụ thể (Chọn NV ở trên)</span>
+        <div style="margin-top: 15px; display: flex; justify-content: center;">
+          <button id="btn-toggle-auto-tk" class="start-btn"
+            style="width: 100%; padding: 12px; font-size: 14px; font-weight: bold; border: none; border-radius: 4px; color: white; background-color: #27ae60; cursor: pointer; transition: background-color 0.2s;">BAT
+            DAU AUTO TONG KIM</button>
+        </div>
+        <div style="font-size: 10px; color: #666; margin-top: 6px; text-align: center;">Tick chon vao o # o bang tren de
+          bat/tat Auto rieng le tung acc.</div>
+
+        <!-- Log box inside Tống Kim tab -->
+        <div style="font-weight: bold; margin-top: 20px; margin-bottom: 5px; color: #0066cc;" id="lbl-log-title">Nhat ky
+          hoat dong: He thong</div>
+        <div class="log-container" id="global-log-container" style="margin-top: 5px;"></div>
+      </div>
+
+      <!-- TAB: Setting -->
+      <div id="tab-pk" class="tab-pane">
+        <div class="tab-pane-header">
+          <span class="tab-title">Cau Hinh Nhan Vat & Tan Cong</span>
+        </div>
+
+        <div class="groupbox" style="margin-top: 10px;">
+          <span class="groupbox-title">Cai dat nhan vat (Chon NV o bang tren)</span>
           <div class="groupbox-content">
-            <div style="margin-bottom: 5px;">Nhân vật: <strong id="lbl-selected-acc" style="color: blue;">Chưa chọn</strong></div>
-            <div id="acc-settings-panel" style="display: none; padding-top: 5px; border-top: 1px solid #ccc;">
-              <div style="margin-bottom: 5px;">
-                <label style="display:inline-block; width:40px;">Phe:</label>
-                <select id="sel-side" style="width: 100px;">
+            <div style="margin-bottom: 8px; font-size: 12px;">Nhan vat: <strong id="lbl-selected-acc"
+                style="color: blue;">Chua chon</strong></div>
+            <div id="acc-settings-panel" style="padding-top: 5px; border-top: 1px solid #ccc;">
+              <div style="margin-bottom: 8px;">
+                <label style="display:inline-block; width:60px;">Phe:</label>
+                <select id="sel-side" style="width: 120px; padding: 2px;">
                   <option value="auto">Tự động</option>
                   <option value="song">Tống</option>
                   <option value="jin">Kim</option>
                 </select>
               </div>
-              <div style="margin-bottom: 10px;">
+              <div style="margin-bottom: 8px;">
                 <label><input type="checkbox" id="chk-auto-baodanh" checked> Tự động Báo Danh vào Sân</label>
               </div>
-              <div style="margin-top: 8px;">
-                <button id="btn-save-acc" style="width:100%; padding: 6px; font-weight: bold; background-color: #0078d7; color: white; border: none; border-radius: 4px; cursor: pointer;">Lưu Cấu Hình</button>
+              <div style="border-top: 1px dashed #ccc; margin: 8px 0; padding-top: 8px;">
+                <div style="font-weight: bold; margin-bottom: 5px; color: #0066cc;">Sử dụng Lắc (Hỗ trợ)</div>
+                <label><input type="checkbox" id="chk-lac1" value="45"> Phi Tốc Hoàn</label><br>
+                <label><input type="checkbox" id="chk-lac2" value="51"> Lệnh Bài</label><br>
+                <label><input type="checkbox" id="chk-lac3" value="50"> Chiến Cổ</label><br>
+                <label><input type="checkbox" id="chk-auto-thuoc" checked> Nhận Thuốc Miễn Phí (Quân Nhu)</label>
+              </div>
+              <div style="margin-top: 10px;">
+                <button id="btn-save-acc"
+                  style="width:100%; padding: 8px; font-weight: bold; background-color: #0078d7; color: white; border: none; border-radius: 4px; cursor: pointer;">Lưu
+                  Cấu Hình Nhân Vật</button>
               </div>
             </div>
           </div>
         </div>
-        <!-- Log box inside Tống Kim tab -->
-        <div class="log-container" id="global-log-container" style="margin-top: 15px;"></div>
-      </div>
-      
-      <!-- TAB: Setting -->
-      <div id="tab-pk" class="tab-pane">
-        <div class="tab-pane-header">
-          <span class="tab-title">Cài Đặt Tấn Công & Gom Điểm</span>
-        </div>
-        
-        <div class="groupbox" style="margin-top: 15px;">
-          <span class="groupbox-title">Tiêu chí tấn công</span>
-          <div class="groupbox-content">
-            <label><input type="radio" name="rad-criteria" value="nearest" checked> Đối đối thủ gần nhất (ưu tiên khắc hệ)</label>
-          </div>
-        </div>
 
         <div class="groupbox" style="margin-top: 15px;">
-          <span class="groupbox-title">Sử dụng Lắc (Hỗ trợ)</span>
+          <span class="groupbox-title">Tiêu chí tấn công (Toàn cục)</span>
           <div class="groupbox-content">
-            <label><input type="checkbox" id="chk-lac1" value="45"> Phi Tốc Hoàn</label><br>
-            <label><input type="checkbox" id="chk-lac2" value="51"> Lệnh Bài</label><br>
-            <label><input type="checkbox" id="chk-lac3" value="50"> Chiến Cổ</label>
+            <label><input type="radio" name="rad-criteria" value="nearest" checked> Đối đối thủ gần nhất (ưu tiên khắc
+              hệ)</label>
           </div>
         </div>
 
         <div class="groupbox" style="margin-top: 15px;">
           <span class="groupbox-title">Gom Điểm Tích Lũy Tống Kim</span>
           <div class="groupbox-content">
-            <button id="btn-collect-points" style="width:100%; padding: 8px; font-weight: bold; background-color: #2980b9; color: white; border: none; border-radius: 4px; cursor: pointer;">Gom Điểm Tích Lũy (Map 324)</button>
+            <button id="btn-collect-points"
+              style="width:100%; padding: 8px; font-weight: bold; background-color: #2980b9; color: white; border: none; border-radius: 4px; cursor: pointer;">Gom
+              Điểm Tích Lũy (Map 324)</button>
           </div>
-        </div>
-
-        <div style="margin-top: 15px;">
-          <button id="btn-save-pk" style="width:100%; padding: 8px; font-weight: bold; background-color: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer;">Lưu Cấu Hình Tấn Công</button>
         </div>
       </div>
 
@@ -117,79 +122,102 @@
         <div class="tab-pane-header">
           <span class="tab-title">Quét Sạp Người Chơi (Tìm đồ Dã Tẩu)</span>
         </div>
-        
-        <div style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
-          <p style="margin-bottom: 10px; color: #555;">Nhấn nút bên dưới để quét sạp hàng xung quanh. Dữ liệu sẽ hiển thị trong một cửa sổ chi tiết mới.</p>
+        <div style="margin-bottom: 10px; font-size: 11.5px; font-weight: bold;">Nhan vat quet: <strong
+            class="lbl-selected-acc-global" style="color: #0078d7;">Chua chon</strong></div>
+
+        <div
+          style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
+          <p style="margin-bottom: 10px; color: #555;">Nhấn nút bên dưới để quét sạp hàng xung quanh. Dữ liệu sẽ hiển
+            thị trong một cửa sổ chi tiết mới.</p>
           <div style="margin-bottom: 10px;">
-            <label for="num-shops-to-scan" style="font-size: 13px;">Số lượng sạp tối đa:</label>
-            <input type="number" id="num-shops-to-scan" value="50" min="1" max="500" style="width: 60px; padding: 3px; margin-right: 10px;">
+            <label for="txt-datau-keyword" style="font-size: 13px;">Từ khóa vật phẩm:</label>
+            <input type="text" id="txt-datau-keyword" placeholder="Ví dụ: Lam Bảo Rương"
+              style="width: 150px; padding: 3px; margin-right: 15px;">
+
+            <label for="num-shops-to-scan" style="font-size: 13px;">Số sạp tối đa:</label>
+            <input type="number" id="num-shops-to-scan" value="50" min="1" max="500"
+              style="width: 60px; padding: 3px; margin-right: 10px;">
           </div>
-          <button id="btn-scan-datau" style="padding: 8px 30px; font-weight: bold; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Quét Tìm Sạp</button>
+          <button id="btn-scan-datau"
+            style="padding: 8px 30px; font-weight: bold; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Quét
+            Tìm Sạp</button>
         </div>
-        
-        <div id="datau-status-container" style="height: 50px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
+
+        <div id="datau-status-container"
+          style="height: 50px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
           <span id="datau-loading-text" style="color: #888; font-style: italic;">Sẵn sàng quét...</span>
         </div>
       </div>
-      
+
       <!-- TAB: Phối Đồ Ngũ Hành -->
       <div id="tab-5hanh" class="tab-pane">
         <div class="tab-pane-header">
           <span class="tab-title">Xây Dựng Đồ Ngũ Hành (Lọc Trang Bị)</span>
         </div>
-        
-        <div style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
-          <p style="margin-bottom: 10px; color: #555;">Quét toàn bộ sạp hàng để phân loại trang bị thành bộ Ngũ Hành 5 món hoàn chỉnh.</p>
-          <button id="btn-scan-5hanh" style="padding: 8px 30px; font-weight: bold; background-color: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Quét & Phối Đồ Ngũ Hành</button>
+        <div style="margin-bottom: 10px; font-size: 11.5px; font-weight: bold;">Nhan vat quet: <strong
+            class="lbl-selected-acc-global" style="color: #0078d7;">Chua chon</strong></div>
+
+        <div
+          style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
+          <p style="margin-bottom: 10px; color: #555;">Quét toàn bộ sạp hàng để phân loại trang bị thành bộ Ngũ Hành 5
+            món hoàn chỉnh.</p>
+          <button id="btn-scan-5hanh"
+            style="padding: 8px 30px; font-weight: bold; background-color: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Quét
+            & Phối Đồ Ngũ Hành</button>
         </div>
-        
-        <div id="5hanh-status-container" style="height: 50px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
+
+        <div id="5hanh-status-container"
+          style="height: 50px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
           <span id="5hanh-loading-text" style="color: #888; font-style: italic;">Sẵn sàng phối đồ...</span>
         </div>
       </div>
 
-      <!-- TAB: Test NPC -->
-      <div id="tab-testnpc" class="tab-pane">
+      <!-- TAB: Tài Khoản -->
+      <div id="tab-login" class="tab-pane">
         <div class="tab-pane-header">
-          <span class="tab-title">Kiểm Tra & Tương Tác NPC</span>
-        </div>
-        
-        <div class="groupbox" style="margin-top: 15px;">
-          <span class="groupbox-title">1. Quét NPC Xung Quanh (Get NPC)</span>
-          <div class="groupbox-content">
-            <button id="btn-get-npc" style="padding: 6px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">Quét & Lấy Danh Sách NPC</button>
-            <div id="result-get-npc" style="margin-top: 8px; font-size: 11px; color: #333; background: #f5f5f5; border: 1px solid #ddd; padding: 6px; border-radius: 4px; max-height: 150px; overflow-y: auto; font-family: monospace; white-space: pre-wrap;">Chưa quét</div>
-          </div>
+          <span class="tab-title">Cấu hình Đăng Nhập Tự Động</span>
         </div>
 
-        <div class="groupbox" style="margin-top: 15px;">
-          <span class="groupbox-title">2. Tương Tác NPC (Interact)</span>
-          <div class="groupbox-content">
-            <div style="display: flex; gap: 5px;">
-              <input type="text" id="txt-interact-npc-id" placeholder="Nhập ID NPC (VD: 27)" style="flex: 1; padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
-              <button id="btn-interact-npc" style="padding: 6px 15px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Tương Tác</button>
+        <div class="login-card">
+          <div class="login-header">
+            <span>Cấu hình MuMu Player & Danh sách Tài Khoản</span>
+          </div>
+
+          <div class="login-body">
+            <label for="txt-mumu-path" class="input-label">Đường dẫn MuMuManager.exe (MuMu 12)</label>
+            <input type="text" id="txt-mumu-path" class="modern-input"
+              value="C:\Program Files\Netease\MuMuPlayer-12.0\shell\MuMuManager.exe"
+              style="width: 100%; margin-bottom: 15px;">
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+              <span class="input-label" style="margin: 0;">Danh sách Tài Khoản (Slot 1 = Giả lập số 0)</span>
+              <div>
+                <button id="btn-add-acc-row" style="padding: 4px 8px; font-size: 11px; font-weight: bold; background-color: #f39c12; color: white; border: none; border-radius: 3px; cursor: pointer;">➕ Thêm</button>
+                <button id="btn-import-acc" style="padding: 4px 8px; font-size: 11px; font-weight: bold; background-color: #27ae60; color: white; border: none; border-radius: 3px; cursor: pointer;">📋 Dán từ Excel</button>
+              </div>
             </div>
-            <div id="result-interact-npc" style="margin-top: 8px; font-size: 12px; color: #666;">Chưa tương tác</div>
-          </div>
-        </div>
 
-        <div class="groupbox" style="margin-top: 15px;">
-          <span class="groupbox-title">3. Chọn Option Dialog khi hiện thoại</span>
-          <div class="groupbox-content">
-            <div style="display: flex; gap: 5px;">
-              <input type="number" id="num-dialog-option" placeholder="Chỉ mục option (VD: 0)" min="0" max="10" style="flex: 1; padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
-              <button id="btn-select-dialog-option" style="padding: 6px 15px; background: #e67e22; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Chọn Option</button>
+            <div class="datagrid-container" style="height: 220px; border: 1px solid #ddd; margin-bottom: 10px;">
+              <table class="datagrid" id="acc-table">
+                <thead>
+                  <tr>
+                    <th width="40">Slot</th>
+                    <th>Tài khoản</th>
+                    <th>Mật khẩu</th>
+                    <th width="70">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="acc-table-body">
+                  <!-- JS will populate -->
+                </tbody>
+              </table>
             </div>
-            <div id="result-select-dialog-option" style="margin-top: 8px; font-size: 12px; color: #666;">Chưa chọn</div>
           </div>
         </div>
 
-        <div class="groupbox" style="margin-top: 15px;">
-          <span class="groupbox-title">4. Thử nghiệm Kỹ năng (Skill Test)</span>
-          <div class="groupbox-content">
-            <button id="btn-test-buff" style="width:100%; padding: 6px; font-weight: bold; background: linear-gradient(135deg, #f39c12 0%, #d35400 100%); color: white; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 5px;">✨ Test Buff Nhanh</button>
-            <button id="btn-test-cast" style="width:100%; padding: 6px; font-weight: bold; background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; border: none; border-radius: 4px; cursor: pointer;">⚡ Test Cast Skill Nhanh</button>
-          </div>
+        <div id="login-status-card" class="status-card" style="display: none;">
+          <div class="status-title">Tiến trình Full Auto:</div>
+          <div id="lbl-login-status" class="status-message">Đang chờ...</div>
         </div>
       </div>
     </div>
@@ -197,16 +225,16 @@
 
   <!-- BOTTOM: StatusBar -->
   <div class="status-bar">
-    <div class="status-left">
-      👤 Auto Account
+    <div class="bottom-left" style="color: #666; font-weight: bold; padding-left: 5px;">
+      ✅ GST Auto PK
     </div>
-    <div class="status-right">
-      <button id="btn-refresh" class="icon-btn" title="Làm mới list">🔄</button>
-      <button id="btn-restart" class="icon-btn" title="Khởi động lại kết nối">🔌</button>
-      <button class="icon-btn" title="Lưu">💾</button>
+    <div class="bottom-right">
+      <button id="btn-refresh" class="icon-btn" title="Làm mới thiết bị">🔄</button>
+      <button id="btn-restart" class="icon-btn" title="Cài đặt">⚙</button>
     </div>
   </div>
 
   <script src="app.js"></script>
 </body>
+
 </html>
