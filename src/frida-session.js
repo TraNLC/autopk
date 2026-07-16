@@ -121,6 +121,15 @@ class FridaSession {
     }
 
     if (!pid) {
+      console.log(`[Frida] Game is not running on ${this.deviceId}. Starting game automatically...`);
+      adb.startGame(this.deviceId);
+      const launched = await adb.waitForGame(this.deviceId, 30000);
+      if (launched) {
+        pid = this._getGamePid();
+      }
+    }
+
+    if (!pid) {
       throw new Error(`Game package ${this.packageName} (VLTieuNgao) not found or not running. Please start the game.`);
     }
 

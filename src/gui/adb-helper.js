@@ -119,20 +119,21 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             devices.push({ id: deviceId, name: deviceId });
         }
 
-        // Filter: only keep devices where the game is actually running, and deduplicate by Android ID
-        console.log(`[TRACE] [ADB-Helper] Step 5: Loc va khu trung lap thiet bi dang chay game...`);
+        // Filter and deduplicate by Android ID
+        console.log(`[TRACE] [ADB-Helper] Step 5: Loc va khu trung lap thiet bi...`);
         const gamePkg = config.GAME_PACKAGE || 'vn.perfingame.jx1mobile';
         const validDevices = [];
-        const seenAndroidIds = new Set();
         
         const checkResults = await Promise.all(devices.map(async (dev) => {
             const pidRes = await execAsync(`"${adbPath}" -s ${dev.id} shell pidof ${gamePkg}`);
             const isRunning = !pidRes.error && pidRes.stdout.trim() && /^\d+/.test(pidRes.stdout.trim());
             
             let androidId = '';
-            if (isRunning) {
+            try {
                 const idRes = await execAsync(`"${adbPath}" -s ${dev.id} shell settings get secure android_id`);
                 androidId = idRes.stdout.trim() || dev.id;
+            } catch (e) {
+                androidId = dev.id;
             }
             
             return { dev, isRunning, androidId };
@@ -144,13 +145,11 @@ async function scanDevices(adbPath, execAsync, sendLog) {
         // We want to keep all 5-digit ports, and only keep 4-digit ports if there are no 5-digit ports for that Android ID.
         const groups = new Map(); // androidId -> [checkResult]
         for (const r of checkResults) {
-            if (r.isRunning && r.androidId) {
+            if (r.androidId) {
                 if (!groups.has(r.androidId)) {
                     groups.set(r.androidId, []);
                 }
                 groups.get(r.androidId).push(r);
-            } else {
-                console.log(`[TRACE] [ADB-Helper] Loai bo thiet bi khong chay game: ${r.dev.id}`);
             }
         }
 
@@ -167,13 +166,13 @@ async function scanDevices(adbPath, execAsync, sendLog) {
                 if (has5Digit && !is5Digit) {
                     console.log(`[TRACE] [ADB-Helper] Loai bo cong guest duplicate (cung Android ID: ${androidId}): ${r.dev.id}`);
                 } else {
-                    console.log(`[TRACE] [ADB-Helper] Chap nhan thiet bi co game chay: ${r.dev.id} (Android ID: ${androidId})`);
+                    console.log(`[TRACE] [ADB-Helper] Chap nhan thiet bi: ${r.dev.id} (Android ID: ${androidId}, Game dang chay: ${r.isRunning})`);
                     validDevices.push(r.dev);
                 }
             }
         }
 
-        sendLog(`Tim thay ${validDevices.length} gia lap co game dang chay (quet ${SCAN_START}-${SCAN_END}).`, 'info');
+        sendLog(`Tim thay ${validDevices.length} gia lap (quet ${SCAN_START}-${SCAN_END}).`, 'info');
         console.log(`[TRACE] [ADB-Helper] Quet thiet bi hoan tat. So luong: ${validDevices.length}`);
         return { ok: true, devices: validDevices };
     } catch (err) {
