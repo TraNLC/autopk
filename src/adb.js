@@ -40,7 +40,7 @@ function listDevices() {
   const devices = [];
   for (const line of lines) {
     const parts = line.trim().split(/\s+/);
-    if (parts.length >= 2 && parts[1] === 'device') {
+    if (parts.length >= 2) {
       devices.push({ id: parts[0], status: parts[1] });
     }
   }
@@ -54,6 +54,7 @@ function listDevices() {
 function detectDevice() {
   const devices = listDevices();
   for (const d of devices) {
+    if (d.status !== 'device') continue;
     const pid = getGamePid(d.id);
     if (pid) {
       console.log(`[ADB] Auto-detected device: ${d.id} (game PID ${pid})`);
@@ -71,6 +72,7 @@ function detectDevices() {
   const devices = listDevices();
   const result = [];
   for (const d of devices) {
+    if (d.status !== 'device') continue;
     const pid = getGamePid(d.id);
     if (pid) {
       console.log(`[ADB] Found: ${d.id} (game PID ${pid})`);
@@ -169,6 +171,30 @@ function startFridaServer(deviceId) {
       console.log(`[ADB] frida-server is already running on ${deviceId}`);
       return true;
     }
+
+    // Check and push frida-server if missing on the emulator
+    const checkFile64 = adbDeviceShell(deviceId, 'ls /data/local/tmp/frida-server-x86_64');
+    if (checkFile64.includes('No such file') || !checkFile64.includes('frida-server-x86_64')) {
+      const path = require('path');
+      const fs = require('fs');
+      const local64 = path.join(config.TOOLS_DIR, 'frida-server-x86_64');
+      if (fs.existsSync(local64)) {
+        console.log(`[ADB] Pushing frida-server-x86_64 to ${deviceId}...`);
+        execFileSync(ADB, ['-s', deviceId, 'push', local64, '/data/local/tmp/frida-server-x86_64'], { timeout: 10000, windowsHide: true });
+      }
+    }
+
+    const checkFile32 = adbDeviceShell(deviceId, 'ls /data/local/tmp/frida-server');
+    if (checkFile32.includes('No such file') || !checkFile32.includes('frida-server')) {
+      const path = require('path');
+      const fs = require('fs');
+      const local32 = path.join(config.TOOLS_DIR, 'frida-server');
+      if (fs.existsSync(local32)) {
+        console.log(`[ADB] Pushing frida-server (x86) to ${deviceId}...`);
+        execFileSync(ADB, ['-s', deviceId, 'push', local32, '/data/local/tmp/frida-server'], { timeout: 10000, windowsHide: true });
+      }
+    }
+
     console.log(`[ADB] Starting frida-server on ${deviceId}...`);
     // Cấp quyền thực thi
     adbDeviceShell(deviceId, 'su -c "chmod +x /data/local/tmp/frida-server*"', 2000);
@@ -184,6 +210,47 @@ function startFridaServer(deviceId) {
   } catch (e) {
     console.error(`[ADB] Lỗi khi start frida-server: ${e.message}`);
     return false;
+  }
+}
+
+/**
+ * Kiểm tra trạng thái ADB và Root của thiết bị
+ * @returns {{ ok: boolean, error?: string, message?: string }}
+ */
+function checkAdbAndRootStatus(deviceId) {
+  try {
+    const devices = listDevices();
+    const dev = devices.find(d => d.id === deviceId);
+
+    if (!dev) {
+      return { ok: false, error: 'device_not_found', message: `Không tìm thấy thiết bị hoặc chưa kết nối ADB.` };
+    }
+    if (dev.status === 'unauthorized') {
+      return { ok: false, error: 'unauthorized', message: `Thiết bị chưa được ủy quyền ADB (unauthorized). Vui lòng đồng ý cho phép gỡ lỗi USB trên màn hình giả lập.` };
+    }
+    if (dev.status === 'offline') {
+      return { ok: false, error: 'offline', message: `Thiết bị ở trạng thái ngoại tuyến (offline). Vui lòng khởi động lại giả lập.` };
+    }
+    if (dev.status !== 'device') {
+      return { ok: false, error: 'invalid_status', message: `Thiết bị có trạng thái ADB không hợp lệ: ${dev.status}` };
+    }
+
+    // Check root status
+    let isRooted = false;
+    try {
+      const rootCheck = adbShell(deviceId, ['shell', 'su', '-c', 'id'], 2000);
+      isRooted = rootCheck.includes('uid=0') || rootCheck.includes('root');
+    } catch (e) {
+      // su check failed or timed out
+    }
+
+    if (!isRooted) {
+      return { ok: false, error: 'no_root', message: `Giả lập CHƯA BẬT ROOT! Vui lòng bật chế độ Root (Root Mode) trong cài đặt của giả lập để sử dụng.` };
+    }
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'check_failed', message: `Lỗi khi kiểm tra trạng thái thiết bị: ${e.message}` };
   }
 }
 
@@ -205,4 +272,5 @@ module.exports = {
   adbShell,
   adbDeviceShell,
   startFridaServer,
+  checkAdbAndRootStatus,
 };

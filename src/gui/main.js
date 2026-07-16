@@ -49,3 +49,5 @@ app.on('window-all-closed', async () => {
   await sessionManager.cleanup();
   if (process.platform !== 'darwin') app.quit();
 });
+
+

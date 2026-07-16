@@ -3,7 +3,8 @@ const frida = require('frida');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const ADB = 'C:\\platform-tools\\adb.exe';
+const config = require('../config');
+const ADB = config.ADB_PATH;
 const PKG = 'vn.perfingame.jx1mobile';
 
 (async () => {
