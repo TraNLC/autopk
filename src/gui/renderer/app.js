@@ -155,7 +155,7 @@ async function scanDevices() {
     if (devicesMap.has(d.id)) {
       newMap.set(d.id, devicesMap.get(d.id));
     } else {
-      newMap.set(d.id, { connected: false, info: null, tkConfig: { side: 'auto', lacs: [] } });
+      newMap.set(d.id, { connected: false, info: null, tkConfig: { side: 'auto', lacs: ['45', '51', '50'], autoBaoDanh: true, autoThuoc: true } });
     }
   }
   devicesMap = newMap;
@@ -220,6 +220,10 @@ function renderTable() {
     const tdSect = document.createElement('td');
     tdSect.innerText = (dev.info && dev.info.sectName) ? dev.info.sectName : '';
     
+    // Score
+    const tdScore = document.createElement('td');
+    tdScore.innerText = (dev.info && dev.info.tkScore !== undefined) ? dev.info.tkScore : '';
+
     // Status
     const tdStatus = document.createElement('td');
     const statusSpan = document.createElement('span');
@@ -228,7 +232,24 @@ function renderTable() {
       statusSpan.style.color = 'red';
       statusSpan.innerText = 'Lỗi';
     } else if (dev.info && dev.info.mapId) {
-      statusSpan.innerText = dev.info.mapName ? dev.info.mapName : `Bản đồ (${dev.info.mapId})`;
+      let mapName = dev.info.mapName ? dev.info.mapName : `Bản đồ (${dev.info.mapId})`;
+      const BATTLE_MAPS = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
+      if (BATTLE_MAPS.includes(dev.info.mapId)) {
+        let isMax = false;
+        if (dev.tkConfig && dev.tkConfig.stopMaxScore === true && dev.info.tkScore !== undefined && dev.info.tkScore >= 30000) {
+          isMax = true;
+        }
+
+        if (isMax) {
+          mapName = 'Đã đạt Max Điểm';
+          statusSpan.style.color = '#27ae60'; // green color for success
+        } else {
+          mapName = 'Đang đánh TK';
+          statusSpan.style.color = '#e67e22'; // distinct color for battle
+        }
+        statusSpan.style.fontWeight = 'bold';
+      }
+      statusSpan.innerText = mapName;
     } else {
       statusSpan.innerText = dev.connected ? 'Đang đọc...' : 'Chờ';
     }
@@ -238,6 +259,7 @@ function renderTable() {
     tr.appendChild(tdName);
     tr.appendChild(tdLevel);
     tr.appendChild(tdSect);
+    tr.appendChild(tdScore);
     tr.appendChild(tdStatus);
     deviceTableBody.appendChild(tr);
   }
@@ -264,11 +286,13 @@ function selectDevice(id) {
   
   if (!id || !devicesMap.has(id)) {
     selSide.value = 'auto';
-    chkLac1.checked = false;
-    chkLac2.checked = false;
-    chkLac3.checked = false;
+    chkLac1.checked = true;
+    chkLac2.checked = true;
+    chkLac3.checked = true;
     const chkBaoDanh = document.getElementById('chk-auto-baodanh');
     if (chkBaoDanh) chkBaoDanh.checked = true;
+    const chkAutoThuoc = document.getElementById('chk-auto-thuoc');
+    if (chkAutoThuoc) chkAutoThuoc.checked = true;
     return;
   }
   
@@ -288,7 +312,12 @@ function selectDevice(id) {
   
   const chkAutoThuoc = document.getElementById('chk-auto-thuoc');
   if (chkAutoThuoc) {
-    chkAutoThuoc.checked = !!cfg.autoThuoc;
+    chkAutoThuoc.checked = cfg.autoThuoc !== false;
+  }
+
+  const chkStopMaxScore = document.getElementById('chk-stop-max-score');
+  if (chkStopMaxScore) {
+    chkStopMaxScore.checked = !!cfg.stopMaxScore;
   }
 }
 
@@ -309,6 +338,11 @@ btnSaveAcc.addEventListener('click', () => {
   const chkAutoThuoc = document.getElementById('chk-auto-thuoc');
   if (chkAutoThuoc) {
     dev.tkConfig.autoThuoc = chkAutoThuoc.checked;
+  }
+
+  const chkStopMaxScore = document.getElementById('chk-stop-max-score');
+  if (chkStopMaxScore) {
+    dev.tkConfig.stopMaxScore = chkStopMaxScore.checked;
   }
   
   const lacs = [];

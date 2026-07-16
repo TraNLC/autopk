@@ -12,7 +12,8 @@ function isRegistrationTime() {
     const min = now.getMinutes();
 
     const targetHours = [13, 15, 20, 23];
-    if (targetHours.includes(hour) && min >= 0 && min < 10) {
+    // Start at 04, stop strictly at 34 (meaning 34 will not run)
+    if (targetHours.includes(hour) && min >= 4 && min < 34) {
         return `${hour}:${min}`; 
     }
     return null;

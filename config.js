@@ -6,26 +6,42 @@ module.exports = {
   ADB_PATH: (() => {
     const fs = require('fs');
     const { execSync } = require('child_process');
-    const defaultPath = 'C:\\platform-tools\\adb.exe';
-    if (fs.existsSync(defaultPath)) {
-      return defaultPath;
+    
+    // Check if we are running inside Electron and if it is packaged
+    let isPackaged = false;
+    let resourcesPath = '';
+    try {
+      const electron = require('electron');
+      const app = electron.app || (electron.remote && electron.remote.app);
+      if (app) {
+        isPackaged = app.isPackaged;
+      }
+      if (process.resourcesPath) {
+        resourcesPath = process.resourcesPath;
+      }
+    } catch (e) {}
+
+    const candidates = [];
+    if (isPackaged && resourcesPath) {
+      candidates.push(path.join(resourcesPath, 'tools', 'adb.exe'));
+      candidates.push(path.join(resourcesPath, 'adb.exe'));
     }
-    // Check if adb.exe is placed in the tool's root directory
-    const localRootPath = path.join(__dirname, 'adb.exe');
-    if (fs.existsSync(localRootPath)) {
-      return localRootPath;
+    candidates.push('C:\\platform-tools\\adb.exe');
+    candidates.push(path.join(__dirname, 'adb.exe'));
+    candidates.push(path.join(__dirname, 'tools', 'adb.exe'));
+
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
     }
-    // Check if adb.exe is placed in the tools directory
-    const localToolsPath = path.join(__dirname, 'tools', 'adb.exe');
-    if (fs.existsSync(localToolsPath)) {
-      return localToolsPath;
-    }
+
     // Check if adb is globally available in the system PATH
     try {
       execSync('adb --version', { stdio: 'ignore' });
       return 'adb';
     } catch (e) {}
-    return defaultPath; // Fallback
+    return 'C:\\platform-tools\\adb.exe'; // Fallback
   })(),
   DEVICE_ID: 'emulator-5554',
   

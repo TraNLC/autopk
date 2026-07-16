@@ -1,8 +1,8 @@
 {
   "name": "gst-auto-pk-node",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "GST Auto PK - VLTK1 Mobile Automation Tool (Node.js Rewrite)",
-  "main": "src/index.js",
+  "main": "src/gui/main.js",
   "scripts": {
     "start": "node src/index.js",
     "build:frida": "node frida-scripts/build.js",
@@ -12,7 +12,8 @@
     "test:frida": "node test/test-frida.js",
     "test:memory": "node test/test-memory.js",
     "test:packet": "node test/test-packet.js",
-    "gui": "electron src/gui/main.js"
+    "gui": "electron src/gui/main.js",
+    "dist": "electron-builder"
   },
   "dependencies": {
     "adbkit": "^2.11.1",
@@ -22,8 +23,39 @@
     "systeminformation": "^5.31.11"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^24.13.3"
   },
   "author": "GST",
-  "license": "MIT"
+  "license": "MIT",
+  "build": {
+    "appId": "com.gst.autopk",
+    "productName": "GST Auto PK",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "files": [
+      "src/**/*",
+      "config.js",
+      "package.json",
+      "frida-scripts/**/*",
+      "data/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": true
+  }
 }

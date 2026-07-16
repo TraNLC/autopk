@@ -39,7 +39,7 @@ function findSharedNpcIds(deviceId, mapId, campValue, isStaging) {
 /**
  * Auto Tống Kim loop — được gọi từ loop chính trong main.js
  */
-async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, autoBaoDanh, autoThuoc) {
+async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, autoBaoDanh, autoThuoc, stopMaxScore) {
   if (!session || !info) return;
   if (busyDevices.has(deviceId)) return;
   busyDevices.add(deviceId);
@@ -180,7 +180,21 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           } catch(e) {}
         }
 
-        // ── Thống kê thời gian giãn cách 2.5s (hoặc 5s sau mỗi 2 phút) ──
+        const nowObj = new Date();
+        const min = nowObj.getMinutes();
+        // Từ phút 34 đến phút 04 không gọi NPC nào nữa (Tống Kim đã kết thúc hoặc chưa bắt đầu trận mới)
+        if (min >= 34 || min < 4) {
+          return;
+        }
+
+        // Nếu người dùng chọn Ngừng ra sân khi đủ 30.000 điểm
+        if (stopMaxScore === true) {
+          if (info.tkScore !== undefined && info.tkScore >= 30000) {
+            return;
+          }
+        }
+
+        // ── Thống kê thời gian giãn cách 2.5s (hoặc 5s sau mỗi 1 phút) ──
         const now = Date.now();
         
         // Khởi tạo mốc thời gian 5s ban đầu nếu chưa có
@@ -189,8 +203,8 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         }
 
         let callInterval = 2500;
-        // Kiểm tra xem đã đến chu kỳ 2 phút để áp dụng giãn cách 5 giây chưa
-        const isFiveSecTick = (now - cache._lastFiveSecTime) > 2 * 60 * 1000;
+        // Kiểm tra xem đã đến chu kỳ 1 phút để áp dụng giãn cách 5 giây chưa
+        const isFiveSecTick = (now - cache._lastFiveSecTime) > 60 * 1000;
 
         if (isFiveSecTick) {
           callInterval = 5000; // Ép giãn cách lên 5s cho lần này
@@ -200,10 +214,10 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           return; // Chưa tới lượt
         }
 
-        // Cập nhật lại mốc 2 phút khi đã thỏa mãn và chuẩn bị gọi Trình Sát
+        // Cập nhật lại mốc 1 phút khi đã thỏa mãn và chuẩn bị gọi Trình Sát
         if (isFiveSecTick) {
           cache._lastFiveSecTime = now;
-          sendLog(`[He Thong] Kich hoat gian cach 5s mot lan (het chu ky 2 phut, quay lai 2.5s)...`, 'info');
+          sendLog(`[He Thong] Kich hoat gian cach 5s mot lan (het chu ky 1 phut, quay lai 2.5s)...`, 'info');
         }
         cache._lastCallTime = now;
 
@@ -300,24 +314,37 @@ async function collectPoints(deviceId, session, sendLog) {
     
     // Step 1: Quét tìm NPC Mộ binh / Chiêu binh / Quân nhu
     const npcNamesRes = await session.callRpc('getNearNpcNames');
+    const info = await session.callRpc('getPlayerInfo');
+    const mapId = (info && info.mapId) ? info.mapId : 0;
+    const camp = (info && info.campValue) ? info.campValue : 1;
+
     let npcId = null;
     let npcName = '';
     
     if (npcNamesRes && npcNamesRes.ok && npcNamesRes.npcMap) {
       for (const [id, name] of Object.entries(npcNamesRes.npcMap)) {
         const lower = String(name).toLowerCase();
-        if (lower.includes('mộ binh') || lower.includes('chieu binh') || lower.includes('chiêu binh') || lower.includes('quân nhu') || lower.includes('quan nhu')) {
-          npcId = id;
-          npcName = name;
-          break;
+        
+        if (mapId === 324) {
+          // Báo danh area: only look for Mộ binh or Chiêu binh
+          if (lower.includes('mộ binh') || lower.includes('chieu binh') || lower.includes('chiêu binh')) {
+            npcId = id;
+            npcName = name;
+            break;
+          }
+        } else {
+          // Staging area: only look for Quân nhu
+          if (lower.includes('quân nhu') || lower.includes('quan nhu')) {
+            npcId = id;
+            npcName = name;
+            break;
+          }
         }
       }
     }
     
     // Fallback nếu không quét được NPC dynamically
     if (!npcId) {
-      const info = await session.callRpc('getPlayerInfo');
-      const camp = (info && info.campValue) ? info.campValue : 1;
       if (camp === 2) {
         npcId = "23"; // Mặc định Kim
         npcName = "NPC Chieu Binh Quan (Kim)";
@@ -327,12 +354,9 @@ async function collectPoints(deviceId, session, sendLog) {
       }
     }
     
-    const info = await session.callRpc('getPlayerInfo');
-    const camp = (info && info.campValue) ? info.campValue : 1;
-    
     // Động xác định quy trình mở shop dựa theo tên NPC
     const lowerNpcName = npcName.toLowerCase();
-    const isStagingNpc = lowerNpcName.includes('quốc') || lowerNpcName.includes('quoc');
+    const isStagingNpc = lowerNpcName.includes('quốc') || lowerNpcName.includes('quoc') || (mapId !== 324);
     
     if (isStagingNpc) {
       // NPC ở map Staging (Tống Quốc Quân nhu quan / Kim Quốc Quân nhu quan)

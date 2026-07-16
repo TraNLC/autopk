@@ -1840,10 +1840,50 @@ rpc.exports.useItem = function(itemIdx) {
                     }
                 }
             }
-            return { ok: false, error: 'Item not found' };
         } catch(e) {
             return { ok: false, error: e.message };
         }
+        return { ok: false, error: 'Item not found' };
+    });
+};
+
+rpc.exports.getTkScoreDeepScan = function() {
+    return new Promise(function(resolve) {
+        var pattern = "43 00 e1 00 20 00 6e 00 68 00 e2 00 6e 00"; // "Cá nhân" in UTF-16LE
+        var ranges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+        
+        function scanRange(index) {
+            if (index >= ranges.length) {
+                resolve({ ok: false, score: 0, rank: 0, kills: 0 });
+                return;
+            }
+            Memory.scan(ranges[index].base, ranges[index].size, pattern, {
+                onMatch: function(address, size) {
+                    try {
+                        var str = address.readUtf16String(50);
+                        if (str && str.indexOf("Cá nhân") !== -1 && str.indexOf("điểm") !== -1) {
+                            // Example: Cá nhân</color> giết 75 điểm 39400 hạng 16
+                            var mScore = str.match(/điểm\s+(\d+)/);
+                            var mRank = str.match(/hạng\s+(\d+)/);
+                            var mKills = str.match(/giết\s+(\d+)/);
+                            if (mScore && mScore[1]) {
+                                resolve({ 
+                                    ok: true, 
+                                    score: parseInt(mScore[1]),
+                                    rank: mRank ? parseInt(mRank[1]) : 0,
+                                    kills: mKills ? parseInt(mKills[1]) : 0
+                                });
+                                return 'stop';
+                            }
+                        }
+                    } catch(e) {}
+                },
+                onComplete: function() {
+                    scanRange(index + 1);
+                }
+            });
+        }
+        scanRange(0);
     });
 };
 

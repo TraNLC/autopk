@@ -301,7 +301,7 @@ async function connectDevice(deviceId, pkgName, sendLog) {
 
                     if (targetId) {
                         const targetTypeName = payload.opcode === 238 ? 'PLAYER' : 'NPC/MONSTER';
-                        traceLog(deviceId, `[FOCUS DETECTED] Dang tan cong ${targetTypeName}: ID = ${targetId} (Ky nang: ${skillId})`, 'success');
+                        // traceLog(deviceId, `[FOCUS DETECTED] Dang tan cong ${targetTypeName}: ID = ${targetId} (Ky nang: ${skillId})`, 'success');
                     }
                 } catch (e) {
                     console.warn(`[Sniffer Focus Error] Parse target packet failed: ${e.message}`);
@@ -337,6 +337,26 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                     state.lastLoggedError = info.error;
                 } else if (!info.error && state.lastLoggedError) {
                     state.lastLoggedError = null;
+                }
+
+                // Deep scan for TK Score every 30 ticks (60 seconds) if in battle map
+                state.pollCount = (state.pollCount || 0) + 1;
+                const BATTLE_MAPS = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
+                if (info.mapId && BATTLE_MAPS.includes(info.mapId) && state.pollCount % 30 === 0) {
+                    try {
+                        const tkRes = await session.callRpc('getTkScoreDeepScan');
+                        if (tkRes && tkRes.ok) {
+                            info.tkScore = tkRes.score;
+                            info.tkRank = tkRes.rank;
+                            info.tkKills = tkRes.kills;
+                            state.lastTkScore = tkRes.score; // cache it
+                        }
+                    } catch(e) {}
+                }
+                
+                // Use cached score for intermediate ticks
+                if (state.lastTkScore !== undefined) {
+                    info.tkScore = state.lastTkScore;
                 }
 
                 // Gui cap nhat trang thai len Renderer qua IPC (se duoc routed tu main.js)
@@ -423,7 +443,7 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                                 await state.autoPK.stop();
                             }
                             // Goi autoTongKimLoop de mua thuoc / buff / bao danh vao san
-                            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh, devCfg.autoThuoc);
+                            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh, devCfg.autoThuoc, devCfg.stopMaxScore);
                         }
                     } catch (e) {
                         traceLog(deviceId, `Loi trong vong lapa Tong Kim: ${e.message}`, 'error', sendLog);
