@@ -138,24 +138,38 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             return { dev, isRunning, androidId };
         }));
 
-        // Sort so that 5-digit ports (developer ports) are processed before 4-digit ports
-        checkResults.sort((a, b) => {
-            const portA = parseInt(a.dev.id.split(':')[1] || '0', 10);
-            const portB = parseInt(b.dev.id.split(':')[1] || '0', 10);
-            return String(portB).length - String(portA).length; // 5-digit first
-        });
-
+        // Deduplicate devices by grouping by Android ID
+        // For cloned instances, they share the same Android ID but listen on different host ports (5-digit ports).
+        // A host port (5-digit) and a guest port (4-digit, like 5555) of the same VM also share the same Android ID.
+        // We want to keep all 5-digit ports, and only keep 4-digit ports if there are no 5-digit ports for that Android ID.
+        const groups = new Map(); // androidId -> [checkResult]
         for (const r of checkResults) {
             if (r.isRunning && r.androidId) {
-                if (seenAndroidIds.has(r.androidId)) {
-                    console.log(`[TRACE] [ADB-Helper] Loai bo thiet bi trung lap (cung Android ID: ${r.androidId}): ${r.dev.id}`);
-                    continue;
+                if (!groups.has(r.androidId)) {
+                    groups.set(r.androidId, []);
                 }
-                seenAndroidIds.add(r.androidId);
-                console.log(`[TRACE] [ADB-Helper] Chap nhan thiet bi co game chay: ${r.dev.id} (Android ID: ${r.androidId})`);
-                validDevices.push(r.dev);
+                groups.get(r.androidId).push(r);
             } else {
                 console.log(`[TRACE] [ADB-Helper] Loai bo thiet bi khong chay game: ${r.dev.id}`);
+            }
+        }
+
+        for (const [androidId, list] of groups.entries()) {
+            const has5Digit = list.some(r => {
+                const port = parseInt(r.dev.id.split(':')[1] || '0', 10);
+                return String(port).length >= 5;
+            });
+
+            for (const r of list) {
+                const port = parseInt(r.dev.id.split(':')[1] || '0', 10);
+                const is5Digit = String(port).length >= 5;
+
+                if (has5Digit && !is5Digit) {
+                    console.log(`[TRACE] [ADB-Helper] Loai bo cong guest duplicate (cung Android ID: ${androidId}): ${r.dev.id}`);
+                } else {
+                    console.log(`[TRACE] [ADB-Helper] Chap nhan thiet bi co game chay: ${r.dev.id} (Android ID: ${androidId})`);
+                    validDevices.push(r.dev);
+                }
             }
         }
 
