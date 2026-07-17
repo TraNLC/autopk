@@ -51,31 +51,31 @@ async function scanDevices(adbPath, execAsync, sendLog) {
         }
         const allPorts = Array.from(scanPorts).sort((a, b) => a - b);
 
-        // Phase 1: TCP scan in parallel batches of 30
-        const openPorts = [];
-        for (let i = 0; i < allPorts.length; i += 30) {
-            const batch = allPorts.slice(i, i + 30);
-            console.log(`[TRACE] [ADB-Helper] Quet batch cong tu ${batch[0]} den ${batch[batch.length - 1]}...`);
-            const results = await Promise.all(batch.map(p => checkPort(p).then(ok => ok ? p : null)));
-            for (const r of results) {
-                if (r) openPorts.push(r);
-            }
-        }
+        // Phase 1: TCP scan all ports in parallel (lightning fast)
+        console.log(`[TRACE] [ADB-Helper] Quet song song ${allPorts.length} cong...`);
+        const results = await Promise.all(allPorts.map(p => checkPort(p).then(ok => ok ? p : null)));
+        const openPorts = results.filter(r => r !== null);
         console.log(`[TRACE] [ADB-Helper] Hoan tat quet port. Tim thay cac cong dang mo:`, openPorts);
 
         // Phase 2: adb connect to open ports in parallel batches
         console.log(`[TRACE] [ADB-Helper] Step 3: Bat dau ket noi adb den cac port mo...`);
         
-        // Detect offline devices first and force a disconnect/reconnect for them
         let offlineDevices = [];
+        let onlineDevices = [];
         try {
             const devicesRes = await execAsync(`"${adbPath}" devices`);
             const lines = devicesRes.stdout.split('\n');
             for (let i = 1; i < lines.length; i++) {
                 const line = lines[i].trim();
-                if (line && line.includes('offline')) {
-                    const deviceId = line.split(/\s+/)[0];
-                    if (deviceId) offlineDevices.push(deviceId);
+                if (line) {
+                    const parts = line.split(/\s+/);
+                    const deviceId = parts[0];
+                    const status = parts[1];
+                    if (status === 'offline') {
+                        if (deviceId) offlineDevices.push(deviceId);
+                    } else if (status === 'device') {
+                        if (deviceId) onlineDevices.push(deviceId);
+                    }
                 }
             }
             if (offlineDevices.length > 0) {
@@ -87,18 +87,29 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             }
         } catch(e) {}
 
-        for (let i = 0; i < openPorts.length; i += 10) {
-            const batch = openPorts.slice(i, i + 10);
-            await Promise.all(batch.map(p => {
-                console.log(`[TRACE] [ADB-Helper] Chay adb connect 127.0.0.1:${p}`);
-                return execAsync(`"${adbPath}" connect 127.0.0.1:${p}`, { timeout: 2000 })
-                    .then(res => {
-                        console.log(`[TRACE] [ADB-Helper] adb connect 127.0.0.1:${p} ket qua:`, res.stdout.trim());
-                    })
-                    .catch(err => {
-                        console.log(`[TRACE] [ADB-Helper] adb connect 127.0.0.1:${p} error:`, err.message);
-                    });
-            }));
+        // Chi thuc hien adb connect cho cac cong CHUA ket noi (tranh chay adb connect thua lam cham tool)
+        const portsToConnect = openPorts.filter(p => {
+            const devId = `127.0.0.1:${p}`;
+            return !onlineDevices.includes(devId);
+        });
+
+        if (portsToConnect.length > 0) {
+            console.log(`[TRACE] [ADB-Helper] Phat hien cac cong moi can ket noi adb:`, portsToConnect);
+            for (let i = 0; i < portsToConnect.length; i += 10) {
+                const batch = portsToConnect.slice(i, i + 10);
+                await Promise.all(batch.map(p => {
+                    console.log(`[TRACE] [ADB-Helper] Chay adb connect 127.0.0.1:${p}`);
+                    return execAsync(`"${adbPath}" connect 127.0.0.1:${p}`, { timeout: 2000 })
+                        .then(res => {
+                            console.log(`[TRACE] [ADB-Helper] adb connect 127.0.0.1:${p} ket qua:`, res.stdout.trim());
+                        })
+                        .catch(err => {
+                            console.log(`[TRACE] [ADB-Helper] adb connect 127.0.0.1:${p} error:`, err.message);
+                        });
+                }));
+            }
+        } else {
+            console.log(`[TRACE] [ADB-Helper] Tat ca cac cong deu da duoc ket noi online. Bo qua chay adb connect.`);
         }
 
         // Phase 3: get devices, filter 5-digit ports
