@@ -65,6 +65,28 @@ async function scanDevices(adbPath, execAsync, sendLog) {
 
         // Phase 2: adb connect to open ports in parallel batches
         console.log(`[TRACE] [ADB-Helper] Step 3: Bat dau ket noi adb den cac port mo...`);
+        
+        // Detect offline devices first and force a disconnect/reconnect for them
+        let offlineDevices = [];
+        try {
+            const devicesRes = await execAsync(`"${adbPath}" devices`);
+            const lines = devicesRes.stdout.split('\n');
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (line && line.includes('offline')) {
+                    const deviceId = line.split(/\s+/)[0];
+                    if (deviceId) offlineDevices.push(deviceId);
+                }
+            }
+            if (offlineDevices.length > 0) {
+                console.log(`[TRACE] [ADB-Helper] Phat hien thiet bi offline. Thuc hien force reconnect:`, offlineDevices);
+                await Promise.all(offlineDevices.map(async (devId) => {
+                    await execAsync(`"${adbPath}" disconnect ${devId}`).catch(() => {});
+                    await execAsync(`"${adbPath}" connect ${devId}`).catch(() => {});
+                }));
+            }
+        } catch(e) {}
+
         for (let i = 0; i < openPorts.length; i += 10) {
             const batch = openPorts.slice(i, i + 10);
             await Promise.all(batch.map(p => {
