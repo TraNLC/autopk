@@ -255,9 +255,46 @@ class AutoPK {
     const info = await this.memory.getPlayerInfo();
     if (!info) return;
 
+    const now = Date.now();
+
     // 0. Kiểm tra chết: nếu HP=0 thì dừng tick, để autoTongKimLoop xử lý hồi sinh
     if (info.hp !== undefined && info.hp <= 0) {
       return; // Không cast skill khi đã chết
+    }
+
+    // 0.5. Nhận thuốc từ Quân Nhu nếu đang đứng ở doanh trại (gần Quân Nhu)
+    if (this.autoThuoc !== false && (!this._lastQuanNhuTime || (now - this._lastQuanNhuTime) > 30000)) {
+      this._lastQuanNhuTime = now;
+      try {
+        const npcRes = await this.session.callRpc('getNearNpcNames');
+        if (npcRes && npcRes.ok && npcRes.npcMap) {
+          let quanNhuId = null;
+          for (const [npcId, npcName] of Object.entries(npcRes.npcMap)) {
+            const lower = String(npcName).toLowerCase();
+            if (lower.includes('quân nhu') || lower.includes('quan nhu') || lower.includes('quan y') || lower.includes('quân y')) {
+              quanNhuId = npcId;
+              break;
+            }
+          }
+          if (quanNhuId) {
+            if (!this._lastHealRefillTime || (now - this._lastHealRefillTime) > 3 * 60 * 1000) {
+              this.log(`Phat hien Quan Nhu o gan (Doanh trai). Dang tien hanh nhan thuoc...`, 'info');
+              await this.injector.sendNpcDialogue(quanNhuId);
+              await new Promise(r => setTimeout(r, 800));
+              await this.injector.sendNpcSelect(0);
+              await new Promise(r => setTimeout(r, 400));
+              await this.session.callRpc('sendPacket', 232, '');
+              await new Promise(r => setTimeout(r, 400));
+              try { await this.session.callRpc('closeDialogPopups'); } catch(e) {}
+              this.log(`Nhan thuoc tu Quan Nhu thanh cong!`, 'success');
+              this._lastHealRefillTime = now;
+              return; // Bỏ qua tick này để cập nhật trạng thái
+            }
+          }
+        }
+      } catch(e) {
+        console.error(`[AutoPK] Quan Nhu check error: ${e.message}`);
+      }
     }
 
     // ── Kiểm tra thay đổi bản đồ (vừa ra trận hoặc chuyển map) ──
@@ -277,7 +314,6 @@ class AutoPK {
     }
 
     // ── Kiểm tra teleport / dịch chuyển đột ngột ──
-    const now = Date.now();
     const teleportThreshold = 500;
     if (this.lastX !== 0 && this.lastY !== 0) {
       const jumpDist = Math.sqrt(Math.pow(info.x - this.lastX, 2) + Math.pow(info.y - this.lastY, 2));

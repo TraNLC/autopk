@@ -412,9 +412,12 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                         ].includes(mapId);
 
                         if (isBattlefield) {
-                            if (state.autoPK && !state.autoPK.running) {
-                                traceLog(deviceId, `Nhan vat dang o Chien truong. Khoi dong luong PK nhanh...`, 'success', sendLog);
-                                state.autoPK.start();
+                            if (state.autoPK) {
+                                state.autoPK.autoThuoc = devCfg.autoThuoc !== false;
+                                if (!state.autoPK.running) {
+                                    traceLog(deviceId, `Nhan vat dang o Chien truong. Khoi dong luong PK nhanh...`, 'success', sendLog);
+                                    state.autoPK.start();
+                                }
                             }
                         } else {
                             if (state.autoPK && state.autoPK.running) {
