@@ -6,17 +6,27 @@ globalThis.npcCache = globalThis.npcCache || {};
  * Find libil2cpp.so base address from /proc/self/maps.
  */
 function getIl2CppBase() {
-    var mod = Process.findModuleByName('libil2cpp.so');
+    var mod = Process.findModuleByName('libil2cpp.so') || Process.findModuleByName('libil4i3n.so');
     if (mod) return mod.base;
 
     var base = null;
     var lines = File.readAllText('/proc/self/maps').split('\n');
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
-        if (line.indexOf('libil2cpp.so') !== -1 && line.indexOf('r--p') !== -1) {
+        if ((line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) && line.indexOf('r-x') !== -1) {
             var parts = line.trim().split(/\s+/);
             base = ptr('0x' + parts[0].split('-')[0]);
             break;
+        }
+    }
+    if (!base) {
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if ((line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) && line.indexOf('r--p') !== -1) {
+                var parts = line.trim().split(/\s+/);
+                base = ptr('0x' + parts[0].split('-')[0]);
+                break;
+            }
         }
     }
     return base;

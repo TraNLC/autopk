@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { FridaSession } = require('../frida-session');
 const { AutoPK } = require('../auto-pk');
@@ -15,8 +16,32 @@ let globalTkConfigs = {};
 
 function traceLog(deviceId, msg, type = 'info') {
     const timeStr = new Date().toLocaleTimeString();
+    const dateStr = new Date().toLocaleDateString();
     const formattedMsg = deviceId ? `[${deviceId}] ${msg}` : msg;
+    const logLine = `[${dateStr} ${timeStr}] [${type.toUpperCase()}] ${formattedMsg}\n`;
+    
     console.log(`[TRACE] [${timeStr}] ${formattedMsg}`);
+    
+    // Auto write logs to local file logs/auto_pk.log
+    try {
+        const logDir = path.join(__dirname, '../../logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+        const logFile = path.join(logDir, 'auto_pk.log');
+        
+        // Rotate log if it exceeds 10MB
+        if (fs.existsSync(logFile)) {
+            const stats = fs.statSync(logFile);
+            if (stats.size > 10 * 1024 * 1024) {
+                fs.writeFileSync(logFile, '[Log Rotated]\n', 'utf8');
+            }
+        }
+        fs.appendFileSync(logFile, logLine, 'utf8');
+    } catch(err) {
+        // Ignore writing errors
+    }
+
     if (globalThis._mainWindow && !globalThis._mainWindow.isDestroyed()) {
         try {
             const wc = globalThis._mainWindow.webContents;
@@ -418,7 +443,6 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
 
                         if (isBattlefield) {
                             if (state.autoPK) {
-                                state.autoPK.autoThuoc = devCfg.autoThuoc !== false;
                                 state.autoPK.fightTop1 = devCfg.fightTop1 === true;
                                 
                                 // Logic dè chừng điểm:
@@ -457,7 +481,7 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                                 await state.autoPK.stop();
                             }
                             // Goi autoTongKimLoop de mua thuoc / buff / bao danh vao san
-                            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh, devCfg.autoThuoc, devCfg.stopMaxScore);
+                            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh, true, devCfg.stopMaxScore);
                         }
                     } catch (e) {
                         traceLog(deviceId, `Loi trong vong lapa Tong Kim: ${e.message}`, 'error', sendLog);

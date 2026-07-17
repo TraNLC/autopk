@@ -20,7 +20,6 @@ let cliConfig = {
         side: "auto",
         lacs: ["45", "51", "50"],
         autoBaoDanh: true,
-        autoThuoc: true,
         stopMaxScore: true
     }
 };
@@ -259,7 +258,6 @@ async function autoLoop() {
 
             if (isBattlefield) {
                 if (state.autoPK) {
-                    state.autoPK.autoThuoc = devCfg.autoThuoc !== false;
                     state.autoPK.fightTop1 = devCfg.fightTop1 === true;
 
                     const myScore = state.info.tkScore || 0;
@@ -304,7 +302,7 @@ async function autoLoop() {
                     devCfg.lacs, 
                     (msg) => { logAction(deviceId, msg); }, 
                     devCfg.autoBaoDanh, 
-                    devCfg.autoThuoc, 
+                    true, 
                     devCfg.stopMaxScore
                 );
             }

@@ -12,6 +12,7 @@ const DEVICE_ID = null; // Auto-detect the active device
 async function main() {
   console.log('═════════════════════════════════════════════════════════');
   console.log('         VLTK1 MOBILE AUTO PK BOT (NODE.JS)');
+  console.log('         Build Version: ver 1.0 (17/07/2026 14:20)');
   console.log('═════════════════════════════════════════════════════════\n');
 
   const session = new FridaSession(DEVICE_ID, config.GAME_PACKAGE);

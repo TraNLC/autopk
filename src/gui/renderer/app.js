@@ -155,7 +155,7 @@ async function scanDevices() {
     if (devicesMap.has(d.id)) {
       newMap.set(d.id, devicesMap.get(d.id));
     } else {
-      newMap.set(d.id, { connected: false, info: null, tkConfig: { side: 'auto', lacs: ['45', '51', '50'], autoBaoDanh: true, autoThuoc: true } });
+      newMap.set(d.id, { connected: false, info: null, tkConfig: { side: 'auto', lacs: ['45', '51', '50'], autoBaoDanh: true } });
     }
   }
   devicesMap = newMap;
@@ -320,7 +320,7 @@ function showContextMenu(x, y, id, dev) {
 
   item.addEventListener('click', () => {
     if (!dev.tkConfig) {
-      dev.tkConfig = { side: 'auto', lacs: ['45', '51', '50'], autoBaoDanh: true, autoThuoc: true };
+      dev.tkConfig = { side: 'auto', lacs: ['45', '51', '50'], autoBaoDanh: true };
     }
     dev.tkConfig.fightTop1 = !isFightTop1;
     updateGlobalTK();
@@ -368,8 +368,6 @@ function selectDevice(id) {
     chkLac3.checked = true;
     const chkBaoDanh = document.getElementById('chk-auto-baodanh');
     if (chkBaoDanh) chkBaoDanh.checked = true;
-    const chkAutoThuoc = document.getElementById('chk-auto-thuoc');
-    if (chkAutoThuoc) chkAutoThuoc.checked = true;
     return;
   }
   
@@ -385,11 +383,6 @@ function selectDevice(id) {
   const chkBaoDanh = document.getElementById('chk-auto-baodanh');
   if (chkBaoDanh) {
     chkBaoDanh.checked = cfg.autoBaoDanh !== false;
-  }
-  
-  const chkAutoThuoc = document.getElementById('chk-auto-thuoc');
-  if (chkAutoThuoc) {
-    chkAutoThuoc.checked = cfg.autoThuoc !== false;
   }
 
   const chkStopMaxScore = document.getElementById('chk-stop-max-score');
@@ -410,11 +403,6 @@ btnSaveAcc.addEventListener('click', () => {
   const chkBaoDanh = document.getElementById('chk-auto-baodanh');
   if (chkBaoDanh) {
     dev.tkConfig.autoBaoDanh = chkBaoDanh.checked;
-  }
-  
-  const chkAutoThuoc = document.getElementById('chk-auto-thuoc');
-  if (chkAutoThuoc) {
-    dev.tkConfig.autoThuoc = chkAutoThuoc.checked;
   }
 
   const chkStopMaxScore = document.getElementById('chk-stop-max-score');

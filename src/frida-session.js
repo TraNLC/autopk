@@ -2,6 +2,7 @@
 // Quản lý: ADB forward → remote device → attach by PID → load script → RPC
 
 let frida = null;
+const usedPorts = new Set();
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -61,7 +62,14 @@ class FridaSession {
       
       if (!this.deviceId) throw new Error('No active device found');
       // Assign a unique local port for this device instance to support multi-account
-      this.localPort = 27000 + Math.floor(Math.random() * 5000);
+      if (!this.localPort) {
+        let port = 27000;
+        while (usedPorts.has(port)) {
+          port++;
+        }
+        this.localPort = port;
+        usedPorts.add(this.localPort);
+      }
       const { execFileSync } = require('child_process');
       execFileSync(config.ADB_PATH, ['-s', this.deviceId, 'forward', `tcp:${this.localPort}`, 'tcp:27042'], { timeout: 5000, windowsHide: true });
       console.log(`[Frida] ADB forward tcp:${this.localPort} -> 27042 OK (${this.deviceId})`);
@@ -88,14 +96,14 @@ class FridaSession {
     try {
       this.device = await Promise.race([
         deviceManager.addRemoteDevice(`127.0.0.1:${this.localPort}`),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('addRemoteDevice timed out')), 5000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('addRemoteDevice timed out')), 15000))
       ]);
       console.log(`[Frida] Remote device connected: ${this.device.name} via port ${this.localPort}`);
     } catch (e) {
       console.warn(`[Frida] addRemoteDevice failed or timed out: ${e.message}. Retrying...`);
       this.device = await Promise.race([
         deviceManager.addRemoteDevice(`127.0.0.1:${this.localPort}`),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('addRemoteDevice retry timed out')), 5000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('addRemoteDevice retry timed out')), 15000))
       ]);
     }
 
@@ -104,7 +112,7 @@ class FridaSession {
     try {
       const processes = await Promise.race([
         this.device.enumerateProcesses(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('enumerateProcesses timed out')), 5000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('enumerateProcesses timed out')), 15000))
       ]);
       const gameProc = processes.find(p => p.name === 'VLTieuNgao' || p.name === 'vn.perfingame.jx1mobile');
       if (gameProc) {
@@ -138,7 +146,7 @@ class FridaSession {
     try {
       this.session = await Promise.race([
         this.device.attach(pid),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Attach timed out after 10s. Game might be frozen or frida-server is stuck.')), 10000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Attach timed out after 30s. Game might be frozen or frida-server is stuck.')), 30000))
       ]);
       console.log('[Frida] Session created OK');
     } catch (attachErr) {
@@ -237,6 +245,14 @@ class FridaSession {
     if (this.session) {
       await this.session.detach();
       this.session = null;
+    }
+    if (this.localPort) {
+      usedPorts.delete(this.localPort);
+      try {
+        const { execFileSync } = require('child_process');
+        execFileSync(config.ADB_PATH, ['-s', this.deviceId, 'forward', '--remove', `tcp:${this.localPort}`], { timeout: 2000, windowsHide: true });
+      } catch (e) {}
+      this.localPort = null;
     }
     this._connected = false;
     console.log('[Frida] Disconnected');

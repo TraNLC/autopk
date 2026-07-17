@@ -328,17 +328,27 @@ globalThis.npcCache = globalThis.npcCache || {};
  * Find libil2cpp.so base address from /proc/self/maps.
  */
 function getIl2CppBase() {
-    var mod = Process.findModuleByName('libil2cpp.so');
+    var mod = Process.findModuleByName('libil2cpp.so') || Process.findModuleByName('libil4i3n.so');
     if (mod) return mod.base;
 
     var base = null;
     var lines = File.readAllText('/proc/self/maps').split('\n');
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
-        if (line.indexOf('libil2cpp.so') !== -1 && line.indexOf('r--p') !== -1) {
+        if ((line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) && line.indexOf('r-x') !== -1) {
             var parts = line.trim().split(/\s+/);
             base = ptr('0x' + parts[0].split('-')[0]);
             break;
+        }
+    }
+    if (!base) {
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if ((line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) && line.indexOf('r--p') !== -1) {
+                var parts = line.trim().split(/\s+/);
+                base = ptr('0x' + parts[0].split('-')[0]);
+                break;
+            }
         }
     }
     return base;
@@ -1849,7 +1859,7 @@ rpc.exports.useItem = function(itemIdx) {
 
 rpc.exports.getTkScoreDeepScan = function() {
     return new Promise(function(resolve) {
-        var pattern = "43 00 e1 00 20 00 6e 00 68 00 e2 00 6e 00"; // "Cá nhân" in UTF-16LE
+        var pattern = "?? 00 e1 00 20 00 ?? 00 68 00 e2 00 ?? 00"; // Case-insensitive "Cá nhân" in UTF-16LE
         var ranges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
         
         function scanRange(index) {
@@ -1861,45 +1871,48 @@ rpc.exports.getTkScoreDeepScan = function() {
                 onMatch: function(address, size) {
                     try {
                         var str = address.readUtf16String(50);
-                        if (str && str.indexOf("Cá nhân") !== -1 && str.indexOf("điểm") !== -1) {
-                            var mScore = str.match(/điểm\s+(\d+)/);
-                            var mRank = str.match(/hạng\s+(\d+)/);
-                            var mKills = str.match(/giết\s+(\d+)/);
-                            if (mScore && mScore[1]) {
-                                var scoreVal = parseInt(mScore[1]);
-                                var rankVal = mRank ? parseInt(mRank[1]) : 0;
-                                var killsVal = mKills ? parseInt(mKills[1]) : 0;
-                                
-                                // Scan nearby memory (±50KB) for the 10th place score string
-                                var top10Score = 0;
-                                var startAddr = address.sub(50000);
-                                for (var offset = 0; offset < 100000; offset += 2) {
-                                    try {
-                                        var cand = startAddr.add(offset);
-                                        var candidateStr = cand.readUtf16String(80);
-                                        if (candidateStr && candidateStr.length > 3) {
-                                            // Matches: "10. PlayerName 32000" or similar
-                                            var m10 = candidateStr.match(/^10[\.\s]+.*?\s+(\d+)/) || candidateStr.match(/^10[\.\s]+.*?(\d+)/);
-                                            if (m10 && m10[1]) {
-                                                var val = parseInt(m10[1]);
-                                                if (val > 1000 && val < 500000) {
-                                                    top10Score = val;
-                                                    break; // Found it!
+                        if (str) {
+                            var lowerStr = str.toLowerCase();
+                            if (lowerStr.indexOf("cá nhân") !== -1 && (lowerStr.indexOf("điểm") !== -1 || lowerStr.indexOf("diem") !== -1)) {
+                                var mScore = lowerStr.match(/(?:điểm|diem)\s+(\d+)/);
+                                var mRank = lowerStr.match(/(?:hạng|hang)\s+(\d+)/);
+                                var mKills = lowerStr.match(/(?:giết|giet)\s+(\d+)/);
+                                if (mScore && mScore[1]) {
+                                    var scoreVal = parseInt(mScore[1]);
+                                    var rankVal = mRank ? parseInt(mRank[1]) : 0;
+                                    var killsVal = mKills ? parseInt(mKills[1]) : 0;
+                                    
+                                    // Scan nearby memory (±50KB) for the 10th place score string
+                                    var top10Score = 0;
+                                    var startAddr = address.sub(50000);
+                                    for (var offset = 0; offset < 100000; offset += 2) {
+                                        try {
+                                            var cand = startAddr.add(offset);
+                                            var candidateStr = cand.readUtf16String(80);
+                                            if (candidateStr && candidateStr.length > 3) {
+                                                // Matches: "10. PlayerName 32000" or similar
+                                                var m10 = candidateStr.match(/^10[\.\s]+.*?\s+(\d+)/) || candidateStr.match(/^10[\.\s]+.*?(\d+)/);
+                                                if (m10 && m10[1]) {
+                                                    var val = parseInt(m10[1]);
+                                                    if (val > 1000 && val < 500000) {
+                                                        top10Score = val;
+                                                        break; // Found it!
+                                                    }
                                                 }
+                                                offset += candidateStr.length * 2;
                                             }
-                                            offset += candidateStr.length * 2;
-                                        }
-                                    } catch(e) {}
+                                        } catch(e) {}
+                                    }
+                                    
+                                    resolve({ 
+                                        ok: true, 
+                                        score: scoreVal,
+                                        rank: rankVal,
+                                        kills: killsVal,
+                                        top10Score: top10Score
+                                    });
+                                    return 'stop';
                                 }
-                                
-                                resolve({ 
-                                    ok: true, 
-                                    score: scoreVal,
-                                    rank: rankVal,
-                                    kills: killsVal,
-                                    top10Score: top10Score
-                                });
-                                return 'stop';
                             }
                         }
                     } catch(e) {}
@@ -3027,9 +3040,145 @@ rpc.exports.getShopItems = function(stallIndex, nameStr, namePtrStr, cidPtrStr, 
 };
 
 // ══ rpc/NPCScanner.js ══
-// frida-scripts/rpc/npc/NPCScanner.js
-// NPC (Trinh Sat, Quan Nhu) la NpcRes.Normal → khac klass voi player (NpcRes.Special)
-// Tim Normal klass tu metadata, scan heap voi klass do
+function getIl2CppBase() {
+    var mod = Process.findModuleByName('libil2cpp.so') || Process.findModuleByName('libil4i3n.so');
+    if (mod) return mod.base;
+
+    var base = null;
+    var lines = File.readAllText('/proc/self/maps').split('\n');
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if ((line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) && line.indexOf('r-x') !== -1) {
+            var parts = line.trim().split(/\s+/);
+            base = ptr('0x' + parts[0].split('-')[0]);
+            break;
+        }
+    }
+    if (!base) {
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if ((line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) && line.indexOf('r--p') !== -1) {
+                var parts = line.trim().split(/\s+/);
+                base = ptr('0x' + parts[0].split('-')[0]);
+                break;
+            }
+        }
+    }
+    return base;
+}
+
+function findElfExport(base, targetName) {
+    if (!base || base.isNull()) return ptr(0);
+    
+    var magic = base.readByteArray(4);
+    var u8 = new Uint8Array(magic);
+    if (u8[0] !== 0x7f || u8[1] !== 0x45 || u8[2] !== 0x4c || u8[3] !== 0x46) {
+        return ptr(0);
+    }
+    
+    var elfClass = base.add(4).readU8();
+    var is64 = (elfClass === 2);
+    
+    var e_phoff, e_phentsize, e_phnum;
+    if (is64) {
+        e_phoff = base.add(32).readU64().toNumber();
+        e_phentsize = base.add(54).readU16();
+        e_phnum = base.add(56).readU16();
+    } else {
+        e_phoff = base.add(28).readU32().toNumber();
+        e_phentsize = base.add(42).readU16();
+        e_phnum = base.add(44).readU16();
+    }
+    
+    var dynAddr = null;
+    var dynSize = 0;
+    
+    for (var i = 0; i < e_phnum; i++) {
+        var phdrAddr = base.add(e_phoff + i * e_phentsize);
+        var p_type = phdrAddr.readU32();
+        if (p_type === 2) { // PT_DYNAMIC
+            var p_vaddr, p_memsz;
+            if (is64) {
+                p_vaddr = phdrAddr.add(16).readU64().toNumber();
+                p_memsz = phdrAddr.add(40).readU64().toNumber();
+            } else {
+                p_vaddr = phdrAddr.add(8).readU32().toNumber();
+                p_memsz = phdrAddr.add(20).readU32().toNumber();
+            }
+            dynAddr = base.add(p_vaddr);
+            dynSize = p_memsz;
+            break;
+        }
+    }
+    
+    if (!dynAddr) return ptr(0);
+    
+    var symtab = null;
+    var strtab = null;
+    
+    var offset = 0;
+    var dynEntrySize = is64 ? 16 : 8;
+    while (offset < dynSize) {
+        var entryAddr = dynAddr.add(offset);
+        var d_tag, d_val;
+        if (is64) {
+            d_tag = entryAddr.readS64().toNumber();
+            d_val = entryAddr.add(8).readPointer();
+        } else {
+            d_tag = entryAddr.readS32();
+            d_val = entryAddr.add(4).readPointer();
+        }
+        
+        if (d_tag === 0) break; // DT_NULL
+        if (d_tag === 6) symtab = d_val; // DT_SYMTAB
+        if (d_tag === 5) strtab = d_val; // DT_STRTAB
+        
+        offset += dynEntrySize;
+    }
+    
+    if (!symtab || !strtab) return ptr(0);
+    
+    if (parseInt(symtab.toString()) < parseInt(base.toString())) {
+        symtab = base.add(symtab);
+    }
+    if (parseInt(strtab.toString()) < parseInt(base.toString())) {
+        strtab = base.add(strtab);
+    }
+
+    var idx = 0;
+    var symEntrySize = is64 ? 24 : 16;
+    while (idx < 50000) {
+        var symAddr = symtab.add(idx * symEntrySize);
+        var st_name = symAddr.readU32();
+        var st_value;
+        if (is64) {
+            st_value = symAddr.add(8).readU64();
+        } else {
+            st_value = symAddr.add(4).readU32();
+        }
+        
+        if (st_name === 0 && st_value.toString() === '0' && idx > 0) {
+            break;
+        }
+        
+        try {
+            var nameAddr = strtab.add(st_name);
+            var name = nameAddr.readUtf8String();
+            if (name === targetName) {
+                return base.add(ptr(st_value.toString()));
+            }
+        } catch(e) {
+            break;
+        }
+        idx++;
+    }
+    return ptr(0);
+}
+
+function __findClassViaIl2Cpp(namespace, className) {
+    // Disabled to prevent access violations on emulator translation layers
+    return null;
+}
 
 function __findClassFromMetadata(className) {
     try {
@@ -3053,73 +3202,83 @@ function __findClassFromMetadata(className) {
             name = className.substring(dotIdx + 1);
         }
 
-        // Find name string in metadata
         var hexName = '';
         for (var i = 0; i < name.length; i++) hexName += ('0' + name.charCodeAt(i).toString(16)).slice(-2);
-        var results = Memory.scanSync(metaBase, metaSize, hexName);
-        if (results.length === 0) return null;
-        
-        var nameAddr = null;
-        for (var r = 0; r < results.length; r++) {
-            var str = results[r].address.readUtf8String();
-            if (str === name) {
-                nameAddr = results[r].address;
-                break;
-            }
-        }
-        if (!nameAddr) return null;
-
-        // Find namespace string in metadata if specified
-        var nsAddr = null;
-        if (ns !== "") {
-            var hexNs = '';
-            for (var i = 0; i < ns.length; i++) hexNs += ('0' + ns.charCodeAt(i).toString(16)).slice(-2);
-            var nsResults = Memory.scanSync(metaBase, metaSize, hexNs);
-            for (var r = 0; r < nsResults.length; r++) {
-                var str = nsResults[r].address.readUtf8String();
-                if (str === ns) {
-                    nsAddr = nsResults[r].address;
-                    break;
-                }
-            }
-            if (!nsAddr) return null;
-        }
-
-        // Find Il2CppClass: scan rw- for pointer to nameAddr at +0x10
-        var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
-        var ptrHex = nameAddr.toString(16);
-        while (ptrHex.length < 16) ptrHex = '0' + ptrHex;
-        var pat = [];
-        for (var j = 14; j >= 0; j -= 2) pat.push(ptrHex.substring(j, j + 2));
-        var namePtrPattern = pat.join(' ');
-        
-        for (var r = 0; r < allRanges.length; r++) {
+        var scanRes = Memory.scanSync(metaBase, metaSize, hexName);
+        var nameAddrs = [];
+        for (var r = 0; r < scanRes.length; r++) {
             try {
-                var range = allRanges[r];
-                if (range.size < 0x1000) continue;
-                var matches = Memory.scanSync(range.base, range.size, namePtrPattern);
-                for (var m = 0; m < matches.length; m++) {
-                    var cand = matches[m].address.sub(0x10);
-                    if (cand.compare(range.base) < 0) continue;
-                    try {
-                        if (cand.add(0x10).readPointer().toString() === nameAddr.toString()) {
-                            var checkNsPtr = cand.add(0x18).readPointer();
-                            if (ns === "") {
-                                if (checkNsPtr.isNull() || checkNsPtr.readUtf8String() === "") {
-                                    return cand;
-                                }
-                            } else {
-                                if (!checkNsPtr.isNull() && checkNsPtr.toString() === nsAddr.toString()) {
-                                    return cand;
-                                }
-                            }
-                        }
-                    } catch(e) {}
+                if (scanRes[r].address.readUtf8String() === name) {
+                    nameAddrs.push(scanRes[r].address);
                 }
             } catch(e) {}
         }
+        if (nameAddrs.length === 0) return null;
+
+        var nsAddrs = [];
+        if (ns !== "") {
+            var hexNs = '';
+            for (var i = 0; i < ns.length; i++) hexNs += ('0' + ns.charCodeAt(i).toString(16)).slice(-2);
+            var nsScanRes = Memory.scanSync(metaBase, metaSize, hexNs);
+            for (var r = 0; r < nsScanRes.length; r++) {
+                try {
+                    if (nsScanRes[r].address.readUtf8String() === ns) {
+                        nsAddrs.push(nsScanRes[r].address);
+                    }
+                } catch(e) {}
+            }
+            if (nsAddrs.length === 0) return null;
+        }
+
+        var allRanges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+        
+        for (var na = 0; na < nameAddrs.length; na++) {
+            var nameAddr = nameAddrs[na];
+            var ptrHex = nameAddr.toString(16);
+            while (ptrHex.length < 16) ptrHex = '0' + ptrHex;
+            var pat = [];
+            for (var j = 14; j >= 0; j -= 2) pat.push(ptrHex.substring(j, j + 2));
+            var namePtrPattern = pat.join(' ');
+
+            for (var r = 0; r < allRanges.length; r++) {
+                try {
+                    var range = allRanges[r];
+                    if (range.size < 0x1000) continue;
+                    var matches = Memory.scanSync(range.base, range.size, namePtrPattern);
+                    for (var m = 0; m < matches.length; m++) {
+                        var cand = matches[m].address.sub(0x10); // class name string pointer is at 0x10
+                        if (cand.compare(range.base) < 0) continue;
+                        try {
+                            if (cand.add(0x10).readPointer().toString() === nameAddr.toString()) {
+                                var checkNsPtr = cand.add(0x18).readPointer(); // namespace pointer is at 0x18
+                                if (ns === "") {
+                                    if (checkNsPtr.isNull() || checkNsPtr.readUtf8String() === "") return cand;
+                                } else {
+                                    if (!checkNsPtr.isNull()) {
+                                        for (var nsa = 0; nsa < nsAddrs.length; nsa++) {
+                                            if (checkNsPtr.toString() === nsAddrs[nsa].toString()) return cand;
+                                        }
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                    }
+                } catch(e) {}
+            }
+        }
         return null;
     } catch(e) { return null; }
+}
+
+function __findClassDirect(className) {
+    var ns = "";
+    var name = className;
+    var dotIdx = className.lastIndexOf('.');
+    if (dotIdx !== -1) {
+        ns = className.substring(0, dotIdx);
+        name = className.substring(dotIdx + 1);
+    }
+    return __findClassViaIl2Cpp(ns, name) || __findClassFromMetadata(className);
 }
 
 rpc.exports.getNearNpcNames = function() {
@@ -3136,28 +3295,44 @@ rpc.exports.getNearNpcNames = function() {
     // Try cac class name kha thi cho NPC (quét 1 lần đầu tiên)
     var npcKlass = globalThis.cachedNpcKlass || null;
     if (!npcKlass) {
-        var classNames = ['NpcRes.Normal', 'Normal', 'NpcController', 'game.resource.settings.npcres.Controller'];
+        var classNames = [
+            'game.resource.settings.npcres.Datafield',
+            'NpcRes.Normal',
+            'Normal',
+            'NpcController',
+            'game.resource.settings.npcres.Controller'
+        ];
         for (var ci = 0; ci < classNames.length; ci++) {
-            npcKlass = __findClassFromMetadata(classNames[ci]);
+            npcKlass = __findClassDirect(classNames[ci]);
             if (npcKlass) {
                 console.log('[NPCScanner] Found klass for "' + classNames[ci] + '": ' + npcKlass);
                 globalThis.cachedNpcKlass = npcKlass;
+                globalThis.cachedNpcKlassName = classNames[ci];
                 break;
             }
         }
     }
     if (!npcKlass) return { ok: false, error: 'No NPC klass found in metadata', mapId: mapId };
 
+    // Set dynamic offsets based on which class was resolved
+    var idOffset = 0x28;
+    var nameOffset = 0x30;
+    var matchedKlassName = globalThis.cachedNpcKlassName || '';
+    if (matchedKlassName.indexOf('Datafield') !== -1) {
+        idOffset = 0x10;
+        nameOffset = 0x40;
+    }
+
     // Helper to read C# string from pointer
     function readIl2CppString(strPtr) {
-        if (!strPtr || strPtr.isNull() || parseInt(strPtr.toString()) < 0x10000) return '';
+        if (!strPtr || strPtr.isNull() || parseInt(strPtr.toString()) < 0x10000) return null;
         try {
             var len = strPtr.add(0x10).readInt();
-            if (len > 0 && len < 1000) {
+            if (len > 0 && len < 100) {
                 return strPtr.add(0x14).readUtf16String(len);
             }
         } catch(e) {}
-        return '';
+        return null;
     }
 
     // Scan heap (asynchronous, non-blocking, and optimized to skip mapped files)
@@ -3190,12 +3365,23 @@ rpc.exports.getNearNpcNames = function() {
                     onMatch: function(address, size) {
                         try {
                             var obj = address;
-                            var npcId = readIl2CppString(obj.add(0x28).readPointer());
+                            var npcId = readIl2CppString(obj.add(idOffset).readPointer());
                             if (npcId && !npcMap[npcId]) {
-                                var name = readIl2CppString(obj.add(0x30).readPointer());
+                                var name = readIl2CppString(obj.add(nameOffset).readPointer());
                                 if (name) {
-                                    npcMap[npcId] = name;
-                                    found++;
+                                    var lower = name.toLowerCase();
+                                    var isTongKimNpc = 
+                                        lower.indexOf('quân nhu') !== -1 || lower.indexOf('quan nhu') !== -1 ||
+                                        lower.indexOf('trinh') !== -1 ||
+                                        lower.indexOf('chiêu binh') !== -1 || lower.indexOf('chieu binh') !== -1 ||
+                                        lower.indexOf('mộ binh') !== -1 || lower.indexOf('mo binh') !== -1 ||
+                                        lower.indexOf('xa phu') !== -1 ||
+                                        lower.indexOf('rương') !== -1 || lower.indexOf('ruong') !== -1;
+                                    
+                                    if (isTongKimNpc) {
+                                        npcMap[npcId] = name;
+                                        found++;
+                                    }
                                 }
                             }
                         } catch(e) {}
@@ -3654,7 +3840,7 @@ rpc.exports.closeOnlyNpcDialog = function() {
             globalThis._mainThreadActions = globalThis._mainThreadActions || [];
             globalThis._mainThreadActions.push(function() {
                 try {
-                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
                     if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
                         closeNpcDialogFn(_playerMainInstance);
                     }
@@ -3690,7 +3876,7 @@ rpc.exports.closeOnlyNpcDialog = function() {
             
             // Also call standard CloseNpcDialog for safety
             try {
-                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
                 if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
                     closeNpcDialogFn(_playerMainInstance);
                 }
@@ -3759,14 +3945,38 @@ rpc.exports.closeDialogPopups = function() {
                     }
                 } catch(e) {}
 
-                // 3. Close StandardConfirmPc (revive popup) by pressing Cancel
+                // 3. Close StandardConfirmPc (revive popup) by pressing Cancel (or OK if dead to revive in camp)
                 try {
                     var standardConfirmPc = canvas.add(0xE8).readPointer();
                     if (standardConfirmPc && !standardConfirmPc.isNull()) {
-                        var cancelButton = standardConfirmPc.add(0x40).readPointer();
-                        if (cancelButton && !cancelButton.isNull()) {
-                            var pressButtonFn = new NativeFunction(il2cppBase.add(0x1ED7EF4), 'void', ['pointer']);
-                            pressButtonFn(cancelButton);
+                        var isDead = false;
+                        try {
+                            if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
+                                var npcontroller = _playerMainInstance.add(0x20).readPointer();
+                                if (npcontroller && !npcontroller.isNull()) {
+                                    var idnPtr = npcontroller.add(0x28).readPointer();
+                                    if (idnPtr && !idnPtr.isNull() && parseInt(idnPtr.toString()) > 0x10000) {
+                                        var hp = idnPtr.add(0x58).readInt();
+                                        if (hp <= 0) {
+                                            isDead = true;
+                                        }
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+
+                        if (!isDead) {
+                            var cancelButton = standardConfirmPc.add(0x40).readPointer();
+                            if (cancelButton && !cancelButton.isNull()) {
+                                var pressButtonFn = new NativeFunction(il2cppBase.add(0x1ED7EF4), 'void', ['pointer']);
+                                pressButtonFn(cancelButton);
+                            }
+                        } else {
+                            var okButton = standardConfirmPc.add(0x38).readPointer();
+                            if (okButton && !okButton.isNull()) {
+                                var pressButtonFn = new NativeFunction(il2cppBase.add(0x1ED7EF4), 'void', ['pointer']);
+                                pressButtonFn(okButton);
+                            }
                         }
                     }
                 } catch(e) {}
@@ -3774,7 +3984,7 @@ rpc.exports.closeDialogPopups = function() {
 
             // 4. Close logic states on PlayerMain
             try {
-                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
                 closeNpcDialogFn(_playerMainInstance);
             } catch(e){}
             try {
@@ -3868,6 +4078,42 @@ rpc.exports.buyActiveShopItem = function(qty) {
 
 globalThis._blockNpcDialog = false;
 
+// Block dialogue canvas creation in libil2cpp natively to prevent screen flickering/flashing
+try {
+    var base = (typeof il2cppBase !== 'undefined' && il2cppBase) ? il2cppBase : (typeof getIl2CppBase !== 'undefined' ? getIl2CppBase() : null);
+    if (base) {
+        var setNpcTransferMessageAddr = base.add(0xE45A18);
+        
+        Interceptor.attach(setNpcTransferMessageAddr, {
+            onLeave: function(retval) {
+                if (globalThis._blockNpcDialog) {
+                    // Close the dialogue popup immediately on the main thread after it opens
+                    globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+                    globalThis._mainThreadActions.push(function() {
+                        try {
+                            var canvas = getPopUpCanvasInstanceLocal();
+                            if (canvas && !canvas.isNull()) {
+                                var dialog = canvas.add(0x128).readPointer();
+                                if (dialog && !dialog.isNull()) {
+                                    var closeFn = new NativeFunction(base.add(0xE82838), 'void', ['pointer']);
+                                    closeFn(dialog);
+                                }
+                                var dialog10 = canvas.add(0x130).readPointer();
+                                if (dialog10 && !dialog10.isNull()) {
+                                    var closeFn10 = new NativeFunction(base.add(0xE80744), 'void', ['pointer']);
+                                    closeFn10(dialog10);
+                                }
+                            }
+                        } catch(e) {}
+                    });
+                }
+            }
+        });
+    }
+} catch(e) {
+    console.error("[Frida] Failed to hook SetNpcTransferMessage: " + e.message);
+}
+
 rpc.exports.setBlockNpcDialog = function(block) {
     globalThis._blockNpcDialog = !!block;
     return { ok: true, blocked: globalThis._blockNpcDialog };
@@ -3918,7 +4164,7 @@ setInterval(function() {
                                 }
                                 // Tự động đóng logic state hội thoại của PlayerMain
                                 if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
-                                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
                                     closeNpcDialogFn(_playerMainInstance);
                                     var closeNpcShopFn = new NativeFunction(il2cppBase.add(0xE4535C), 'void', ['pointer']);
                                     closeNpcShopFn(_playerMainInstance);
@@ -4163,47 +4409,6 @@ rpc.exports.listMethods = function(className, filter) {
             }
             return { ok: true, methods: out };
         } catch (e) { return { ok: false, error: '' + e }; }
-    });
-};
-
-rpc.exports.scanOffsets = function() {
-    if (typeof _playerMainInstance === 'undefined' || !_playerMainInstance) {
-        return "PlayerMain not resolved yet";
-    }
-    var pm = _playerMainInstance;
-    var out = {};
-    for (var offset = 0x80; offset <= 0x180; offset += 4) {
-        try {
-            var val = pm.add(offset).readS32();
-            out["0x" + offset.toString(16)] = val;
-        } catch(e) {}
-    }
-    return out;
-};
-
-rpc.exports.findRankClasses = function() {
-    if (typeof Il2Cpp === 'undefined') return "No Il2Cpp";
-    return Il2Cpp.perform(function() {
-        try {
-            var img = Il2Cpp.domain.assembly("Assembly-CSharp").image;
-            var classes = img.classes;
-            var found = [];
-            var keywords = ["rank", "score", "tongkim", "battle", "board", "bxh", "leaderboard"];
-            
-            for (var i = 0; i < classes.length; i++) {
-                var name = classes[i].name.toLowerCase();
-                var fullname = classes[i].fullName.toLowerCase();
-                for (var k = 0; k < keywords.length; k++) {
-                    if (name.indexOf(keywords[k]) !== -1 || fullname.indexOf(keywords[k]) !== -1) {
-                        found.push(classes[i].fullName);
-                        break;
-                    }
-                }
-            }
-            return found;
-        } catch(e) {
-            return "Error: " + e;
-        }
     });
 };
 

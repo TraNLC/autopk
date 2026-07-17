@@ -92,9 +92,7 @@ async function checkAndBaoDanhStaging(deviceId, session, info, sideConfig, sendL
         await new Promise(r => setTimeout(r, 800));
 
         await injector.sendNpcSelect(0);
-        await new Promise(r => setTimeout(r, 800));
-
-        try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+        await new Promise(r => setTimeout(r, 1200)); // Wait for map transition to staging area under latency
 
         sendLog(`[${deviceId}] [Bao Danh] Da gui lenh bao danh thanh cong.`, 'success');
         registrationAttempts.set(deviceId, hourMinute);

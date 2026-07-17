@@ -263,7 +263,9 @@ class AutoPK {
     }
 
     // 0.5. Nhận thuốc từ Quân Nhu nếu đang đứng ở doanh trại (gần Quân Nhu)
-    if (this.autoThuoc !== false && (!this._lastQuanNhuTime || (now - this._lastQuanNhuTime) > 30000)) {
+    const STAGING_MAPS = [323, 325, 379, 382, 972, 973, 974];
+    const isStagingArea = STAGING_MAPS.includes(info.mapId);
+    if (isStagingArea && (!this._lastQuanNhuTime || (now - this._lastQuanNhuTime) > 30000)) {
       this._lastQuanNhuTime = now;
       try {
         const npcRes = await this.session.callRpc('getNearNpcNames');
@@ -277,7 +279,7 @@ class AutoPK {
             }
           }
           if (quanNhuId) {
-            if (!this._lastHealRefillTime || (now - this._lastHealRefillTime) > 3 * 60 * 1000) {
+            if (!this._lastHealRefillTime || (now - this._lastHealRefillTime) > 1 * 60 * 1000) {
               this.log(`Phat hien Quan Nhu o gan (Doanh trai). Dang tien hanh nhan thuoc...`, 'info');
               await this.injector.sendNpcDialogue(quanNhuId);
               await new Promise(r => setTimeout(r, 800));

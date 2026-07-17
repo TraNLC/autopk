@@ -1,7 +1,7 @@
 @echo off
-title GST Auto PK Runner
+title GST Auto PK Runner [ver 1.0 (17/07/2026 14:20)]
 echo =================================================
-echo   GST Auto PK - VLTK1 Mobile Automation Runner
+echo   GST Auto PK - ver 1.0 (17/07/2026 14:20)
 echo =================================================
 echo.
 

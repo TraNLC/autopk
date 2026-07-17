@@ -27,8 +27,10 @@ function adbShell(deviceId, args, timeout = 15000) {
 
 /** Chạy lệnh ADB shell (trên thiết bị) */
 function adbDeviceShell(deviceId, shellCmd, timeout = 10000) {
-  const parts = typeof shellCmd === 'string' ? shellCmd.split(/\s+/) : shellCmd;
-  return adbShell(deviceId, ['shell', ...parts], timeout);
+  if (typeof shellCmd === 'string') {
+    return adbShell(deviceId, ['shell', shellCmd], timeout);
+  }
+  return adbShell(deviceId, ['shell', ...shellCmd], timeout);
 }
 
 // ==================== DEVICE MANAGEMENT ====================
@@ -166,47 +168,60 @@ function sleep(ms) {
 /** Khởi động frida-server trên thiết bị */
 function startFridaServer(deviceId) {
   try {
-    const psOut = adbDeviceShell(deviceId, 'ps');
-    if (psOut.includes('frida-server')) {
+    const fs = require('fs');
+    const path = require('path');
+
+    // 1. Kiểm tra nhanh xem frida-server đã chạy chưa
+    const checkRunning = adbDeviceShell(deviceId, 'pidof frida-server frida-server-x86_64');
+    if (checkRunning.trim().length > 0) {
       console.log(`[ADB] frida-server is already running on ${deviceId}`);
       return true;
     }
 
-    // Check and push frida-server if missing on the emulator
-    const checkFile64 = adbDeviceShell(deviceId, 'ls /data/local/tmp/frida-server-x86_64');
-    if (checkFile64.includes('No such file') || !checkFile64.includes('frida-server-x86_64')) {
-      const path = require('path');
-      const fs = require('fs');
-      const local64 = path.join(config.TOOLS_DIR, 'frida-server-x86_64');
-      if (fs.existsSync(local64)) {
-        console.log(`[ADB] Pushing frida-server-x86_64 to ${deviceId}...`);
-        execFileSync(ADB, ['-s', deviceId, 'push', local64, '/data/local/tmp/frida-server-x86_64'], { timeout: 10000, windowsHide: true });
-      }
+    // 2. Kiểm tra và đẩy file frida-server-x86_64 nếu thiếu hoặc kích thước không khớp
+    const local64 = path.join(config.TOOLS_DIR, 'frida-server-x86_64');
+    const localSize64 = fs.existsSync(local64) ? fs.statSync(local64).size : 0;
+    const checkFile64 = adbDeviceShell(deviceId, 'ls -l /data/local/tmp/frida-server-x86_64');
+    const hasFullFile64 = checkFile64 && checkFile64.includes(localSize64.toString());
+
+    if (!hasFullFile64 && localSize64 > 0) {
+      console.log(`[ADB] Pushing frida-server-x86_64 to ${deviceId}...`);
+      execFileSync(ADB, ['-s', deviceId, 'push', local64, '/data/local/tmp/frida-server-x86_64'], { timeout: 60000, windowsHide: true });
     }
 
-    const checkFile32 = adbDeviceShell(deviceId, 'ls /data/local/tmp/frida-server');
-    if (checkFile32.includes('No such file') || !checkFile32.includes('frida-server')) {
-      const path = require('path');
-      const fs = require('fs');
-      const local32 = path.join(config.TOOLS_DIR, 'frida-server');
-      if (fs.existsSync(local32)) {
-        console.log(`[ADB] Pushing frida-server (x86) to ${deviceId}...`);
-        execFileSync(ADB, ['-s', deviceId, 'push', local32, '/data/local/tmp/frida-server'], { timeout: 10000, windowsHide: true });
-      }
+    // 3. Kiểm tra và đẩy file frida-server (32-bit/ARM) nếu thiếu hoặc kích thước không khớp
+    const local32 = path.join(config.TOOLS_DIR, 'frida-server');
+    const localSize32 = fs.existsSync(local32) ? fs.statSync(local32).size : 0;
+    const checkFile32 = adbDeviceShell(deviceId, 'ls -l /data/local/tmp/frida-server');
+    const hasFullFile32 = checkFile32 && checkFile32.includes(localSize32.toString());
+
+    if (!hasFullFile32 && localSize32 > 0) {
+      console.log(`[ADB] Pushing frida-server (x86) to ${deviceId}...`);
+      execFileSync(ADB, ['-s', deviceId, 'push', local32, '/data/local/tmp/frida-server'], { timeout: 60000, windowsHide: true });
     }
 
     console.log(`[ADB] Starting frida-server on ${deviceId}...`);
     // Cấp quyền thực thi
-    adbDeviceShell(deviceId, 'su -c "chmod +x /data/local/tmp/frida-server*"', 2000);
+    adbDeviceShell(deviceId, 'su -c "chmod +x /data/local/tmp/frida-server*"', 5000);
+    
     // Thử chạy bản x86_64 trước
-    adbDeviceShell(deviceId, 'su -c "/data/local/tmp/frida-server-x86_64 -D"', 2000);
-    let check = adbDeviceShell(deviceId, 'ps');
-    if (check.includes('frida-server')) return true;
+    adbDeviceShell(deviceId, 'su -c "/data/local/tmp/frida-server-x86_64 -D"', 5000);
+    // Đợi 1 giây sử dụng Atomics.wait
+    try {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+    } catch (e) {}
+    
+    let check = adbDeviceShell(deviceId, 'pidof frida-server-x86_64 frida-server');
+    if (check.trim().length > 0) return true;
 
     // Thử bản arm64/arm
-    adbDeviceShell(deviceId, 'su -c "/data/local/tmp/frida-server -D"', 2000);
-    check = adbDeviceShell(deviceId, 'ps');
-    return check.includes('frida-server');
+    adbDeviceShell(deviceId, 'su -c "/data/local/tmp/frida-server -D"', 5000);
+    try {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+    } catch (e) {}
+    
+    check = adbDeviceShell(deviceId, 'pidof frida-server-x86_64 frida-server');
+    return check.trim().length > 0;
   } catch (e) {
     console.error(`[ADB] Lỗi khi start frida-server: ${e.message}`);
     return false;

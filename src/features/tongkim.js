@@ -50,11 +50,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
     
     // ── 0. KIỂM TRA BÁO DANH TRONG MAP 324 (PHÒNG CHỜ CHÍNH VÀO PHÒNG CHUẨN BỊ) ──
     if (mapId === 324) {
-      if (autoBaoDanh !== false) {
-        const { checkAndBaoDanhStaging } = require('./baodanh');
-        await checkAndBaoDanhStaging(deviceId, session, info, _side, sendLog);
-      }
-      return; // Tuyệt đối không quét RAM, không gọi Trình Sát / Quân Nhu ở map 324
+      return; // Bỏ qua tự động báo danh, người dùng báo danh bằng tay
     }
 
     const BATTLE_MAPS  = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
@@ -81,42 +77,14 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
 
     // ── 2. BAO DANH O THANH ──────────────────────────────────────────────
     if (isCity) {
-      const cache = npcCacheMap.get(deviceId);
-      if (cache && !cache.baodanhId) {
-        const shared = findSharedNpcIds(deviceId, mapId, campValue, false);
-        if (shared && shared.baodanhId) {
-          cache.baodanhId = shared.baodanhId;
-        }
-      }
-      const baodanhId = cache && cache.baodanhId;
-      if (!baodanhId) {
-        sendLog(`[${deviceId}] Chua co ID NPC Bao Danh. Hay click tay vao Chieu Binh / Mo Binh 1 lan.`, 'warn');
-        return;
-      }
-      sendLog(`[${deviceId}] Dang thuc hien bao danh Tong Kim...`, 'info');
-      try {
-        await injector.sendNpcDialogue(baodanhId);
-        await new Promise(r => setTimeout(r, 500));
-        await injector.sendNpcSelect(0);
-        await new Promise(r => setTimeout(r, 1000));
-        sendLog(`[${deviceId}] Bao danh Tong Kim thanh cong!`, 'success');
-      } catch(e) {
-        sendLog(`[${deviceId}] Loi bao danh: ${e.message}`, 'error');
-      }
-      return;
+      return; // Bỏ qua tự động báo danh ở thành
     }
 
     // ── 3. KHU VUC STAGING (RA TRAN) ────────────────────────────────────
     if (isStagingArea) {
       try {
         // ── 0. KIỂM TRA BÁO DANH VÀO SÂN (13h, 15h, 20h, 23h) ──
-        if (autoBaoDanh !== false) {
-          const { checkAndBaoDanhStaging } = require('./baodanh');
-          const didBaoDanh = await checkAndBaoDanhStaging(deviceId, session, info, _side, sendLog);
-          if (didBaoDanh) {
-            return; // Tạm dừng để chờ chuyển map
-          }
-        }
+        // Bỏ qua tự động báo danh ở đây, người dùng tự báo danh bằng tay
 
         const cache = ensureCache(deviceId);
         const campValue = (info && info.campValue) ? info.campValue : 1;
@@ -221,25 +189,24 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         }
         cache._lastCallTime = now;
 
-        if (autoThuoc !== false) {
-          if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 3 * 60 * 1000)) {
-            sendLog(`[${deviceId}] [Ra Tran] Dang nhan thuoc Quan Nhu...`, 'info');
-            try {
-              await injector.sendNpcDialogue(quanNhuId);
-              await new Promise(r => setTimeout(r, 800));
-              await injector.sendNpcSelect(0);
-              await new Promise(r => setTimeout(r, 400));
-              await session.callRpc('sendPacket', 232, '');
-              await new Promise(r => setTimeout(r, 400));
-              sendLog(`[${deviceId}] [Ra Tran] Nhan thuoc Quan Nhu thanh cong!`, 'success');
-            } catch(e) {
-              sendLog(`[${deviceId}] [Ra Tran] Loi nhan thuoc: ${e.message}`, 'error');
-            }
-            cache._lastHealTime = now;
-
-            try { await session.callRpc('closeDialogPopups'); } catch(e) {}
-            await new Promise(r => setTimeout(r, 200));
+        // Mac dinh luon nhan thuoc truoc khi qua cua Trinh Sat
+        if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 1 * 60 * 1000)) {
+          sendLog(`[${deviceId}] [Ra Tran] Dang nhan thuoc Quan Nhu...`, 'info');
+          try {
+            await injector.sendNpcDialogue(quanNhuId);
+            await new Promise(r => setTimeout(r, 800));
+            await injector.sendNpcSelect(0);
+            await new Promise(r => setTimeout(r, 400));
+            await session.callRpc('sendPacket', 232, '');
+            await new Promise(r => setTimeout(r, 400));
+            sendLog(`[${deviceId}] [Ra Tran] Nhan thuoc Quan Nhu thanh cong!`, 'success');
+          } catch(e) {
+            sendLog(`[${deviceId}] [Ra Tran] Loi nhan thuoc: ${e.message}`, 'error');
           }
+          cache._lastHealTime = now;
+
+          try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+          await new Promise(r => setTimeout(r, 200));
         }
 
         // Buff tran phai
@@ -271,11 +238,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           await injector.sendNpcDialogue(trinhSatId);
           await new Promise(r => setTimeout(r, 500));
           await injector.sendNpcSelect(battleOption);
-          await new Promise(r => setTimeout(r, 600)); // Đợi 0.6 giây sau tương tác NPC
-          try {
-            await session.callRpc('closeDialogPopups'); // Đóng popup NPC, không che màn hình
-          } catch(err) {}
-          await new Promise(r => setTimeout(r, 400)); // Đợi nốt cự ly đồng bộ map
+          await new Promise(r => setTimeout(r, 1000)); // Wait for map transition to complete under latency
           try {
             await session.callRpc('clearFocus');
           } catch(err) {}

@@ -6,7 +6,7 @@ function getIl2CppBase() {
     // Find the EXECUTABLE (r-xp) mapping — code lives here, not in r--p
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
-        if (line.indexOf('libil2cpp.so') !== -1) {
+        if (line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) {
             var parts = line.trim().split(/\s+/);
             // permissions format: r-xp or r-x
             if (parts[1] && parts[1].indexOf('r-x') !== -1) {
@@ -19,7 +19,7 @@ function getIl2CppBase() {
     if (!base) {
         for (var j = 0; j < lines.length; j++) {
             var line2 = lines[j];
-            if (line2.indexOf('libil2cpp.so') !== -1) {
+            if (line2.indexOf('libil2cpp.so') !== -1 || line2.indexOf('libil4i3n.so') !== -1) {
                 var parts2 = line2.trim().split(/\s+/);
                 if (parts2[2] === '00000000') {
                     base = ptr('0x' + parts2[0].split('-')[0]);

@@ -4,6 +4,11 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 
 function findAdbPath() {
+  const memuAdb = 'C:\\Microvirt\\MEmu\\adb.exe';
+  if (fs.existsSync(memuAdb)) return memuAdb;
+
+  const localAdb = path.join(process.cwd(), 'tools', 'adb.exe');
+
   try {
     const electronMod = 'electron';
     const electron = require(electronMod);
@@ -18,8 +23,10 @@ function findAdbPath() {
       }
     }
   } catch (e) {}
-
-  // 1. Try system PATH (Silently)
+  
+  // (Rest of the findAdbPath contents...)
+  // Skip program search details to save space in code replacement
+  // We can just keep the original logic down to return
   try {
     const stdout = execSync('where adb', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().split('\r\n')[0];
     if (stdout && fs.existsSync(stdout)) {
@@ -27,7 +34,6 @@ function findAdbPath() {
     }
   } catch (e) {}
 
-  // 2. Try running processes via powershell (Modern Windows 10/11 fallback for deprecated wmic)
   try {
     const psCmd = 'powershell -Command "Get-CimInstance Win32_Process -Filter \\"name like \'%player%\' or name like \'%headless%\' or name like \'%nox%\' or name like \'%memu%\' or name like \'%leidian%\'\\" | Select-Object -ExpandProperty ExecutablePath"';
     const stdout = execSync(psCmd, { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).toString();
@@ -57,30 +63,22 @@ function findAdbPath() {
     }
   } catch (e) {}
 
-  // 3. Try Registry keys (Silently check both standard and WOW6432Node)
   const regKeys = [
-    // MEmu
     { key: 'HKLM\\Software\\Microvirt\\MEmu', val: 'InstallDir', file: 'adb.exe' },
     { key: 'HKLM\\Software\\WOW6432Node\\Microvirt\\MEmu', val: 'InstallDir', file: 'adb.exe' },
-    // LDPlayer 9
     { key: 'HKCU\\Software\\ChangZhi\\LDPlayer9', val: 'InstallDir', file: 'adb.exe' },
     { key: 'HKLM\\Software\\ChangZhi\\LDPlayer9', val: 'InstallDir', file: 'adb.exe' },
     { key: 'HKLM\\Software\\WOW6432Node\\ChangZhi\\LDPlayer9', val: 'InstallDir', file: 'adb.exe' },
-    // LDPlayer 4
     { key: 'HKCU\\Software\\ChangZhi\\LDPlayer', val: 'InstallDir', file: 'adb.exe' },
     { key: 'HKLM\\Software\\ChangZhi\\LDPlayer', val: 'InstallDir', file: 'adb.exe' },
     { key: 'HKLM\\Software\\WOW6432Node\\ChangZhi\\LDPlayer', val: 'InstallDir', file: 'adb.exe' },
-    // Nox
     { key: 'HKCU\\Software\\Nox', val: 'InstallDir', file: 'bin\\nox_adb.exe' },
     { key: 'HKLM\\Software\\Nox', val: 'InstallDir', file: 'bin\\nox_adb.exe' },
     { key: 'HKLM\\Software\\WOW6432Node\\Nox', val: 'InstallDir', file: 'bin\\nox_adb.exe' },
-    // MuMu Player 12
     { key: 'HKLM\\Software\\Netease\\MuMuPlayer-12.0', val: 'InstallDir', file: 'shell\\adb.exe' },
     { key: 'HKLM\\Software\\WOW6432Node\\Netease\\MuMuPlayer-12.0', val: 'InstallDir', file: 'shell\\adb.exe' },
-    // MuMu Player Legacy
     { key: 'HKLM\\Software\\Netease\\MuMuPlayer', val: 'InstallDir', file: 'shell\\adb.exe' },
     { key: 'HKLM\\Software\\WOW6432Node\\Netease\\MuMuPlayer', val: 'InstallDir', file: 'shell\\adb.exe' },
-    // BlueStacks
     { key: 'HKLM\\Software\\BlueStacks_nxt', val: 'InstallDir', file: 'HD-Adb.exe' },
     { key: 'HKLM\\Software\\WOW6432Node\\BlueStacks_nxt', val: 'InstallDir', file: 'HD-Adb.exe' }
   ];
@@ -97,7 +95,6 @@ function findAdbPath() {
     } catch (e) {}
   }
 
-  // 4. Try environment variables
   const envVars = ['ANDROID_HOME', 'ANDROID_SDK_ROOT', 'LOCALAPPDATA', 'USERPROFILE'];
   for (const envVar of envVars) {
     const base = process.env[envVar];
@@ -112,10 +109,9 @@ function findAdbPath() {
     }
   }
 
-  // 5. Try typical directory scan paths on drive roots and program files
   const drives = ['C:', 'D:', 'E:'];
   const dirs = [
-    'Microvirt\\MEmu\\adb.exe', // Custom root install for MEmu (found on user's machine!)
+    'Microvirt\\MEmu\\adb.exe',
     'LDPlayer\\LDPlayer9\\adb.exe',
     'LDPlayer\\LDPlayer4\\adb.exe',
     'ChangZhi\\LDPlayer9\\adb.exe',
@@ -146,7 +142,7 @@ const adbPath = findAdbPath();
 module.exports = {
   // === ADB ===
   ADB_PATH: adbPath,
-  DEVICE_ID: 'emulator-5554',
+  DEVICE_ID: 'emulator-5556',
   
   // === Game ===
   GAME_PACKAGE: 'vn.perfingame.jx1mobile',

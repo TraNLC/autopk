@@ -156,7 +156,7 @@ rpc.exports.closeOnlyNpcDialog = function() {
             globalThis._mainThreadActions = globalThis._mainThreadActions || [];
             globalThis._mainThreadActions.push(function() {
                 try {
-                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
                     if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
                         closeNpcDialogFn(_playerMainInstance);
                     }
@@ -192,7 +192,7 @@ rpc.exports.closeOnlyNpcDialog = function() {
             
             // Also call standard CloseNpcDialog for safety
             try {
-                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
                 if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
                     closeNpcDialogFn(_playerMainInstance);
                 }
@@ -261,14 +261,38 @@ rpc.exports.closeDialogPopups = function() {
                     }
                 } catch(e) {}
 
-                // 3. Close StandardConfirmPc (revive popup) by pressing Cancel
+                // 3. Close StandardConfirmPc (revive popup) by pressing Cancel (or OK if dead to revive in camp)
                 try {
                     var standardConfirmPc = canvas.add(0xE8).readPointer();
                     if (standardConfirmPc && !standardConfirmPc.isNull()) {
-                        var cancelButton = standardConfirmPc.add(0x40).readPointer();
-                        if (cancelButton && !cancelButton.isNull()) {
-                            var pressButtonFn = new NativeFunction(il2cppBase.add(0x1ED7EF4), 'void', ['pointer']);
-                            pressButtonFn(cancelButton);
+                        var isDead = false;
+                        try {
+                            if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
+                                var npcontroller = _playerMainInstance.add(0x20).readPointer();
+                                if (npcontroller && !npcontroller.isNull()) {
+                                    var idnPtr = npcontroller.add(0x28).readPointer();
+                                    if (idnPtr && !idnPtr.isNull() && parseInt(idnPtr.toString()) > 0x10000) {
+                                        var hp = idnPtr.add(0x58).readInt();
+                                        if (hp <= 0) {
+                                            isDead = true;
+                                        }
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+
+                        if (!isDead) {
+                            var cancelButton = standardConfirmPc.add(0x40).readPointer();
+                            if (cancelButton && !cancelButton.isNull()) {
+                                var pressButtonFn = new NativeFunction(il2cppBase.add(0x1ED7EF4), 'void', ['pointer']);
+                                pressButtonFn(cancelButton);
+                            }
+                        } else {
+                            var okButton = standardConfirmPc.add(0x38).readPointer();
+                            if (okButton && !okButton.isNull()) {
+                                var pressButtonFn = new NativeFunction(il2cppBase.add(0x1ED7EF4), 'void', ['pointer']);
+                                pressButtonFn(okButton);
+                            }
                         }
                     }
                 } catch(e) {}
@@ -276,7 +300,7 @@ rpc.exports.closeDialogPopups = function() {
 
             // 4. Close logic states on PlayerMain
             try {
-                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
                 closeNpcDialogFn(_playerMainInstance);
             } catch(e){}
             try {
@@ -370,6 +394,42 @@ rpc.exports.buyActiveShopItem = function(qty) {
 
 globalThis._blockNpcDialog = false;
 
+// Block dialogue canvas creation in libil2cpp natively to prevent screen flickering/flashing
+try {
+    var base = (typeof il2cppBase !== 'undefined' && il2cppBase) ? il2cppBase : (typeof getIl2CppBase !== 'undefined' ? getIl2CppBase() : null);
+    if (base) {
+        var setNpcTransferMessageAddr = base.add(0xE45A18);
+        
+        Interceptor.attach(setNpcTransferMessageAddr, {
+            onLeave: function(retval) {
+                if (globalThis._blockNpcDialog) {
+                    // Close the dialogue popup immediately on the main thread after it opens
+                    globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+                    globalThis._mainThreadActions.push(function() {
+                        try {
+                            var canvas = getPopUpCanvasInstanceLocal();
+                            if (canvas && !canvas.isNull()) {
+                                var dialog = canvas.add(0x128).readPointer();
+                                if (dialog && !dialog.isNull()) {
+                                    var closeFn = new NativeFunction(base.add(0xE82838), 'void', ['pointer']);
+                                    closeFn(dialog);
+                                }
+                                var dialog10 = canvas.add(0x130).readPointer();
+                                if (dialog10 && !dialog10.isNull()) {
+                                    var closeFn10 = new NativeFunction(base.add(0xE80744), 'void', ['pointer']);
+                                    closeFn10(dialog10);
+                                }
+                            }
+                        } catch(e) {}
+                    });
+                }
+            }
+        });
+    }
+} catch(e) {
+    console.error("[Frida] Failed to hook SetNpcTransferMessage: " + e.message);
+}
+
 rpc.exports.setBlockNpcDialog = function(block) {
     globalThis._blockNpcDialog = !!block;
     return { ok: true, blocked: globalThis._blockNpcDialog };
@@ -420,7 +480,7 @@ setInterval(function() {
                                 }
                                 // Tự động đóng logic state hội thoại của PlayerMain
                                 if (typeof _playerMainInstance !== 'undefined' && _playerMainInstance && !_playerMainInstance.isNull()) {
-                                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE458F4), 'void', ['pointer']);
+                                    var closeNpcDialogFn = new NativeFunction(il2cppBase.add(0xE459FC), 'void', ['pointer']);
                                     closeNpcDialogFn(_playerMainInstance);
                                     var closeNpcShopFn = new NativeFunction(il2cppBase.add(0xE4535C), 'void', ['pointer']);
                                     closeNpcShopFn(_playerMainInstance);
