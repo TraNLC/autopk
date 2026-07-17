@@ -213,27 +213,6 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                                 cache.baodanhId = dynamicId;
                                 if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
                                 traceLog(deviceId, `Da hoc ID Bao Danh: ${dynamicId} (${name})`, 'success');
-                            } else {
-                                const stagingMaps = [323, 324, 325, 379, 382, 972, 973, 974];
-                                if (stagingMaps.includes(currentMapId)) {
-                                    if (!cache.trinhSatId) {
-                                        cache.trinhSatId = dynamicId;
-                                        if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
-                                        traceLog(deviceId, `Da hoc ID Trinh Sat (ten: "${name}"): ${dynamicId}`, 'success');
-                                    }
-                                }
-                            }
-                        } else {
-                            const currentMapId = state.info ? state.info.mapId : null;
-                            if (!cache.learnedIds.includes(dynamicId)) {
-                                cache.learnedIds.push(dynamicId);
-                                const stagingMaps = [323, 324, 325, 379, 382, 972, 973, 974];
-                                if (stagingMaps.includes(currentMapId)) {
-                                    if (!cache.trinhSatId) {
-                                        cache.trinhSatId = dynamicId;
-                                        traceLog(deviceId, `Da hoc ID Trinh Sat (du phong): ${dynamicId}`, 'success');
-                                    }
-                                }
                             }
                         }
                     }).catch(err => {

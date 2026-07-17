@@ -161,15 +161,15 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
               for (const [npcId, npcName] of Object.entries(npcNames.npcMap)) {
                 const lower = String(npcName).toLowerCase();
                 
-                // So khớp Trình Sát
-                if (lower.includes('trinh') || lower.includes('trình')) {
+                // So khớp Trình Sát (chính xác trinh sát / trinh sat)
+                if (lower.includes('trinh sát') || lower.includes('trinh sat')) {
                   if (!trinhSatId) {
                     trinhSatId = npcId;
                     cache.trinhSatId = npcId;
                   }
                 }
-                // So khớp Quân Nhu
-                else if (lower.includes('nhu') || lower.includes('quan y') || lower.includes('quân y')) {
+                // So khớp Quân Nhu / Quân Y (quân nhu / quan nhu / quân y / quan y)
+                else if (lower.includes('quân nhu') || lower.includes('quan nhu') || lower.includes('quan y') || lower.includes('quân y')) {
                   if (!quanNhuId) {
                     quanNhuId = npcId;
                     cache.quanNhuId = npcId;
