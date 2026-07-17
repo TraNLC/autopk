@@ -351,7 +351,7 @@ function getIl2CppBase() {
 function readPlayerMainDirect() {
     if (_playerMainInstance) {
         try {
-            var mapId = _playerMainInstance.add(0xE4).readU32();
+            var mapId = _playerMainInstance.add(0xEC).readU32();
             if (mapId > 0 && mapId < 10000000) {
                 return { ok: true, playerMain: _playerMainInstance.toString(), source: 'cached' };
             }
@@ -1470,7 +1470,7 @@ rpc.exports.getPlayerInfo = function() {
 
     if (pmRes.ok && _playerMainInstance) {
         try {
-            res.mapId = _playerMainInstance.add(0xE4).readS32();
+            res.mapId = _playerMainInstance.add(0xEC).readS32();
             
             var npcontroller = _playerMainInstance.add(0x20).readPointer();
             if (!npcontroller.isNull()) {
@@ -2029,7 +2029,7 @@ rpc.exports.getPlayerInfoNoIl2cpp = function() {
         }
         
         // mapId from PlayerMain
-        res.mapId = pmInst.add(0xE4).readInt(); // mapIdOnlineCurrently
+        res.mapId = pmInst.add(0xEC).readInt(); // mapIdOnlineCurrently
         
         return res;
     } catch(e) {
@@ -2047,7 +2047,7 @@ rpc.exports.verifyOffsets = function() {
         var r = { ok: true };
         
         // Verify mapId
-        r.mapId_0xE4 = pm.add(0xE4).readInt();
+        r.mapId_0xEC = pm.add(0xEC).readInt();
         
         // Verify via target path
         var target = pm.add(0xA0).readPointer();
@@ -2126,7 +2126,7 @@ rpc.exports.bulkVerify = function() {
         skills: rdPtr(pm, 0x38) ? 'ok' : null,
         world: rdPtr(pm, 0x48) ? 'ok' : null,
         target: target ? 'ok' : 'no target',
-        mapId: rdInt(pm, 0xE4),
+        mapId: rdInt(pm, 0xEC),
         npcDialog: rdPtr(pm, 0xE8) ? 'ok' : null,
         hotkey: rdPtr(pm, 0xF8) ? 'ok' : null,
         runFollow: rdStr(pm, 0x100)
@@ -2149,7 +2149,7 @@ rpc.exports.bulkVerify = function() {
         skills: rdPtr(pm, 0x38) ? 'ok' : null,
         world: rdPtr(pm, 0x48) ? 'ok' : null,
         autoplay: rdPtr(pm, 0x50) ? 'ok' : null,
-        mapId: rdInt(pm, 0xE4),
+        mapId: rdInt(pm, 0xEC),
         npcDialog: rdPtr(pm, 0xE8) ? 'ok' : null,
         hotkey: rdPtr(pm, 0xF8) ? 'ok' : null,
         runFollow: rdStr(pm, 0x100)
@@ -3102,7 +3102,7 @@ rpc.exports.getNearNpcNames = function() {
 
     var mapId = 0;
     try {
-        mapId = _playerMainInstance.add(0xE4).readS32();
+        mapId = _playerMainInstance.add(0xEC).readS32();
     } catch(e) {}
 
     var npcMap = {};
@@ -4138,6 +4138,21 @@ rpc.exports.listMethods = function(className, filter) {
             return { ok: true, methods: out };
         } catch (e) { return { ok: false, error: '' + e }; }
     });
+};
+
+rpc.exports.scanOffsets = function() {
+    if (typeof _playerMainInstance === 'undefined' || !_playerMainInstance) {
+        return "PlayerMain not resolved yet";
+    }
+    var pm = _playerMainInstance;
+    var out = {};
+    for (var offset = 0x80; offset <= 0x180; offset += 4) {
+        try {
+            var val = pm.add(offset).readS32();
+            out["0x" + offset.toString(16)] = val;
+        } catch(e) {}
+    }
+    return out;
 };
 
 // ══ ready.js ══

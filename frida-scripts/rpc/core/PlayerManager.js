@@ -137,7 +137,7 @@ rpc.exports.getPlayerInfo = function() {
 
     if (pmRes.ok && _playerMainInstance) {
         try {
-            res.mapId = _playerMainInstance.add(0xE4).readS32();
+            res.mapId = _playerMainInstance.add(0xEC).readS32();
             
             var npcontroller = _playerMainInstance.add(0x20).readPointer();
             if (!npcontroller.isNull()) {

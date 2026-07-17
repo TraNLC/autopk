@@ -29,7 +29,7 @@ function getIl2CppBase() {
 function readPlayerMainDirect() {
     if (_playerMainInstance) {
         try {
-            var mapId = _playerMainInstance.add(0xE4).readU32();
+            var mapId = _playerMainInstance.add(0xEC).readU32();
             if (mapId > 0 && mapId < 10000000) {
                 return { ok: true, playerMain: _playerMainInstance.toString(), source: 'cached' };
             }

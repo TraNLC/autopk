@@ -99,7 +99,7 @@ rpc.exports.getNearNpcNames = function() {
 
     var mapId = 0;
     try {
-        mapId = _playerMainInstance.add(0xE4).readS32();
+        mapId = _playerMainInstance.add(0xEC).readS32();
     } catch(e) {}
 
     var npcMap = {};
