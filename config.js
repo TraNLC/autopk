@@ -137,7 +137,24 @@ function findAdbPath() {
   return 'adb.exe';
 }
 
+function findToolsDir() {
+  try {
+    const electronMod = 'electron';
+    const electron = require(electronMod);
+    const app = electron.app || (electron.remote && electron.remote.app);
+    if (app && app.isPackaged && process.resourcesPath) {
+      const p = path.join(process.resourcesPath, 'tools');
+      if (fs.existsSync(p)) return p;
+    }
+  } catch (e) {}
+
+  return fs.existsSync(path.join(process.cwd(), 'tools'))
+    ? path.join(process.cwd(), 'tools')
+    : path.join(__dirname, 'tools');
+}
+
 const adbPath = findAdbPath();
+const toolsDir = findToolsDir();
 
 module.exports = {
   // === ADB ===
@@ -173,5 +190,5 @@ module.exports = {
   // === Paths ===
   DATA_DIR: fs.existsSync(path.join(process.cwd(), 'data')) ? path.join(process.cwd(), 'data') : path.join(__dirname, 'data'),
   OUTPUT_DIR: fs.existsSync(path.join(process.cwd(), 'data', 'output')) ? path.join(process.cwd(), 'data', 'output') : path.join(__dirname, 'data', 'output'),
-  TOOLS_DIR: fs.existsSync(path.join(process.cwd(), 'tools')) ? path.join(process.cwd(), 'tools') : path.join(__dirname, 'tools'),
+  TOOLS_DIR: toolsDir,
 };

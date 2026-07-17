@@ -1,6 +1,6 @@
 {
   "name": "gst-auto-pk-node",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "GST Auto PK - VLTK1 Mobile Automation Tool (Node.js Rewrite)",
   "main": "src/gui/main.js",
   "scripts": {
@@ -52,7 +52,9 @@
         "from": "tools",
         "to": "tools",
         "filter": [
-          "**/*"
+          "**/*",
+          "!frida-server",
+          "!frida-server-x86_64"
         ]
       }
     ],
