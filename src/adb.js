@@ -180,7 +180,21 @@ function startFridaServer(deviceId) {
 
     // 2. Kiểm tra và đẩy file frida-server-x86_64 nếu thiếu hoặc kích thước không khớp
     const local64 = path.join(config.TOOLS_DIR, 'frida-server-x86_64');
-    const localSize64 = fs.existsSync(local64) ? fs.statSync(local64).size : 0;
+    let localSize64 = fs.existsSync(local64) ? fs.statSync(local64).size : 0;
+
+    if (localSize64 === 0) {
+      const zip64 = local64 + '.zip';
+      if (fs.existsSync(zip64)) {
+        console.log('[ADB] Extracting frida-server-x86_64.zip...');
+        try {
+          execSync(`powershell -NoProfile -NonInteractive -Command "Expand-Archive -Path '${zip64}' -DestinationPath '${config.TOOLS_DIR}' -Force"`, { windowsHide: true });
+          localSize64 = fs.existsSync(local64) ? fs.statSync(local64).size : 0;
+        } catch (err) {
+          console.error(`[ADB] Lỗi giải nén frida-server-x86_64.zip: ${err.message}`);
+        }
+      }
+    }
+
     const checkFile64 = adbDeviceShell(deviceId, 'ls -l /data/local/tmp/frida-server-x86_64');
     const hasFullFile64 = checkFile64 && checkFile64.includes(localSize64.toString());
 
@@ -191,7 +205,21 @@ function startFridaServer(deviceId) {
 
     // 3. Kiểm tra và đẩy file frida-server (32-bit/ARM) nếu thiếu hoặc kích thước không khớp
     const local32 = path.join(config.TOOLS_DIR, 'frida-server');
-    const localSize32 = fs.existsSync(local32) ? fs.statSync(local32).size : 0;
+    let localSize32 = fs.existsSync(local32) ? fs.statSync(local32).size : 0;
+
+    if (localSize32 === 0) {
+      const zip32 = local32 + '.zip';
+      if (fs.existsSync(zip32)) {
+        console.log('[ADB] Extracting frida-server.zip...');
+        try {
+          execSync(`powershell -NoProfile -NonInteractive -Command "Expand-Archive -Path '${zip32}' -DestinationPath '${config.TOOLS_DIR}' -Force"`, { windowsHide: true });
+          localSize32 = fs.existsSync(local32) ? fs.statSync(local32).size : 0;
+        } catch (err) {
+          console.error(`[ADB] Lỗi giải nén frida-server.zip: ${err.message}`);
+        }
+      }
+    }
+
     const checkFile32 = adbDeviceShell(deviceId, 'ls -l /data/local/tmp/frida-server');
     const hasFullFile32 = checkFile32 && checkFile32.includes(localSize32.toString());
 
