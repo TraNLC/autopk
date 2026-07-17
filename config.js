@@ -4,9 +4,9 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 
 function findAdbPath() {
-  // 0. Try packaged Electron app path (from upstream)
   try {
-    const electron = require('electron');
+    const electronMod = 'electron';
+    const electron = require(electronMod);
     const app = electron.app || (electron.remote && electron.remote.app);
     if (app && app.isPackaged && process.resourcesPath) {
       const candidates = [
@@ -162,8 +162,8 @@ module.exports = {
 
   // === Frida ===
   FRIDA_SERVER_PATH: '/data/local/tmp/frida-server',
-  FRIDA_SCRIPTS_DIR: path.join(__dirname, 'frida-scripts'),
-
+  FRIDA_SCRIPTS_DIR: fs.existsSync(path.join(process.cwd(), 'frida-scripts')) ? path.join(process.cwd(), 'frida-scripts') : path.join(__dirname, 'frida-scripts'),
+  
   // === NPC Tong Kim (fallback neu chua hoc tu click tay) ===
   TK_HEAL_NPC: 5554,
   TK_HEAL_OPT: 1,
@@ -175,7 +175,7 @@ module.exports = {
   NGU_HANH: ['Kim', 'Moc', 'Thuy', 'Hoa', 'Tho'],
 
   // === Paths ===
-  DATA_DIR: path.join(__dirname, 'data'),
-  OUTPUT_DIR: path.join(__dirname, 'data', 'output'),
-  TOOLS_DIR: path.join(__dirname, 'tools'),
+  DATA_DIR: fs.existsSync(path.join(process.cwd(), 'data')) ? path.join(process.cwd(), 'data') : path.join(__dirname, 'data'),
+  OUTPUT_DIR: fs.existsSync(path.join(process.cwd(), 'data', 'output')) ? path.join(process.cwd(), 'data', 'output') : path.join(__dirname, 'data', 'output'),
+  TOOLS_DIR: fs.existsSync(path.join(process.cwd(), 'tools')) ? path.join(process.cwd(), 'tools') : path.join(__dirname, 'tools'),
 };
