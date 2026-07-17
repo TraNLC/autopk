@@ -209,7 +209,11 @@ function renderTable() {
     }
     const nameSpan = document.createElement('span');
     nameSpan.className = dev.connected ? 'text-blue' : '';
-    nameSpan.innerText = nameText;
+    if (dev.tkConfig && dev.tkConfig.fightTop1) {
+      nameSpan.innerHTML = nameText + ' <span class="badge-top1" style="background:#e74c3c; color:white; font-size:10px; padding:2px 5px; border-radius:4px; margin-left:5px; font-weight:bold; box-shadow:0 2px 5px rgba(231,76,60,0.5);">Top 1 🔥</span>';
+    } else {
+      nameSpan.innerText = nameText;
+    }
     tdName.appendChild(nameSpan);
     
     // Level
@@ -261,9 +265,82 @@ function renderTable() {
     tr.appendChild(tdSect);
     tr.appendChild(tdScore);
     tr.appendChild(tdStatus);
+
+    // Right-click listener for context menu
+    tr.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showContextMenu(e.clientX, e.clientY, id, dev);
+    });
+
     deviceTableBody.appendChild(tr);
   }
 }
+
+let activeContextMenu = null;
+
+function showContextMenu(x, y, id, dev) {
+  if (activeContextMenu) {
+    activeContextMenu.remove();
+    activeContextMenu = null;
+  }
+
+  const menu = document.createElement('div');
+  menu.className = 'custom-context-menu';
+  menu.style.position = 'absolute';
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.style.zIndex = '99999';
+  menu.style.background = '#2c3e50';
+  menu.style.border = '1px solid #34495e';
+  menu.style.borderRadius = '6px';
+  menu.style.boxShadow = '0 4px 15px rgba(0,0,0,0.5)';
+  menu.style.padding = '5px 0';
+  menu.style.minWidth = '150px';
+
+  const item = document.createElement('div');
+  item.className = 'context-menu-item';
+  item.style.padding = '8px 15px';
+  item.style.cursor = 'pointer';
+  item.style.color = '#ecf0f1';
+  item.style.display = 'flex';
+  item.style.alignItems = 'center';
+  item.style.justifyContent = 'space-between';
+  item.style.fontSize = '13px';
+  item.style.transition = 'background 0.2s';
+  
+  item.addEventListener('mouseenter', () => {
+    item.style.background = '#2980b9';
+  });
+  item.addEventListener('mouseleave', () => {
+    item.style.background = 'transparent';
+  });
+
+  const isFightTop1 = !!(dev.tkConfig && dev.tkConfig.fightTop1);
+  item.innerHTML = `<span>Đánh Top 1</span> <input type="checkbox" ${isFightTop1 ? 'checked' : ''} style="margin-left: 10px; cursor: pointer;">`;
+
+  item.addEventListener('click', () => {
+    if (!dev.tkConfig) {
+      dev.tkConfig = { side: 'auto', lacs: ['45', '51', '50'], autoBaoDanh: true, autoThuoc: true };
+    }
+    dev.tkConfig.fightTop1 = !isFightTop1;
+    updateGlobalTK();
+    renderTable();
+    menu.remove();
+    activeContextMenu = null;
+  });
+
+  menu.appendChild(item);
+  document.body.appendChild(menu);
+  activeContextMenu = menu;
+}
+
+// Close context menu on general click
+document.addEventListener('click', (e) => {
+  if (activeContextMenu && !activeContextMenu.contains(e.target)) {
+    activeContextMenu.remove();
+    activeContextMenu = null;
+  }
+});
 
 // Select Device Logic
 const lblSelectedAccGlobals = document.querySelectorAll('.lbl-selected-acc-global');

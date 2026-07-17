@@ -328,7 +328,9 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                             info.tkScore = tkRes.score;
                             info.tkRank = tkRes.rank;
                             info.tkKills = tkRes.kills;
+                            info.top10Score = tkRes.top10Score || 0;
                             state.lastTkScore = tkRes.score; // cache it
+                            state.lastTop10Score = tkRes.top10Score || 0;
                         }
                     } catch(e) {}
                 }
@@ -336,6 +338,9 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                 // Use cached score for intermediate ticks
                 if (state.lastTkScore !== undefined) {
                     info.tkScore = state.lastTkScore;
+                }
+                if (state.lastTop10Score !== undefined) {
+                    info.top10Score = state.lastTop10Score;
                 }
 
                 // Gui cap nhat trang thai len Renderer qua IPC (se duoc routed tu main.js)
@@ -414,9 +419,36 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                         if (isBattlefield) {
                             if (state.autoPK) {
                                 state.autoPK.autoThuoc = devCfg.autoThuoc !== false;
-                                if (!state.autoPK.running) {
-                                    traceLog(deviceId, `Nhan vat dang o Chien truong. Khoi dong luong PK nhanh...`, 'success', sendLog);
-                                    state.autoPK.start();
+                                state.autoPK.fightTop1 = devCfg.fightTop1 === true;
+                                
+                                // Logic dè chừng điểm:
+                                // Mặc định không chọn "đánh top 1" (fightTop1 !== true)
+                                // Đủ 30k điểm (score >= 30000) thì phải dè chừng: luôn thấp điểm hơn người hạng 10 (top10Score)
+                                const myScore = (state.info && state.info.tkScore) ? state.info.tkScore : 0;
+                                const top10Score = (state.info && state.info.top10Score) ? state.info.top10Score : 0;
+                                
+                                let shouldPauseCombat = false;
+                                if (devCfg.fightTop1 !== true) {
+                                    if (myScore >= 30000) {
+                                        // Dừng toàn bộ nếu đạt 30k
+                                        shouldPauseCombat = true;
+                                    }
+                                    if (top10Score > 0 && myScore >= top10Score) {
+                                        // Hoặc lỡ cao điểm hơn hạng 10 thì dừng auto
+                                        shouldPauseCombat = true;
+                                    }
+                                }
+                                
+                                if (shouldPauseCombat) {
+                                    if (state.autoPK.running) {
+                                        traceLog(deviceId, `Tam dung AutoPK: Dat moc diem gioi han (Diem cua ban: ${myScore}, Hang 10: ${top10Score}).`, 'warn', sendLog);
+                                        await state.autoPK.stop();
+                                    }
+                                } else {
+                                    if (!state.autoPK.running) {
+                                        traceLog(deviceId, `Kich hoat / Tiep tuc AutoPK (Diem cua ban: ${myScore}, Hang 10: ${top10Score}).`, 'success', sendLog);
+                                        state.autoPK.start();
+                                    }
                                 }
                             }
                         } else {

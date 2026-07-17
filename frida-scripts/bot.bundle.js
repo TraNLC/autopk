@@ -1854,7 +1854,7 @@ rpc.exports.getTkScoreDeepScan = function() {
         
         function scanRange(index) {
             if (index >= ranges.length) {
-                resolve({ ok: false, score: 0, rank: 0, kills: 0 });
+                resolve({ ok: false, score: 0, rank: 0, kills: 0, top10Score: 0 });
                 return;
             }
             Memory.scan(ranges[index].base, ranges[index].size, pattern, {
@@ -1862,16 +1862,42 @@ rpc.exports.getTkScoreDeepScan = function() {
                     try {
                         var str = address.readUtf16String(50);
                         if (str && str.indexOf("Cá nhân") !== -1 && str.indexOf("điểm") !== -1) {
-                            // Example: Cá nhân</color> giết 75 điểm 39400 hạng 16
                             var mScore = str.match(/điểm\s+(\d+)/);
                             var mRank = str.match(/hạng\s+(\d+)/);
                             var mKills = str.match(/giết\s+(\d+)/);
                             if (mScore && mScore[1]) {
+                                var scoreVal = parseInt(mScore[1]);
+                                var rankVal = mRank ? parseInt(mRank[1]) : 0;
+                                var killsVal = mKills ? parseInt(mKills[1]) : 0;
+                                
+                                // Scan nearby memory (±50KB) for the 10th place score string
+                                var top10Score = 0;
+                                var startAddr = address.sub(50000);
+                                for (var offset = 0; offset < 100000; offset += 2) {
+                                    try {
+                                        var cand = startAddr.add(offset);
+                                        var candidateStr = cand.readUtf16String(80);
+                                        if (candidateStr && candidateStr.length > 3) {
+                                            // Matches: "10. PlayerName 32000" or similar
+                                            var m10 = candidateStr.match(/^10[\.\s]+.*?\s+(\d+)/) || candidateStr.match(/^10[\.\s]+.*?(\d+)/);
+                                            if (m10 && m10[1]) {
+                                                var val = parseInt(m10[1]);
+                                                if (val > 1000 && val < 500000) {
+                                                    top10Score = val;
+                                                    break; // Found it!
+                                                }
+                                            }
+                                            offset += candidateStr.length * 2;
+                                        }
+                                    } catch(e) {}
+                                }
+                                
                                 resolve({ 
                                     ok: true, 
-                                    score: parseInt(mScore[1]),
-                                    rank: mRank ? parseInt(mRank[1]) : 0,
-                                    kills: mKills ? parseInt(mKills[1]) : 0
+                                    score: scoreVal,
+                                    rank: rankVal,
+                                    kills: killsVal,
+                                    top10Score: top10Score
                                 });
                                 return 'stop';
                             }
@@ -4153,6 +4179,32 @@ rpc.exports.scanOffsets = function() {
         } catch(e) {}
     }
     return out;
+};
+
+rpc.exports.findRankClasses = function() {
+    if (typeof Il2Cpp === 'undefined') return "No Il2Cpp";
+    return Il2Cpp.perform(function() {
+        try {
+            var img = Il2Cpp.domain.assembly("Assembly-CSharp").image;
+            var classes = img.classes;
+            var found = [];
+            var keywords = ["rank", "score", "tongkim", "battle", "board", "bxh", "leaderboard"];
+            
+            for (var i = 0; i < classes.length; i++) {
+                var name = classes[i].name.toLowerCase();
+                var fullname = classes[i].fullName.toLowerCase();
+                for (var k = 0; k < keywords.length; k++) {
+                    if (name.indexOf(keywords[k]) !== -1 || fullname.indexOf(keywords[k]) !== -1) {
+                        found.push(classes[i].fullName);
+                        break;
+                    }
+                }
+            }
+            return found;
+        } catch(e) {
+            return "Error: " + e;
+        }
+    });
 };
 
 // ══ ready.js ══
