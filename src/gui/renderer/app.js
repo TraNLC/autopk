@@ -4,32 +4,15 @@ const btnRestart = document.getElementById('btn-restart');
 const deviceTableBody = document.getElementById('device-table-body');
 const globalLogContainer = document.getElementById('global-log-container');
 
-// Tabs
-const tabBtns = document.querySelectorAll('.tab-btn');
-const tabPanes = document.querySelectorAll('.tab-pane');
-
-tabBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    // Remove active class
-    tabBtns.forEach(b => b.classList.remove('active'));
-    tabPanes.forEach(p => p.classList.remove('active'));
-    
-    // Add active class
-    btn.classList.add('active');
-    const targetId = btn.getAttribute('data-tab');
-    document.getElementById(targetId).classList.add('active');
-  });
-});
-
 // TK Settings Elements
 const btnToggleAutoTk = document.getElementById('btn-toggle-auto-tk');
 const lblSelectedAcc = document.getElementById('lbl-selected-acc');
 const accSettingsPanel = document.getElementById('acc-settings-panel');
-const selSide = document.getElementById('sel-side');
+const radSides = document.querySelectorAll('input[name="rad-side"]');
 const chkLac1 = document.getElementById('chk-lac1');
 const chkLac2 = document.getElementById('chk-lac2');
 const chkLac3 = document.getElementById('chk-lac3');
-const btnSaveAcc = document.getElementById('btn-save-acc');
+const selLacInterval = document.getElementById('sel-lac-interval');
 
 let isAutoTKEnabled = false;
 
@@ -228,7 +211,205 @@ function renderTable() {
     const tdScore = document.createElement('td');
     tdScore.innerText = (dev.info && dev.info.tkScore !== undefined) ? dev.info.tkScore : '';
 
+    const tdStatus = document.createElement('td');
+    const statusSpan = document.createElement('span');
+    statusSpan.className = dev.connected ? 'text-blue' : '';
+    if (dev.info && dev.info.error) {
+      statusSpan.style.color = 'red';
+      statusSpan.innerText = 'Lỗi';
+    } else if (dev.info && dev.info.mapId) {
+      const TK_MAPS = [323, 324, 325, 379, 382, 972, 44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
+      const mapNameLower = dev.info.mapName ? dev.info.mapName.toLowerCase() : '';
+      if (mapNameLower.includes('báo danh') || mapNameLower.includes('bao danh')) {
+        statusSpan.innerText = 'Báo danh TK';
+        statusSpan.style.color = '#3498db'; // blue
+      } else if (TK_MAPS.includes(dev.info.mapId) || mapNameLower.includes('doanh') || mapNameLower.includes('tống kim')) {
+        statusSpan.innerText = 'Đánh TK';
+        statusSpan.style.color = '#27ae60'; // green
+      } else {
+        statusSpan.innerText = 'Chờ TK';
+        statusSpan.style.color = '#e67e22'; // orange
+      }
+      statusSpan.style.fontWeight = 'bold';
+    } else {
+      statusSpan.innerText = dev.connected ? 'Đang đọc...' : 'Chờ';
+    }
+    tdStatus.appendChild(statusSpan);
+    
+    tr.appendChild(tdToggle);
+    tr.appendChild(tdName);
+    tr.appendChild(tdLevel);
+    tr.appendChild(tdSect);
+    tr.appendChild(tdScore);
+    tr.appendChild(tdStatus);
 
+    tr.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showContextMenu(e.clientX, e.clientY, id, dev);
+    });
+
+    deviceTableBody.appendChild(tr);
+  }
+}
+
+let activeContextMenu = null;
+
+function showContextMenu(x, y, id, dev) {
+  if (activeContextMenu) {
+    activeContextMenu.remove();
+    activeContextMenu = null;
+  }
+  const menu = document.createElement('div');
+  menu.className = 'custom-context-menu';
+  menu.style.position = 'absolute';
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.style.zIndex = '99999';
+  menu.style.background = '#2c3e50';
+  menu.style.border = '1px solid #34495e';
+  menu.style.borderRadius = '6px';
+  menu.style.boxShadow = '0 4px 15px rgba(0,0,0,0.5)';
+  menu.style.padding = '5px 0';
+  menu.style.minWidth = '150px';
+
+  const item = document.createElement('div');
+  item.className = 'context-menu-item';
+  item.style.padding = '8px 15px';
+  item.style.cursor = 'pointer';
+  item.style.color = '#ecf0f1';
+  item.style.display = 'flex';
+  item.style.alignItems = 'center';
+  item.style.justifyContent = 'space-between';
+  item.style.fontSize = '13px';
+  item.style.transition = 'background 0.2s';
+  
+  item.addEventListener('mouseenter', () => {
+    item.style.background = '#2980b9';
+  });
+  item.addEventListener('mouseleave', () => {
+    item.style.background = 'transparent';
+  });
+
+  const isFightTop1 = !!(dev.tkConfig && dev.tkConfig.fightTop1);
+  item.innerHTML = `<span>Đánh Top 1</span> <input type="checkbox" ${isFightTop1 ? 'checked' : ''} style="margin-left: 10px; cursor: pointer;">`;
+
+  item.addEventListener('click', () => {
+    if (!dev.tkConfig) {
+      dev.tkConfig = { side: 'auto', lacs: ['45', '51', '50'], autoBaoDanh: true };
+    }
+    dev.tkConfig.fightTop1 = !isFightTop1;
+    updateGlobalTK();
+    renderTable();
+    menu.remove();
+    activeContextMenu = null;
+  });
+
+  menu.appendChild(item);
+  document.body.appendChild(menu);
+  activeContextMenu = menu;
+}
+
+document.addEventListener('click', (e) => {
+  if (activeContextMenu && !activeContextMenu.contains(e.target)) {
+    activeContextMenu.remove();
+    activeContextMenu = null;
+  }
+});
+
+const lblSelectedAccGlobals = document.querySelectorAll('.lbl-selected-acc-global');
+
+function selectDevice(id) {
+  currentSelectedDeviceId = id;
+  renderTable(); 
+  
+  const name = (id && devicesMap.has(id)) 
+    ? ((devicesMap.get(id).info && devicesMap.get(id).info.name) ? devicesMap.get(id).info.name : id) 
+    : 'Chưa chọn';
+  
+  lblSelectedAcc.innerText = name;
+  lblSelectedAccGlobals.forEach(el => {
+    el.innerText = name;
+  });
+  
+  renderLogsForSelectedDevice(id);
+  
+  if (!id || !devicesMap.has(id)) {
+    radSides.forEach(rb => rb.checked = (rb.value === 'auto'));
+    chkLac1.checked = true;
+    chkLac2.checked = true;
+    chkLac3.checked = true;
+    const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+    if (chkBaoDanh) chkBaoDanh.checked = true;
+    return;
+  }
+  
+  const dev = devicesMap.get(id);
+  const cfg = dev.tkConfig || { side: 'auto', lacs: [], autoBaoDanh: true, lacInterval: 180 };
+  radSides.forEach(rb => rb.checked = (rb.value === (cfg.side || 'auto')));
+  chkLac1.checked = cfg.lacs ? cfg.lacs.includes('45') : false;
+  chkLac2.checked = cfg.lacs ? cfg.lacs.includes('51') : false;
+  chkLac3.checked = cfg.lacs ? cfg.lacs.includes('50') : false;
+  
+  if (selLacInterval) {
+    selLacInterval.value = cfg.lacInterval ? cfg.lacInterval.toString() : '180';
+  }
+  
+  const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+  if (chkBaoDanh) {
+    chkBaoDanh.checked = cfg.autoBaoDanh !== false;
+  }
+}
+
+function saveConfigForSelected() {
+  if (!currentSelectedDeviceId) return;
+  const dev = devicesMap.get(currentSelectedDeviceId);
+  if (!dev) return;
+  
+  dev.tkConfig = dev.tkConfig || {};
+  
+  let selectedSide = 'auto';
+  radSides.forEach(rb => {
+    if (rb.checked) selectedSide = rb.value;
+  });
+  dev.tkConfig.side = selectedSide;
+  
+  const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+  if (chkBaoDanh) {
+    dev.tkConfig.autoBaoDanh = chkBaoDanh.checked;
+  }
+  
+  const lacs = [];
+  if (chkLac1.checked) lacs.push('45');
+  if (chkLac2.checked) lacs.push('51');
+  if (chkLac3.checked) lacs.push('50');
+  dev.tkConfig.lacs = lacs;
+  
+  if (selLacInterval) {
+    dev.tkConfig.lacInterval = parseInt(selLacInterval.value) || 180;
+  }
+  
+  updateGlobalTK();
+  
+  // Create a descriptive log message
+  const sideName = selectedSide === 'song' ? 'Tống' : (selectedSide === 'jin' ? 'Kim' : 'Tự động');
+  const baoDanhStr = dev.tkConfig.autoBaoDanh ? 'Bật' : 'Tắt';
+  const lacNames = [];
+  if (lacs.includes('45')) lacNames.push('Phi tốc');
+  if (lacs.includes('51')) lacNames.push('Lệnh bài');
+  if (lacs.includes('50')) lacNames.push('Chiến cổ');
+  const lacsStr = lacNames.length > 0 ? lacNames.join(', ') : 'Không dùng';
+  const intervalStr = selLacInterval ? selLacInterval.options[selLacInterval.selectedIndex].text : '3 phút';
+
+  addLog(`[${currentSelectedDeviceId}] Lưu cấu hình: Phe ${sideName} | Báo danh: ${baoDanhStr} | Lắc: ${lacsStr} (${intervalStr})`, 'info');
+}
+
+radSides.forEach(rb => rb.addEventListener('change', saveConfigForSelected));
+if (chkLac1) chkLac1.addEventListener('change', saveConfigForSelected);
+if (chkLac2) chkLac2.addEventListener('change', saveConfigForSelected);
+if (chkLac3) chkLac3.addEventListener('change', saveConfigForSelected);
+if (selLacInterval) selLacInterval.addEventListener('change', saveConfigForSelected);
+const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+if (chkBaoDanh) chkBaoDanh.addEventListener('change', saveConfigForSelected);
 
 // Auto TK Logic
 function updateGlobalTK() {
@@ -257,4 +438,8 @@ btnRestart.addEventListener('click', () => {
 
 // Auto TK Logic
 // Init
+console.log('[Frontend] UI Loaded. Calling scanDevices()...');
+setTimeout(() => {
+  addLog('[System] Đang khởi tạo và tìm kiếm giả lập...', 'info');
+}, 500);
 scanDevices();

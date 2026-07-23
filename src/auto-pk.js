@@ -24,7 +24,7 @@ class AutoPK {
     this.hpThreshold = 0.65;
     this.mpThreshold = 0.30;
     
-    this.attackCriteria = 'nearest'; // nearest | lowest_level | highest_level
+
 
     // Default skills to execute
     this.attackSkills = [1];

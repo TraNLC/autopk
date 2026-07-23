@@ -273,7 +273,7 @@ function registerHandlers(win) {
         });
     });
 
-
+    traceLog('Init', null, 'Dang ky tat ca IPC hoan tat. Cho doi yeu cau tu Frontend...');
 }
 
 module.exports = {

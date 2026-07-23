@@ -39,7 +39,7 @@ function findSharedNpcIds(deviceId, mapId, campValue, isStaging) {
 /**
  * Auto Tống Kim loop — được gọi từ loop chính trong main.js
  */
-async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, autoBaoDanh, autoThuoc, stopMaxScore) {
+async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, autoBaoDanh, autoThuoc, stopMaxScore, lacInterval) {
   if (!session || !info) return;
   if (busyDevices.has(deviceId)) return;
   busyDevices.add(deviceId);
@@ -73,6 +73,39 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         sendLog(`[${deviceId}] Loi hoi sinh: ${e.message}`, 'error');
       }
       return;
+    }
+
+    // ── 1.5. SỬ DỤNG LẮC (BUFF) ───────────────────────────────────────────
+    if ((isStagingArea || isBattlefield) && info.hp > 0 && _lacs && _lacs.length > 0) {
+      const cache = ensureCache(deviceId);
+      const nowTime = Date.now();
+      const lacIntervalMs = (lacInterval || 180) * 1000;
+      
+      if (!cache._lastLacTime || (nowTime - cache._lastLacTime) >= lacIntervalMs) {
+        try {
+          const invRes = await session.callRpc('getInventoryItems');
+          if (invRes && invRes.ok && invRes.items) {
+            let usedCount = 0;
+            const usedParticulars = new Set();
+            for (const item of invRes.items) {
+               // Only use items that match the selected lacs and haven't been used in this cycle
+               if (_lacs.includes(item.particular.toString()) && !usedParticulars.has(item.particular)) {
+                 usedParticulars.add(item.particular);
+                 sendLog(`[${deviceId}] [Buff] Dang su dung ${item.name || 'Lắc'}...`, 'info');
+                 await session.callRpc('useItem', item.index);
+                 await new Promise(r => setTimeout(r, 600));
+                 usedCount++;
+               }
+            }
+            if (usedCount > 0) {
+              sendLog(`[${deviceId}] [Buff] Đã dùng ${usedCount} loại Lắc. (Chu kỳ ${lacInterval || 180}s)`, 'success');
+            }
+          }
+        } catch(e) {
+          sendLog(`[${deviceId}] [Buff] Lỗi sử dụng Lắc: ${e.message}`, 'error');
+        }
+        cache._lastLacTime = nowTime;
+      }
     }
 
     // ── 2. BAO DANH O THANH ──────────────────────────────────────────────
@@ -217,12 +250,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
 
 
 
-        // Nếu người dùng chọn Ngừng ra sân khi đủ 30.000 điểm
-        if (stopMaxScore === true) {
-          if (info.tkScore !== undefined && info.tkScore >= 30000) {
-            return;
-          }
-        }
+
 
         // ── Thống kê thời gian giãn cách 2.5s (hoặc 5s sau mỗi 1 phút) ──
         const now = Date.now();

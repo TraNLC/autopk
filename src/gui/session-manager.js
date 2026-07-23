@@ -453,10 +453,7 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                                 
                                 let shouldPauseCombat = false;
                                 if (devCfg.fightTop1 !== true) {
-                                    if (myScore >= 30000) {
-                                        // Dừng toàn bộ nếu đạt 30k
-                                        shouldPauseCombat = true;
-                                    }
+
                                     if (top10Score > 0 && myScore >= top10Score) {
                                         // Hoặc lỡ cao điểm hơn hạng 10 thì dừng auto
                                         shouldPauseCombat = true;
@@ -481,7 +478,7 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                                 await state.autoPK.stop();
                             }
                             // Goi autoTongKimLoop de mua thuoc / buff / bao danh vao san
-                            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh, true, devCfg.stopMaxScore);
+                            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh, true, devCfg.stopMaxScore, devCfg.lacInterval);
                         }
                     } catch (e) {
                         traceLog(deviceId, `Loi trong vong lapa Tong Kim: ${e.message}`, 'error', sendLog);
