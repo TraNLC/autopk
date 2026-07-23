@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "adbkit": "^2.11.1",
+    "electron-updater": "^6.8.9",
     "frida": "^17.10.1",
     "frida-compile": "^19.0.5",
     "frida-il2cpp-bridge": "^0.13.1",
@@ -40,6 +41,13 @@
         "zip"
       ]
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "TraNLC",
+        "repo": "autopk"
+      }
+    ],
     "files": [
       "src/**/*",
       "config.js",

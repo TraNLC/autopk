@@ -1,4 +1,5 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const sessionManager = require('./session-manager');
 const ipcRegister = require('./ipc-register');
@@ -41,6 +42,21 @@ app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+  
+  // Kích hoạt tính năng Auto-Update
+  autoUpdater.checkForUpdatesAndNotify();
+  
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('[AutoUpdater] Ban cap nhat da duoc tai xuong.');
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Cập nhật phiên bản mới',
+      message: 'Đã tải xong bản cập nhật mới nhất. Tool sẽ tự động khởi động lại để cài đặt ngay bây giờ!',
+      buttons: ['Cài đặt ngay']
+    }).then(() => {
+      autoUpdater.quitAndInstall();
+    });
   });
 });
 
