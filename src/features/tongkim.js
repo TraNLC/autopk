@@ -1,5 +1,5 @@
 const { PacketInjector } = require('../packet-injector');
-const { getNpcPair, updateNpcId } = require('./tongkim-data');
+const { getNpcPair } = require('./tongkim-data');
 
 const npcCacheMap = new Map(); // deviceId -> { mapId, campValue, trinhSatId, baodanhId, learnedIds, enterStagingTime, _lastCallTime }
 const busyDevices = new Set();
@@ -11,10 +11,35 @@ function ensureCache(deviceId) {
   return npcCacheMap.get(deviceId);
 }
 
+function findSharedNpcIds(deviceId, mapId, campValue, isStaging) {
+  for (const [otherDeviceId, otherCache] of npcCacheMap.entries()) {
+    if (otherDeviceId === deviceId) continue;
+    if (otherCache.lastMapId === mapId || otherCache.mapId === mapId) {
+      if (isStaging) {
+        if (otherCache.campValue === campValue) {
+          if (otherCache.trinhSatId || otherCache.quanNhuId) {
+            return {
+              trinhSatId: otherCache.trinhSatId,
+              quanNhuId: otherCache.quanNhuId
+            };
+          }
+        }
+      } else {
+        if (otherCache.baodanhId) {
+          return {
+            baodanhId: otherCache.baodanhId
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Auto Tống Kim loop — được gọi từ loop chính trong main.js
  */
-async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendLog) {
+async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, autoBaoDanh, autoThuoc, stopMaxScore, lacInterval) {
   if (!session || !info) return;
   if (busyDevices.has(deviceId)) return;
   busyDevices.add(deviceId);
@@ -22,187 +47,309 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
   try {
     const injector = new PacketInjector(session);
     const mapId    = info.mapId;
-    const BATTLE_MAPS  = [44, 375, 376, 377, 580];
-    const STAGING_MAPS = [323, 324, 325, 379, 382, 972];
+    
+    // ── 0. KIỂM TRA BÁO DANH TRONG MAP 324 (PHÒNG CHỜ CHÍNH VÀO PHÒNG CHUẨN BỊ) ──
+    if (mapId === 324) {
+      return; // Bỏ qua tự động báo danh, người dùng báo danh bằng tay
+    }
+
+    const BATTLE_MAPS  = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
+    const STAGING_MAPS = [323, 325, 379, 382, 972, 973, 974];
     const CITY_MAPS    = [1, 11, 37, 78, 162, 176];
 
     const isBattlefield = BATTLE_MAPS.includes(mapId);
     const isStagingArea = STAGING_MAPS.includes(mapId);
     const isCity        = CITY_MAPS.includes(mapId);
 
-    // ── 1. HỒI SINH KHI CHẾT ─────────────────────────────────────────────
+    // ── 1. HOI SINH KHI CHET ─────────────────────────────────────────────
     if (info.hp !== undefined && info.hp <= 0) {
-      sendLog(`[${deviceId}] 💀 Nhân vật đã chết. Đang hồi sinh...`, 'warn');
+      sendLog(`[${deviceId}] Nhan vat da chet. Dang hoi sinh...`, 'warn');
       try {
         await session.callRpc('closeDialogPopups').catch(() => {});
         await session.callRpc('sendPacket', 232, '');
         await session.callRpc('closeDialogPopups').catch(() => {});
-        sendLog(`[${deviceId}] ✅ Đã gửi hồi sinh.`, 'success');
+        sendLog(`[${deviceId}] OK da gui hoi sinh.`, 'success');
       } catch(e) {
-        sendLog(`[${deviceId}] ❌ Lỗi hồi sinh: ${e.message}`, 'error');
+        sendLog(`[${deviceId}] Loi hoi sinh: ${e.message}`, 'error');
       }
       return;
     }
 
-    // ── 2. BÁO DANH Ở THÀNH ──────────────────────────────────────────────
+    // ── 1.5. SỬ DỤNG LẮC (BUFF) ───────────────────────────────────────────
+    if ((isStagingArea || isBattlefield) && info.hp > 0 && _lacs && _lacs.length > 0) {
+      const cache = ensureCache(deviceId);
+      const nowTime = Date.now();
+      const lacIntervalMs = (lacInterval || 180) * 1000;
+      
+      if (!cache._lastLacTime || (nowTime - cache._lastLacTime) >= lacIntervalMs) {
+        try {
+          const invRes = await session.callRpc('getInventoryItems');
+          if (invRes && invRes.ok && invRes.items) {
+            let usedCount = 0;
+            const usedParticulars = new Set();
+            for (const item of invRes.items) {
+               // Only use items that match the selected lacs and haven't been used in this cycle
+               if (_lacs.includes(item.particular.toString()) && !usedParticulars.has(item.particular)) {
+                 usedParticulars.add(item.particular);
+                 sendLog(`[${deviceId}] [Buff] Dang su dung ${item.name || 'Lắc'}...`, 'info');
+                 await session.callRpc('useItem', item.index);
+                 await new Promise(r => setTimeout(r, 600));
+                 usedCount++;
+               }
+            }
+            if (usedCount > 0) {
+              sendLog(`[${deviceId}] [Buff] Đã dùng ${usedCount} loại Lắc. (Chu kỳ ${lacInterval || 180}s)`, 'success');
+            }
+          }
+        } catch(e) {
+          sendLog(`[${deviceId}] [Buff] Lỗi sử dụng Lắc: ${e.message}`, 'error');
+        }
+        cache._lastLacTime = nowTime;
+      }
+    }
+
+    // ── 2. BAO DANH O THANH ──────────────────────────────────────────────
     if (isCity) {
-      const cache = npcCacheMap.get(deviceId);
-      const baodanhId = cache && cache.baodanhId;
-      if (!baodanhId) {
-        sendLog(`[${deviceId}] ⚠️ Chưa có ID NPC Báo Danh. Hãy click tay vào Chiêu Binh Quân / Mộ Binh Quan 1 lần.`, 'warn');
-        return;
-      }
-      sendLog(`[${deviceId}] 📋 Gọi NPC Báo Danh (ID: ${baodanhId})...`, 'info');
-      try {
-        await session.callRpc('remoteNpcDialogue', baodanhId);
-        await new Promise(r => setTimeout(r, 400));
-        await session.callRpc('selectDialogOption', 0);
-        await new Promise(r => setTimeout(r, 500));
-        await session.callRpc('closeDialogPopups').catch(() => {});
-        sendLog(`[${deviceId}] ✅ Đã gửi lệnh vào khu chờ Tống Kim!`, 'success');
-      } catch(e) {
-        sendLog(`[${deviceId}] Lỗi báo danh: ${e.message}`, 'error');
-      }
-      return;
+      return; // Bỏ qua tự động báo danh ở thành
     }
 
-    // ── 3. KHU VỰC STAGING (RA TRẬN) ──────────────────────────────────────
+    // ── 3. KHU VUC STAGING (RA TRAN) ────────────────────────────────────
     if (isStagingArea) {
       try {
+        // ── 0. KIỂM TRA BÁO DANH VÀO SÂN (13h, 15h, 20h, 23h) ──
+        // Bỏ qua tự động báo danh ở đây, người dùng tự báo danh bằng tay
+
         const cache = ensureCache(deviceId);
         const campValue = (info && info.campValue) ? info.campValue : 1;
 
-        // Reset cache khi đổi phe
+        // Reset cache khi doi phe
         if (cache.campValue !== undefined && cache.campValue !== campValue) {
           cache.trinhSatId = null;
           cache.learnedIds = [];
-          sendLog(`[${deviceId}] 🔄 Đổi phe → reset NPC cache.`, 'info');
         }
         cache.campValue = campValue;
 
-        // Ghi nhận mốc thời gian bắt đầu vào staging để tính thời gian chờ
-        if (!cache.enterStagingTime || cache.lastMapId !== mapId) {
+        // Reset thoi gian khi vao map moi
+        if (cache.lastMapId !== mapId) {
           cache.enterStagingTime = Date.now();
+          cache._lastHealTime = 0; // Đảm bảo lấy thuốc ngay lập tức khi mới vào map
         }
         cache.lastMapId = mapId;
 
         let trinhSatId = cache.trinhSatId || null;
+        let quanNhuId  = cache.quanNhuId || null;
 
-        // Fallback từ DB
-        if (!trinhSatId) {
-          const pair = getNpcPair(mapId, campValue);
-          if (pair && pair.trinhSat) {
-            trinhSatId = pair.trinhSat;
-            cache.trinhSatId = trinhSatId;
-            sendLog(`[${deviceId}] 📋 Nạp Trinh Sát ID=${trinhSatId} từ Database.`, 'info');
-          }
-        }
-
-        if (!trinhSatId) {
-          sendLog(`[${deviceId}] ⚠️ Chưa có ID Trinh Sát. Hãy click tay vào NPC Trinh Sát 1 lần.`, 'warn');
-          return;
-        }
-
-        // ── Kiểm tra giãn cách gọi NPC (Không block loop) ──────────────────
-        // Bình thường: gọi nhanh 2.5s / lần để vào trận.
-        // Cứ mỗi mốc 5 phút (5p, 10p, 15p...): giảm tốc độ xuống 5s một lần duy nhất để reset rate-limit của server, sau đó tiếp tục 2.5s.
-        const elapsed = Date.now() - (cache.enterStagingTime || Date.now());
-        const minutesPassed = Math.floor(elapsed / (5 * 60 * 1000));
-        
-        let callInterval = 2500;
-        let isSlowTick = false;
-
-        if (minutesPassed > (cache.lastMinutesPassed || 0)) {
-          callInterval = 5000;
-          isSlowTick = true;
-        }
-
-        const now = Date.now();
-        if (cache._lastCallTime && (now - cache._lastCallTime) < callInterval) {
-          return; // Chưa đến lượt call, return nhanh để loop chính không bị block
-        }
-        cache._lastCallTime = now;
-
-        // Lưu lại mốc phút đã giảm tốc độ sau khi thực hiện gửi gói tin thành công
-        if (isSlowTick) {
-          cache.lastMinutesPassed = minutesPassed;
-          sendLog(`[${deviceId}] ⏳ Chạm mốc 5 phút dưỡng sức. Giảm tốc độ gọi Trinh Sát xuống 5s một lần để chống dis...`, 'warn');
-        } else {
-          sendLog(`[${deviceId}] ⚔️ Gọi Trinh Sát giãn cách 2.5s/lần...`, 'success');
-        }
-
-        // Thực thi mở dialog
-        await session.callRpc('closeDialogPopups').catch(() => {});
-        await new Promise(r => setTimeout(r, 200));
-
-        // Buff trấn phái
-        const sect = info.sect !== undefined ? info.sect : -1;
-        const sectSkillMap = { 0: 102, 1: 111, 3: 139, 4: 159, 5: 109, 6: 179, 7: 189, 8: 209, 9: 219 }; // Bỏ sect 2 (Đường Môn) vì không có buff
-        const buffSkillId = sectSkillMap[sect];
-        if (buffSkillId && buffSkillId > 1) {
-          sendLog(`[${deviceId}] ⚡ Buff trấn phái (skill ${buffSkillId})...`, 'success');
-          await injector.sendDoSkillTargetPosition(buffSkillId, info.x || 0, info.y || 0);
-          await new Promise(r => setTimeout(r, 400));
-        }
-
-        // Lắc vật phẩm hỗ trợ
-        if (lacs && lacs.length > 0) {
-          const itemsRes = await session.callRpc('getInventoryItems');
-          if (itemsRes && itemsRes.ok && itemsRes.items) {
-            for (const lacValue of lacs) {
-              let matchedItem = null;
-              if (lacValue === '45') matchedItem = itemsRes.items.find(i => i.name.toLowerCase().includes('phi tốc') || i.name.toLowerCase().includes('phi toc'));
-              else if (lacValue === '51') matchedItem = itemsRes.items.find(i => i.name.toLowerCase().includes('lệnh bài') || i.name.toLowerCase().includes('lenh bai'));
-              else if (lacValue === '50') matchedItem = itemsRes.items.find(i => i.name.toLowerCase().includes('chiến cổ') || i.name.toLowerCase().includes('chien co'));
-              if (matchedItem) {
-                sendLog(`[${deviceId}] 🎒 Dùng: ${matchedItem.name}`, 'info');
-                await session.callRpc('useItem', matchedItem.index);
-                await new Promise(r => setTimeout(r, 400));
-              }
+        // Thử lấy ID và tọa độ từ các cửa sổ khác cùng bản đồ + cùng phe
+        if (!trinhSatId || !quanNhuId || !cache.trinhSatX) {
+          const shared = findSharedNpcIds(deviceId, mapId, campValue, true);
+          if (shared) {
+            if (!trinhSatId && shared.trinhSatId) {
+              trinhSatId = shared.trinhSatId;
+              cache.trinhSatId = shared.trinhSatId;
+            }
+            if (!quanNhuId && shared.quanNhuId) {
+              quanNhuId = shared.quanNhuId;
+              cache.quanNhuId = shared.quanNhuId;
+            }
+            if (!cache.trinhSatX && shared.trinhSatX) {
+              cache.trinhSatX = shared.trinhSatX;
+              cache.trinhSatY = shared.trinhSatY;
             }
           }
         }
 
-        // Chờ thêm nếu có config delay riêng
-        if (delay > 0) {
-          sendLog(`[${deviceId}] ⏳ Chờ ${delay / 1000}s trước khi ra trận...`, 'info');
-          await new Promise(r => setTimeout(r, delay));
+        // Nếu chưa có tọa độ Trinh Sát, dùng Opcode 71 để quét và lấy tọa độ chính xác!
+        if (!cache.trinhSatX) {
+            try {
+                // Xóa buffer cũ
+                await session.callRpc('getRecvPackets', 72, 100).catch(() => {});
+                
+                // Gửi yêu cầu lấy NPC list
+                const { encodeField } = require('../packet-injector');
+                const hexReq = encodeField(1, 'int32', mapId).toString('hex');
+                await injector.sendRaw(71, hexReq);
+                
+                // Đợi 1.5s
+                await new Promise(r => setTimeout(r, 1500));
+                
+                // Lấy kết quả
+                const recvRes = await session.callRpc('getRecvPackets', 72, 10);
+                if (recvRes && recvRes.ok && recvRes.packets && recvRes.packets.length > 0) {
+                    for (const pkt of recvRes.packets) {
+                        const buf = Buffer.from(pkt.hex, 'hex');
+                        let offset = 0;
+                        let cx = 0, cy = 0, cName = "";
+                        while (offset < buf.length) {
+                            const tag = buf[offset++];
+                            const wireType = tag & 0x7;
+                            const fieldNum = tag >> 3;
+                            if (wireType === 0) {
+                                let val = 0n, shift = 0n;
+                                while (offset < buf.length) {
+                                    const b = buf[offset++];
+                                    val |= BigInt(b & 0x7f) << shift;
+                                    if ((b & 0x80) === 0) break;
+                                    shift += 7n;
+                                }
+                                if (fieldNum === 3) cx = Number(val);
+                                if (fieldNum === 4) cy = Number(val);
+                            } else if (wireType === 2) {
+                                let len = 0, shift = 0;
+                                while (offset < buf.length) {
+                                    const b = buf[offset++];
+                                    len |= (b & 0x7f) << shift;
+                                    if ((b & 0x80) === 0) break;
+                                    shift += 7;
+                                }
+                                if (len > 0 && offset + len <= buf.length) {
+                                    if (fieldNum === 2) {
+                                        cName = buf.slice(offset, offset + len).toString('utf8').toLowerCase();
+                                        if (cName.includes('trinh sát') || cName.includes('trinh sat')) {
+                                            cache.trinhSatX = cx;
+                                            cache.trinhSatY = cy;
+                                            sendLog(`[${deviceId}] [Ra Tran] Đã học được tọa độ Trinh Sát: (${cx}, ${cy})`, 'success');
+                                        }
+                                    }
+                                    offset += len;
+                                }
+                            } else if (wireType === 5) { offset += 4; } else if (wireType === 1) { offset += 8; }
+                        }
+                    }
+                }
+            } catch(e) {
+                sendLog(`[${deviceId}] Lỗi quét Trinh Sát bằng Opcode 71: ${e.message}`, 'error');
+            }
         }
 
-        // Chọn option đúng theo phe (0: Tống | 1: Kim)
-        const battleOption = (campValue === 2) ? 1 : 0;
-        sendLog(`[${deviceId}] ⚔️ Gọi Trinh Sát (ID=${trinhSatId}) → Chọn Trận địa bên ${campValue === 2 ? 'Kim' : 'Tống'} (Option ${battleOption})...`, 'info');
+        // Quét RAM tìm ID Trình Sát và Quân Nhu dynamically nếu một trong hai chưa có ID
+        if (!trinhSatId || !quanNhuId) {
+          try {
+            const npcNames = await session.callRpc('getNearNpcNames');
+            if (npcNames && npcNames.ok && npcNames.npcMap) {
+              for (const [npcId, npcName] of Object.entries(npcNames.npcMap)) {
+                const lower = String(npcName).toLowerCase();
+                if (lower.includes('trinh sát') || lower.includes('trinh sat')) {
+                  if (!trinhSatId) { trinhSatId = npcId; cache.trinhSatId = npcId; }
+                } // else if (lower.includes('quân nhu') || lower.includes('quan nhu') || lower.includes('quan y') || lower.includes('quân y')) {
+                //  if (!quanNhuId) { quanNhuId = npcId; cache.quanNhuId = npcId; }
+                // }
+              }
+            }
+          } catch(e) {}
+        }
+        // Tiến hành chạy về phía Trình Sát mỗi 1.5s (áp dụng khi vào map mới hoặc hồi sinh từ lúc chết)
+        if (cache.trinhSatX && cache.trinhSatY) {
+            const nowTime = Date.now();
+            if (!cache._lastMoveTime || (nowTime - cache._lastMoveTime) > 1500) {
+                cache._lastMoveTime = nowTime;
+                try {
+                    await injector.sendGotoPosition(cache.trinhSatX, cache.trinhSatY);
+                } catch(e) {}
+            }
+        }
+
+
+
+
+
+        // ── Thống kê thời gian giãn cách 2.5s (hoặc 5s sau mỗi 1 phút) ──
+        const now = Date.now();
         
-        await session.callRpc('remoteNpcDialogue', trinhSatId);
-        await new Promise(r => setTimeout(r, 500));
-        await session.callRpc('selectDialogOption', battleOption);
+        // Khởi tạo mốc thời gian 5s ban đầu nếu chưa có
+        if (!cache._lastFiveSecTime) {
+          cache._lastFiveSecTime = now;
+        }
+
+        let callInterval = 2500;
+        // Kiểm tra xem đã đến chu kỳ 1 phút để áp dụng giãn cách 5 giây chưa
+        const isFiveSecTick = (now - cache._lastFiveSecTime) > 60 * 1000;
+
+        if (isFiveSecTick) {
+          callInterval = 5000; // Ép giãn cách lên 5s cho lần này
+        }
+
+        if (cache._lastCallTime && (now - cache._lastCallTime) < callInterval) {
+          return; // Chưa tới lượt
+        }
+
+        // Cập nhật lại mốc 1 phút khi đã thỏa mãn và chuẩn bị gọi Trình Sát
+        if (isFiveSecTick) {
+          cache._lastFiveSecTime = now;
+          sendLog(`[He Thong] Kich hoat gian cach 5s mot lan (het chu ky 1 phut, quay lai 2.5s)...`, 'info');
+        }
+        cache._lastCallTime = now;
+
+        // Mac dinh luon nhan thuoc truoc khi qua cua Trinh Sat
+        // if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 1 * 60 * 1000)) {
+        //   sendLog(`[${deviceId}] [Ra Tran] Dang nhan thuoc Quan Nhu...`, 'info');
+        //   try {
+        //     await injector.sendNpcDialogue(quanNhuId);
+        //     await new Promise(r => setTimeout(r, 800));
+        //     await injector.sendNpcSelect(0);
+        //     await new Promise(r => setTimeout(r, 400));
+        //     await session.callRpc('sendPacket', 232, '');
+        //     await new Promise(r => setTimeout(r, 400));
+        //     sendLog(`[${deviceId}] [Ra Tran] Nhan thuoc Quan Nhu thanh cong!`, 'success');
+        //   } catch(e) {
+        //     sendLog(`[${deviceId}] [Ra Tran] Loi nhan thuoc: ${e.message}`, 'error');
+        //   }
+        //   cache._lastHealTime = now;
+        // 
+        //   try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+        //   await new Promise(r => setTimeout(r, 200));
+        // }
+
+        // Buff tran phai
+        try {
+          const sect = info.sect !== undefined ? info.sect : -1;
+          const sectSkillMap = { 0: 102, 1: 111, 2: 129, 3: 139, 4: 159, 5: 109, 6: 179, 7: 189, 8: 209, 9: 219 };
+          const buffSkillId = sectSkillMap[sect];
+          if (buffSkillId && buffSkillId > 1) {
+            await injector.sendDoSkillTargetPosition(buffSkillId, info.x || 0, info.y || 0);
+            await new Promise(r => setTimeout(r, 400));
+          }
+        } catch(e) {}
+
+        // Dong popup truoc khi goi Trinh Sat
+        try { await session.callRpc('closeDialogPopups'); } catch(e) {}
         await new Promise(r => setTimeout(r, 200));
 
-        // Dùng map cố định ID skill 9x thay vì getMySkills (tránh lỗi access violation của Frida)
-        let targetSkill = 1;
-        const sectSkill9xMap = {
-          0: 104, // Thiếu Lâm (Đạt Ma)
-          1: 114, // Thiên Vương (Truy Tinh)
-          2: 132, // Đường Môn (Bạo Vũ)
-          3: 142, // Ngũ Độc (Bách Độc)
-          4: 152, // Nga Mi (Phong Sương)
-          5: 172, // Thúy Yên (Băng Tâm Tiên Tử)
-          6: 182, // Cái Bang (Kháng Long)
-          7: 192, // Thiên Nhẫn (Vân Long / Thiên Ngoại)
-          8: 204, // Võ Đang (Thiên Địa)
-          9: 215  // Côn Lôn (Lôi Động)
-        };
-        
-        if (sect !== -1 && sectSkill9xMap[sect]) {
-          targetSkill = sectSkill9xMap[sect];
+        // Goi Trinh Sat -> chon phe vao chien truong (0: Tong | 1: Kim)
+        try {
+          let battleOption = 0;
+          if (_side === 'jin') {
+            battleOption = 1;
+          } else if (_side === 'song') {
+            battleOption = 0;
+          } else {
+            battleOption = (campValue === 2) ? 1 : 0;
+          }
+          sendLog(`[${deviceId}] [Ra Tran] Dang qua cua Trinh Sat ra chien truong...`, 'info');
+          await injector.sendNpcDialogue(trinhSatId);
+          await new Promise(r => setTimeout(r, 500));
+          await injector.sendNpcSelect(battleOption);
+          await new Promise(r => setTimeout(r, 1000)); // Wait for map transition to complete under latency
+          try {
+            await session.callRpc('clearFocus');
+          } catch(err) {}
+        } catch(e) {
+          sendLog(`[${deviceId}] [Ra Tran] Loi qua cua Trinh Sat: ${e.message}`, 'error');
         }
 
-        sendLog(`[${deviceId}] ⚡ Đánh 1 chiêu 9x (ID ${targetSkill}) tại chỗ để hủy target Trinh Sát...`, 'info');
-        await injector.sendDoSkillTargetPosition(targetSkill, info.x || 0, info.y || 0);
-        await new Promise(r => setTimeout(r, 800)); // Chờ 800ms để client kịp load map mới hoặc hồi chiêu
+        // Buff tran phai sau khi ra san (sau khi qua cua Trinh Sat)
+        try {
+          const sect = info.sect !== undefined ? info.sect : -1;
+          const sectSkillMap = { 0: 102, 1: 111, 2: 129, 3: 139, 4: 159, 5: 109, 6: 179, 7: 189, 8: 209, 9: 219 };
+          const buffSkillId = sectSkillMap[sect];
+          if (buffSkillId && buffSkillId > 1) {
+            sendLog(`[${deviceId}] [Ra Tran] Dang thuc hien buff ho tro...`, 'info');
+            await injector.sendDoSkillTargetPosition(buffSkillId, info.x || 0, info.y || 0);
+            await new Promise(r => setTimeout(r, 400));
+          }
+        } catch(e) {}
 
       } catch(e) {
-        sendLog(`[${deviceId}] Lỗi Auto Tống Kim: ${e.message}`, 'error');
+        sendLog(`[${deviceId}] Loi Auto Tong Kim: ${e.message}`, 'error');
       }
     }
 
@@ -211,8 +358,112 @@ async function autoTongKimLoop(deviceId, session, info, side, lacs, delay, sendL
   }
 }
 
+async function collectPoints(deviceId, session, sendLog) {
+  const cache = ensureCache(deviceId);
+  
+  try {
+    sendLog(`[${deviceId}] [Gom Diem] Buoc 1: Bat dau gom diem tich luy...`, 'info');
+    const injector = new PacketInjector(session);
+    
+    // Step 1: Quét tìm NPC Mộ binh / Chiêu binh / Quân nhu
+    const npcNamesRes = await session.callRpc('getNearNpcNames');
+    const info = await session.callRpc('getPlayerInfo');
+    const mapId = (info && info.mapId) ? info.mapId : 0;
+    const camp = (info && info.campValue) ? info.campValue : 1;
+
+    let npcId = null;
+    let npcName = '';
+    
+    if (npcNamesRes && npcNamesRes.ok && npcNamesRes.npcMap) {
+      for (const [id, name] of Object.entries(npcNamesRes.npcMap)) {
+        const lower = String(name).toLowerCase();
+        
+        if (mapId === 324) {
+          // Báo danh area: only look for Mộ binh or Chiêu binh
+          if (lower.includes('mộ binh') || lower.includes('chieu binh') || lower.includes('chiêu binh')) {
+            npcId = id;
+            npcName = name;
+            break;
+          }
+        } else {
+          // Staging area: only look for Quân nhu
+          if (lower.includes('quân nhu') || lower.includes('quan nhu')) {
+            npcId = id;
+            npcName = name;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Fallback nếu không quét được NPC dynamically
+    if (!npcId) {
+      if (camp === 2) {
+        npcId = "23"; // Mặc định Kim
+        npcName = "NPC Chieu Binh Quan (Kim)";
+      } else {
+        npcId = "28"; // Mặc định Tong
+        npcName = "NPC Mo Binh Quan (Tong)";
+      }
+    }
+    
+    // Động xác định quy trình mở shop dựa theo tên NPC
+    const lowerNpcName = npcName.toLowerCase();
+    const isStagingNpc = lowerNpcName.includes('quốc') || lowerNpcName.includes('quoc') || (mapId !== 324);
+    
+    if (isStagingNpc) {
+      // NPC ở map Staging (Tống Quốc Quân nhu quan / Kim Quốc Quân nhu quan)
+      // Mở shop trực tiếp bằng Option 1 trên màn hình đầu tiên
+      sendLog(`[${deviceId}] [Gom Diem] Buoc 2: Tuong tac voi ${npcName} (Map chuan bi)...`, 'info');
+      try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+      await new Promise(r => setTimeout(r, 400));
+      await injector.sendNpcDialogue(npcId);
+      await new Promise(r => setTimeout(r, 1000));
+      
+      cache.lastNpcShopKey = null; // Reset shopkey cũ
+      await injector.sendNpcSelect(1); // Option 1: Mở shop
+      await new Promise(r => setTimeout(r, 600));
+    } else {
+      // NPC ở Map 324 (Quân Nhu quan, Mộ binh quan, Chiêu binh quan)
+      // Màn hình 1: Chọn Option 1 (Xem điểm tích lũy)
+      // Màn hình 2: Chọn Option 0 (Mở shop)
+      sendLog(`[${deviceId}] [Gom Diem] Buoc 2: Tuong tac voi ${npcName} (Map 324)...`, 'info');
+      try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+      await new Promise(r => setTimeout(r, 400));
+      await injector.sendNpcDialogue(npcId);
+      await new Promise(r => setTimeout(r, 1000));
+      
+      await injector.sendNpcSelect(1); // Option 1: Xem điểm tích lũy
+      await new Promise(r => setTimeout(r, 1000));
+      
+      cache.lastNpcShopKey = null; // Reset shopkey cũ
+      await injector.sendNpcSelect(0); // Option 0: Mở shop
+      await new Promise(r => setTimeout(r, 600));
+    }
+    
+    // Đợi 400ms để shop UI hoàn toàn render
+    await new Promise(r => setTimeout(r, 400));
+    
+    sendLog(`[${deviceId}] [Gom Diem] Buoc 3: Dang chon vat pham Phieu Tich Luy Tong Kim...`, 'info');
+    await session.callRpc('clickFirstShopItem');
+    await new Promise(r => setTimeout(r, 800)); // Đợi popup Số lượng hiện lên
+    
+    sendLog(`[${deviceId}] [Gom Diem] Dang gui lenh mua so luong toi da...`, 'info');
+    await session.callRpc('buyActiveShopItem', 999);
+    await new Promise(r => setTimeout(r, 800));
+    
+    // Đóng toàn bộ popup sau khi hoàn tất
+    try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+    
+    sendLog(`[${deviceId}] [Gom Diem] Buoc 4: Hoan tat gom diem tich luy thanh cong!`, 'success');
+  } catch (err) {
+    sendLog(`[${deviceId}] [Gom Diem] Loi khi thuc hien gom diem: ${err.message}`, 'error');
+  }
+}
+
 module.exports = {
   autoTongKimLoop,
   npcCacheMap,
-  ensureCache
+  ensureCache,
+  collectPoints
 };

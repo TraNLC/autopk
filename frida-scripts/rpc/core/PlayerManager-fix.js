@@ -139,7 +139,7 @@ rpc.exports.getPlayerInfoNoIl2cpp = function() {
         }
         
         // mapId from PlayerMain
-        res.mapId = pmInst.add(0xE4).readInt(); // mapIdOnlineCurrently
+        res.mapId = pmInst.add(0xEC).readInt(); // mapIdOnlineCurrently
         
         return res;
     } catch(e) {
@@ -157,7 +157,7 @@ rpc.exports.verifyOffsets = function() {
         var r = { ok: true };
         
         // Verify mapId
-        r.mapId_0xE4 = pm.add(0xE4).readInt();
+        r.mapId_0xEC = pm.add(0xEC).readInt();
         
         // Verify via target path
         var target = pm.add(0xA0).readPointer();
@@ -236,7 +236,7 @@ rpc.exports.bulkVerify = function() {
         skills: rdPtr(pm, 0x38) ? 'ok' : null,
         world: rdPtr(pm, 0x48) ? 'ok' : null,
         target: target ? 'ok' : 'no target',
-        mapId: rdInt(pm, 0xE4),
+        mapId: rdInt(pm, 0xEC),
         npcDialog: rdPtr(pm, 0xE8) ? 'ok' : null,
         hotkey: rdPtr(pm, 0xF8) ? 'ok' : null,
         runFollow: rdStr(pm, 0x100)
@@ -259,7 +259,7 @@ rpc.exports.bulkVerify = function() {
         skills: rdPtr(pm, 0x38) ? 'ok' : null,
         world: rdPtr(pm, 0x48) ? 'ok' : null,
         autoplay: rdPtr(pm, 0x50) ? 'ok' : null,
-        mapId: rdInt(pm, 0xE4),
+        mapId: rdInt(pm, 0xEC),
         npcDialog: rdPtr(pm, 0xE8) ? 'ok' : null,
         hotkey: rdPtr(pm, 0xF8) ? 'ok' : null,
         runFollow: rdStr(pm, 0x100)

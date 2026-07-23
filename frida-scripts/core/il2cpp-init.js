@@ -6,17 +6,27 @@ globalThis.npcCache = globalThis.npcCache || {};
  * Find libil2cpp.so base address from /proc/self/maps.
  */
 function getIl2CppBase() {
-    var mod = Process.findModuleByName('libil2cpp.so');
+    var mod = Process.findModuleByName('libil2cpp.so') || Process.findModuleByName('libil4i3n.so');
     if (mod) return mod.base;
 
     var base = null;
     var lines = File.readAllText('/proc/self/maps').split('\n');
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
-        if (line.indexOf('libil2cpp.so') !== -1 && line.indexOf('r--p') !== -1) {
+        if ((line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) && line.indexOf('r-x') !== -1) {
             var parts = line.trim().split(/\s+/);
             base = ptr('0x' + parts[0].split('-')[0]);
             break;
+        }
+    }
+    if (!base) {
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if ((line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) && line.indexOf('r--p') !== -1) {
+                var parts = line.trim().split(/\s+/);
+                base = ptr('0x' + parts[0].split('-')[0]);
+                break;
+            }
         }
     }
     return base;
@@ -29,7 +39,7 @@ function getIl2CppBase() {
 function readPlayerMainDirect() {
     if (_playerMainInstance) {
         try {
-            var mapId = _playerMainInstance.add(0xE4).readU32();
+            var mapId = _playerMainInstance.add(0xEC).readU32();
             if (mapId > 0 && mapId < 10000000) {
                 return { ok: true, playerMain: _playerMainInstance.toString(), source: 'cached' };
             }
@@ -40,6 +50,47 @@ function readPlayerMainDirect() {
     
     var now = Date.now();
     _lastPlayerMainScanTime = now;
+    
+    // Try native IL2CPP functions first (highly reliable and doesn't require global-metadata.dat)
+    try {
+        var libBase = il2cppBase || (typeof getIl2CppBase !== 'undefined' ? getIl2CppBase() : null);
+        if (libBase) {
+            var fn_domain_get = Module.findExportByName('libil2cpp.so', 'il2cpp_domain_get') || (typeof findElfExport !== 'undefined' ? findElfExport(libBase, 'il2cpp_domain_get') : null);
+            var fn_domain_assembly_open = Module.findExportByName('libil2cpp.so', 'il2cpp_domain_assembly_open') || (typeof findElfExport !== 'undefined' ? findElfExport(libBase, 'il2cpp_domain_assembly_open') : null);
+            var fn_assembly_get_image = Module.findExportByName('libil2cpp.so', 'il2cpp_assembly_get_image') || (typeof findElfExport !== 'undefined' ? findElfExport(libBase, 'il2cpp_assembly_get_image') : null);
+            var fn_class_from_name = Module.findExportByName('libil2cpp.so', 'il2cpp_class_from_name') || (typeof findElfExport !== 'undefined' ? findElfExport(libBase, 'il2cpp_class_from_name') : null);
+            
+            if (fn_domain_get && fn_domain_assembly_open && fn_assembly_get_image && fn_class_from_name) {
+                var get_domain = new NativeFunction(fn_domain_get, 'pointer', []);
+                var assembly_open = new NativeFunction(fn_domain_assembly_open, 'pointer', ['pointer', 'pointer']);
+                var get_image = new NativeFunction(fn_assembly_get_image, 'pointer', ['pointer']);
+                var class_from_name = new NativeFunction(fn_class_from_name, 'pointer', ['pointer', 'pointer', 'pointer']);
+                
+                var domain = get_domain();
+                if (domain && !domain.isNull()) {
+                    var assembly = assembly_open(domain, Memory.allocUtf8String("Assembly-CSharp"));
+                    if (assembly && !assembly.isNull()) {
+                        var image = get_image(assembly);
+                        if (image && !image.isNull()) {
+                            var klass = class_from_name(image, Memory.allocUtf8String(""), Memory.allocUtf8String("PlayerMain"));
+                            if (klass && !klass.isNull()) {
+                                var staticFields = klass.add(0xB8).readPointer();
+                                if (staticFields && !staticFields.isNull()) {
+                                    var instance = staticFields.readPointer();
+                                    if (instance && !instance.isNull() && parseInt(instance.toString()) > 0x10000) {
+                                        _playerMainInstance = instance;
+                                        return { ok: true, playerMain: _playerMainInstance.toString(), source: 'native_il2cpp' };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch(e) {
+        // Fallback to metadata scanning if native resolution fails
+    }
     
     // Resolve dynamically!
     try {
@@ -115,6 +166,7 @@ function readPlayerMainDirect() {
         try {
             // Hook Controller.Update at 0xFB6994 for reliable tick
             globalThis._tickCount = 0;
+
             Interceptor.attach(il2cppBase.add(0xFB6994), {
                 onEnter: function(args) {
                     globalThis._tickCount++;
@@ -186,3 +238,9 @@ function readPlayerMainDirect() {
         send({ type: 'il2cpp_ready', msg: 'libil2cpp.so not found in maps' });
     }
 })();
+
+// Export for RPC and Global usage
+if (typeof rpc !== 'undefined' && rpc.exports) {
+    rpc.exports.readPlayerMainDirect = readPlayerMainDirect;
+}
+globalThis.readPlayerMainDirect = readPlayerMainDirect;

@@ -6,7 +6,7 @@ function getIl2CppBase() {
     // Find the EXECUTABLE (r-xp) mapping — code lives here, not in r--p
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
-        if (line.indexOf('libil2cpp.so') !== -1) {
+        if (line.indexOf('libil2cpp.so') !== -1 || line.indexOf('libil4i3n.so') !== -1) {
             var parts = line.trim().split(/\s+/);
             // permissions format: r-xp or r-x
             if (parts[1] && parts[1].indexOf('r-x') !== -1) {
@@ -19,7 +19,7 @@ function getIl2CppBase() {
     if (!base) {
         for (var j = 0; j < lines.length; j++) {
             var line2 = lines[j];
-            if (line2.indexOf('libil2cpp.so') !== -1) {
+            if (line2.indexOf('libil2cpp.so') !== -1 || line2.indexOf('libil4i3n.so') !== -1) {
                 var parts2 = line2.trim().split(/\s+/);
                 if (parts2[2] === '00000000') {
                     base = ptr('0x' + parts2[0].split('-')[0]);
@@ -257,13 +257,15 @@ rpc.exports.getMySkills = function() {
 
 rpc.exports.getPlayerInfo = function() {
     var pmRes = readPlayerMainDirect();
-    var pos = _lastPosition;
+    var pos = typeof _lastPosition !== 'undefined' ? _lastPosition : { x: 0, y: 0, eid: 0, ts: Date.now() };
     var res = {
         ok: pmRes.ok,
         playerMain: pmRes.playerMain || null,
         source: pmRes.source || null,
         error: pmRes.error || null,
-        position: { x: pos.x, y: pos.y, eid: pos.eid, age: Date.now() - pos.ts },
+        x: pos.x || 0,
+        y: pos.y || 0,
+        position: { x: pos.x || 0, y: pos.y || 0, eid: pos.eid || '', age: Date.now() - (pos.ts || 0) },
         recvTotal: _recvTotal,
         sendTotal: _sendTotal,
         gameFd: gameFd,
@@ -271,7 +273,23 @@ rpc.exports.getPlayerInfo = function() {
 
     if (pmRes.ok && _playerMainInstance) {
         try {
-            res.mapId = _playerMainInstance.add(0xE4).readS32();
+            res.mapId = _playerMainInstance.add(0xEC).readS32();
+
+            // ── Đọc x, y từ npcontroller chain (đáng tin cậy hơn _lastPosition) ──
+            try {
+                var npctrl = _playerMainInstance.add(0x20).readPointer();
+                if (npctrl && !npctrl.isNull()) {
+                    var posPtr = npctrl.add(0x10).readPointer();
+                    if (posPtr && !posPtr.isNull()) {
+                        var mapPos = posPtr.add(0x28).readPointer();
+                        if (mapPos && !mapPos.isNull()) {
+                            res.x = mapPos.add(0x10).readInt();
+                            res.y = mapPos.add(0x14).readInt();
+                            res.position = { x: res.x, y: res.y, eid: pos.eid || '', age: 0 };
+                        }
+                    }
+                }
+            } catch(e) {}
             
             var npcontroller = _playerMainInstance.add(0x20).readPointer();
             if (!npcontroller.isNull()) {

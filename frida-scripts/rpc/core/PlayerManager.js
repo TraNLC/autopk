@@ -137,7 +137,7 @@ rpc.exports.getPlayerInfo = function() {
 
     if (pmRes.ok && _playerMainInstance) {
         try {
-            res.mapId = _playerMainInstance.add(0xE4).readS32();
+            res.mapId = _playerMainInstance.add(0xEC).readS32();
             
             var npcontroller = _playerMainInstance.add(0x20).readPointer();
             if (!npcontroller.isNull()) {
@@ -507,10 +507,78 @@ rpc.exports.useItem = function(itemIdx) {
                     }
                 }
             }
-            return { ok: false, error: 'Item not found' };
         } catch(e) {
             return { ok: false, error: e.message };
         }
+        return { ok: false, error: 'Item not found' };
     });
 };
 
+rpc.exports.getTkScoreDeepScan = function() {
+    return new Promise(function(resolve) {
+        var pattern = "?? 00 e1 00 20 00 ?? 00 68 00 e2 00 ?? 00"; // Case-insensitive "Cá nhân" in UTF-16LE
+        var ranges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
+        
+        function scanRange(index) {
+            if (index >= ranges.length) {
+                resolve({ ok: false, score: 0, rank: 0, kills: 0, top10Score: 0 });
+                return;
+            }
+            Memory.scan(ranges[index].base, ranges[index].size, pattern, {
+                onMatch: function(address, size) {
+                    try {
+                        var str = address.readUtf16String(50);
+                        if (str) {
+                            var lowerStr = str.toLowerCase();
+                            if (lowerStr.indexOf("cá nhân") !== -1 && (lowerStr.indexOf("điểm") !== -1 || lowerStr.indexOf("diem") !== -1)) {
+                                var mScore = lowerStr.match(/(?:điểm|diem)\s+(\d+)/);
+                                var mRank = lowerStr.match(/(?:hạng|hang)\s+(\d+)/);
+                                var mKills = lowerStr.match(/(?:giết|giet)\s+(\d+)/);
+                                if (mScore && mScore[1]) {
+                                    var scoreVal = parseInt(mScore[1]);
+                                    var rankVal = mRank ? parseInt(mRank[1]) : 0;
+                                    var killsVal = mKills ? parseInt(mKills[1]) : 0;
+                                    
+                                    // Scan nearby memory (±50KB) for the 10th place score string
+                                    var top10Score = 0;
+                                    var startAddr = address.sub(50000);
+                                    for (var offset = 0; offset < 100000; offset += 2) {
+                                        try {
+                                            var cand = startAddr.add(offset);
+                                            var candidateStr = cand.readUtf16String(80);
+                                            if (candidateStr && candidateStr.length > 3) {
+                                                // Matches: "10. PlayerName 32000" or similar
+                                                var m10 = candidateStr.match(/^10[\.\s]+.*?\s+(\d+)/) || candidateStr.match(/^10[\.\s]+.*?(\d+)/);
+                                                if (m10 && m10[1]) {
+                                                    var val = parseInt(m10[1]);
+                                                    if (val > 1000 && val < 500000) {
+                                                        top10Score = val;
+                                                        break; // Found it!
+                                                    }
+                                                }
+                                                offset += candidateStr.length * 2;
+                                            }
+                                        } catch(e) {}
+                                    }
+                                    
+                                    resolve({ 
+                                        ok: true, 
+                                        score: scoreVal,
+                                        rank: rankVal,
+                                        kills: killsVal,
+                                        top10Score: top10Score
+                                    });
+                                    return 'stop';
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                },
+                onComplete: function() {
+                    scanRange(index + 1);
+                }
+            });
+        }
+        scanRange(0);
+    });
+};

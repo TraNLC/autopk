@@ -1,29 +1,47 @@
 // frida-scripts/rpc/core/Il2CppUtils.js -- Utilities for IL2CPP memory and native exports
 
 function findElfExport(base, targetName) {
-    if (!base || base.isNull()) return ptr(0);
-    
     // Try built-in resolver globally first
     try {
         var exp = Module.findExportByName(null, targetName);
         if (exp && !exp.isNull()) {
             return exp;
         }
-    } catch(e) {
-        // Module.findExportByName might be unsupported in this older frida/duktape
+    } catch(e) {}
+    
+    // Check if the passed base already points to a valid ELF header
+    var isBaseElf = false;
+    if (base && !base.isNull()) {
+        try {
+            var magic = base.readByteArray(4);
+            var u8 = new Uint8Array(magic);
+            if (u8[0] === 0x7f && u8[1] === 0x45 && u8[2] === 0x4c && u8[3] === 0x46) {
+                isBaseElf = true;
+            }
+        } catch(e) {}
     }
     
-    // Fallback to manual parsing if completely stripped
-    var mod = null;
-    var lines = File.readAllText('/proc/self/maps').split('\n');
-    for (var i = 0; i < lines.length; i++) {
-        var line = lines[i];
-        if (line.indexOf('libil2cpp.so') !== -1 && line.indexOf('r--p') !== -1) {
-            var parts = line.trim().split(/\s+/);
-            if (parts[2] === '00000000') {
-                base = ptr('0x' + parts[0].split('-')[0]);
-                break;
+    // Only parse maps if base is not already resolved/valid
+    if (!isBaseElf) {
+        var lines = File.readAllText('/proc/self/maps').split('\n');
+        var foundBase = null;
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.indexOf('libil2cpp.so') !== -1 && line.indexOf('r--p') !== -1) {
+                var parts = line.trim().split(/\s+/);
+                if (parts.length >= 3) {
+                    var offsetVal = parseInt(parts[2], 16);
+                    if (offsetVal === 0) {
+                        foundBase = ptr('0x' + parts[0].split('-')[0]);
+                        break;
+                    }
+                }
             }
+        }
+        if (foundBase) {
+            base = foundBase;
+        } else {
+            return ptr(0);
         }
     }
     

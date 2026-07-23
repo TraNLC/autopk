@@ -1,6 +1,6 @@
 const { FridaSession } = require('../src/frida-session');
 async function run() {
-    const session = new FridaSession('127.0.0.1:5555');
+    const session = new FridaSession('127.0.0.1:16384');
     await session.connect('vn.perfingame.jx1mobile');
     await session.loadScript('frida-scripts/bot.bundle.js');
     console.log("Waiting 3s for game memory to settle...");
