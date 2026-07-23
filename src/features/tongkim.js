@@ -106,8 +106,8 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         let trinhSatId = cache.trinhSatId || null;
         let quanNhuId  = cache.quanNhuId || null;
 
-        // Thử lấy ID từ các cửa sổ khác cùng bản đồ + cùng phe
-        if (!trinhSatId || !quanNhuId) {
+        // Thử lấy ID và tọa độ từ các cửa sổ khác cùng bản đồ + cùng phe
+        if (!trinhSatId || !quanNhuId || !cache.trinhSatX) {
           const shared = findSharedNpcIds(deviceId, mapId, campValue, true);
           if (shared) {
             if (!trinhSatId && shared.trinhSatId) {
@@ -118,42 +118,104 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
               quanNhuId = shared.quanNhuId;
               cache.quanNhuId = shared.quanNhuId;
             }
+            if (!cache.trinhSatX && shared.trinhSatX) {
+              cache.trinhSatX = shared.trinhSatX;
+              cache.trinhSatY = shared.trinhSatY;
+            }
           }
         }
 
-        // Quét RAM tìm cả Trình Sát và Quân Nhu dynamically nếu một trong hai chưa có
+        // Nếu chưa có tọa độ Trinh Sát, dùng Opcode 71 để quét và lấy tọa độ chính xác!
+        if (!cache.trinhSatX) {
+            try {
+                // Xóa buffer cũ
+                await session.callRpc('getRecvPackets', 72, 100).catch(() => {});
+                
+                // Gửi yêu cầu lấy NPC list
+                const { encodeField } = require('../packet-injector');
+                const hexReq = encodeField(1, 'int32', mapId).toString('hex');
+                await injector.sendRaw(71, hexReq);
+                
+                // Đợi 1.5s
+                await new Promise(r => setTimeout(r, 1500));
+                
+                // Lấy kết quả
+                const recvRes = await session.callRpc('getRecvPackets', 72, 10);
+                if (recvRes && recvRes.ok && recvRes.packets && recvRes.packets.length > 0) {
+                    for (const pkt of recvRes.packets) {
+                        const buf = Buffer.from(pkt.hex, 'hex');
+                        let offset = 0;
+                        let cx = 0, cy = 0, cName = "";
+                        while (offset < buf.length) {
+                            const tag = buf[offset++];
+                            const wireType = tag & 0x7;
+                            const fieldNum = tag >> 3;
+                            if (wireType === 0) {
+                                let val = 0n, shift = 0n;
+                                while (offset < buf.length) {
+                                    const b = buf[offset++];
+                                    val |= BigInt(b & 0x7f) << shift;
+                                    if ((b & 0x80) === 0) break;
+                                    shift += 7n;
+                                }
+                                if (fieldNum === 3) cx = Number(val);
+                                if (fieldNum === 4) cy = Number(val);
+                            } else if (wireType === 2) {
+                                let len = 0, shift = 0;
+                                while (offset < buf.length) {
+                                    const b = buf[offset++];
+                                    len |= (b & 0x7f) << shift;
+                                    if ((b & 0x80) === 0) break;
+                                    shift += 7;
+                                }
+                                if (len > 0 && offset + len <= buf.length) {
+                                    if (fieldNum === 2) {
+                                        cName = buf.slice(offset, offset + len).toString('utf8').toLowerCase();
+                                        if (cName.includes('trinh sát') || cName.includes('trinh sat')) {
+                                            cache.trinhSatX = cx;
+                                            cache.trinhSatY = cy;
+                                            sendLog(`[${deviceId}] [Ra Tran] Đã học được tọa độ Trinh Sát: (${cx}, ${cy})`, 'success');
+                                        }
+                                    }
+                                    offset += len;
+                                }
+                            } else if (wireType === 5) { offset += 4; } else if (wireType === 1) { offset += 8; }
+                        }
+                    }
+                }
+            } catch(e) {
+                sendLog(`[${deviceId}] Lỗi quét Trinh Sát bằng Opcode 71: ${e.message}`, 'error');
+            }
+        }
+
+        // Quét RAM tìm ID Trình Sát và Quân Nhu dynamically nếu một trong hai chưa có ID
         if (!trinhSatId || !quanNhuId) {
           try {
             const npcNames = await session.callRpc('getNearNpcNames');
             if (npcNames && npcNames.ok && npcNames.npcMap) {
               for (const [npcId, npcName] of Object.entries(npcNames.npcMap)) {
                 const lower = String(npcName).toLowerCase();
-                
-                // So khớp Trình Sát (chính xác trinh sát / trinh sat)
                 if (lower.includes('trinh sát') || lower.includes('trinh sat')) {
-                  if (!trinhSatId) {
-                    trinhSatId = npcId;
-                    cache.trinhSatId = npcId;
-                  }
-                }
-                // So khớp Quân Nhu / Quân Y (quân nhu / quan nhu / quân y / quan y)
-                else if (lower.includes('quân nhu') || lower.includes('quan nhu') || lower.includes('quan y') || lower.includes('quân y')) {
-                  if (!quanNhuId) {
-                    quanNhuId = npcId;
-                    cache.quanNhuId = npcId;
-                  }
-                }
+                  if (!trinhSatId) { trinhSatId = npcId; cache.trinhSatId = npcId; }
+                } // else if (lower.includes('quân nhu') || lower.includes('quan nhu') || lower.includes('quan y') || lower.includes('quân y')) {
+                //  if (!quanNhuId) { quanNhuId = npcId; cache.quanNhuId = npcId; }
+                // }
               }
             }
           } catch(e) {}
         }
-
-        const nowObj = new Date();
-        const min = nowObj.getMinutes();
-        // Từ phút 34 đến phút 04 không gọi NPC nào nữa (Tống Kim đã kết thúc hoặc chưa bắt đầu trận mới)
-        if (min >= 34 || min < 4) {
-          return;
+        // Tiến hành chạy về phía Trình Sát mỗi 1.5s (áp dụng khi vào map mới hoặc hồi sinh từ lúc chết)
+        if (cache.trinhSatX && cache.trinhSatY) {
+            const nowTime = Date.now();
+            if (!cache._lastMoveTime || (nowTime - cache._lastMoveTime) > 1500) {
+                cache._lastMoveTime = nowTime;
+                try {
+                    await injector.sendGotoPosition(cache.trinhSatX, cache.trinhSatY);
+                } catch(e) {}
+            }
         }
+
+
 
         // Nếu người dùng chọn Ngừng ra sân khi đủ 30.000 điểm
         if (stopMaxScore === true) {
@@ -190,24 +252,24 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         cache._lastCallTime = now;
 
         // Mac dinh luon nhan thuoc truoc khi qua cua Trinh Sat
-        if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 1 * 60 * 1000)) {
-          sendLog(`[${deviceId}] [Ra Tran] Dang nhan thuoc Quan Nhu...`, 'info');
-          try {
-            await injector.sendNpcDialogue(quanNhuId);
-            await new Promise(r => setTimeout(r, 800));
-            await injector.sendNpcSelect(0);
-            await new Promise(r => setTimeout(r, 400));
-            await session.callRpc('sendPacket', 232, '');
-            await new Promise(r => setTimeout(r, 400));
-            sendLog(`[${deviceId}] [Ra Tran] Nhan thuoc Quan Nhu thanh cong!`, 'success');
-          } catch(e) {
-            sendLog(`[${deviceId}] [Ra Tran] Loi nhan thuoc: ${e.message}`, 'error');
-          }
-          cache._lastHealTime = now;
-
-          try { await session.callRpc('closeDialogPopups'); } catch(e) {}
-          await new Promise(r => setTimeout(r, 200));
-        }
+        // if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 1 * 60 * 1000)) {
+        //   sendLog(`[${deviceId}] [Ra Tran] Dang nhan thuoc Quan Nhu...`, 'info');
+        //   try {
+        //     await injector.sendNpcDialogue(quanNhuId);
+        //     await new Promise(r => setTimeout(r, 800));
+        //     await injector.sendNpcSelect(0);
+        //     await new Promise(r => setTimeout(r, 400));
+        //     await session.callRpc('sendPacket', 232, '');
+        //     await new Promise(r => setTimeout(r, 400));
+        //     sendLog(`[${deviceId}] [Ra Tran] Nhan thuoc Quan Nhu thanh cong!`, 'success');
+        //   } catch(e) {
+        //     sendLog(`[${deviceId}] [Ra Tran] Loi nhan thuoc: ${e.message}`, 'error');
+        //   }
+        //   cache._lastHealTime = now;
+        // 
+        //   try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+        //   await new Promise(r => setTimeout(r, 200));
+        // }
 
         // Buff tran phai
         try {

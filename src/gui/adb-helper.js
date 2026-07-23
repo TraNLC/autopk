@@ -17,7 +17,7 @@ async function scanDevices(adbPath, execAsync, sendLog) {
         }
 
         const SCAN_START = 16380;
-        const SCAN_END = 16700; // Expanded to 16700 to support up to 10 MuMu instances (port increments of 32)
+        const SCAN_END = 18000; // Expanded to 18000 to support up to 50 MuMu instances (port increments of 32)
         console.log(`[TRACE] [ADB-Helper] Step 2: Bat dau quet song song cac cong...`);
 
         function checkPort(port) {

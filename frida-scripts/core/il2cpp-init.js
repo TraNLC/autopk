@@ -238,3 +238,9 @@ function readPlayerMainDirect() {
         send({ type: 'il2cpp_ready', msg: 'libil2cpp.so not found in maps' });
     }
 })();
+
+// Export for RPC and Global usage
+if (typeof rpc !== 'undefined' && rpc.exports) {
+    rpc.exports.readPlayerMainDirect = readPlayerMainDirect;
+}
+globalThis.readPlayerMainDirect = readPlayerMainDirect;

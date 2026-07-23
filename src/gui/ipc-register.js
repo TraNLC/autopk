@@ -4,7 +4,6 @@ const { exec } = require('child_process');
 const adbHelper = require('./adb-helper');
 const sessionManager = require('./session-manager');
 const config = require('../../config');
-const { scanDatauItems, buyDatauItem, getShopDetails } = require('../features/datau');
 
 const ADB = config.ADB_PATH || 'C:\\platform-tools\\adb.exe';
 
@@ -172,27 +171,7 @@ function registerHandlers(win) {
         }
     });
 
-    ipcMain.handle('perform-auto-login', async (event, deviceId, username, password) => {
-        traceLog('perform-auto-login', deviceId, `Yeu cau auto login tick voi user: ${username}`);
-        const state = sessionManager.sessions.get(deviceId);
-        if (!state || !state.session) return { state: 'ERROR', error: 'May chua ket noi' };
-        try {
-            return await state.session.callRpc('autoLoginTick', username, password);
-        } catch(e) {
-            return { state: 'ERROR', error: e.message };
-        }
-    });
 
-    const { performFullAutoLaunch } = require('../features/full-auto-launch');
-    ipcMain.handle('full-auto-launch', async (event, mumuPath, username, password, port, index) => {
-        traceLog('full-auto-launch', `127.0.0.1:${port}`, `Yeu cau Full Auto voi port ${port}, index ${index}, user ${username}`);
-        return await performFullAutoLaunch(mumuPath, username, password, port, index, (msg, type) => {
-            // Forward logs to frontend
-            if (globalThis._mainWindow && !globalThis._mainWindow.isDestroyed()) {
-                globalThis._mainWindow.webContents.send('tab-log', { msg, type });
-            }
-        });
-    });
 
     // 5. NPC test và tương tác
     ipcMain.handle('test-npc-find-by-name', async (event, deviceId, npcName) => {
@@ -249,31 +228,7 @@ function registerHandlers(win) {
         }
     });
 
-    // 6. Dã Tẩu quét sạp & mua hàng
-    ipcMain.handle('scan-datau', async (event, deviceId, keyword, filters) => {
-        traceLog('scan-datau', deviceId, `Quet do Da Tau voi tu khoa: "${keyword}"`);
-        const state = sessionManager.sessions.get(deviceId);
-        if (!state || !state.session) {
-            sendLog(`[${deviceId}] Loi: May chua ket noi.`, 'error');
-            return { ok: false, error: 'May chua ket noi Frida.' };
-        }
-        const mapId = state.info ? state.info.mapId : 0;
-        return await scanDatauItems(deviceId, state.session, mapId, keyword, filters, event, sendLog);
-    });
 
-    ipcMain.handle('buy-datau', async (event, deviceId, sellerId, itemIdx, price) => {
-        traceLog('buy-datau', deviceId, `Mua do Da Tau tu seller: ${sellerId}, index: ${itemIdx}, gia: ${price}`);
-        const state = sessionManager.sessions.get(deviceId);
-        if (!state || !state.session) {
-            return { ok: false, error: 'May chua ket noi Frida.' };
-        }
-        return await buyDatauItem(deviceId, state.session, sellerId, itemIdx, price, sendLog);
-    });
-
-    ipcMain.handle('get-shop-details', (event, mapId, sellerId) => {
-        traceLog('get-shop-details', null, `Lay chi tiet cua sap map: ${mapId}, seller: ${sellerId}`);
-        return getShopDetails(mapId, sellerId);
-    });
 
     // 7. Bật/Tắt Tống Kim toàn cục
     ipcMain.handle('toggle-auto-tk', (event, enable, tkConfigs) => {
@@ -318,23 +273,7 @@ function registerHandlers(win) {
         });
     });
 
-    ipcMain.on('show-5hanh-detail', (event, globalData) => {
-        traceLog('show-5hanh-detail', null, `Hien thi cua so Ngu Hanh.`);
-        const detailWin = new BrowserWindow({
-            width: 900,
-            height: 750,
-            title: `Phối Đồ Ngũ Hành`,
-            webPreferences: {
-                nodeIntegration: true,
-                contextIsolation: false
-            }
-        });
-        detailWin.setMenuBarVisibility(false);
-        detailWin.loadFile(path.join(__dirname, 'renderer', '5hanh-detail.html'));
-        detailWin.webContents.on('did-finish-load', () => {
-            detailWin.webContents.send('load-5hanh-data', globalData);
-        });
-    });
+
 }
 
 module.exports = {

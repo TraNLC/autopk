@@ -561,6 +561,12 @@ function readPlayerMainDirect() {
     }
 })();
 
+// Export for RPC and Global usage
+if (typeof rpc !== 'undefined' && rpc.exports) {
+    rpc.exports.readPlayerMainDirect = readPlayerMainDirect;
+}
+globalThis.readPlayerMainDirect = readPlayerMainDirect;
+
 // ══ hooks/native-funcs.js ══
 // frida-scripts/hooks/native-funcs.js — Find executable write() and read()
 
