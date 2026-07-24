@@ -16,7 +16,7 @@ function createWindow() {
     resizable: true,
     frame: true,
     autoHideMenuBar: true,
-    title: 'GST Auto TK ver 1.0 (17/07/2026 14:20)',
+    title: `GST Auto TK v${app.getVersion()}`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
