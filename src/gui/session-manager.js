@@ -582,9 +582,13 @@ function startGlobalTkScanner() {
         isTkScanRunning = true;
         
         try {
-            const BATTLE_MAPS = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
+            const BATTLE_MAPS = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988, 323, 324, 325, 379, 382, 972];
             for (const [deviceId, state] of sessions.entries()) {
-                if (state.info && state.info.mapId && BATTLE_MAPS.includes(state.info.mapId)) {
+                if (!state.info) continue;
+                const mapNameLower = state.info.mapName ? state.info.mapName.toLowerCase() : '';
+                const isInTK = BATTLE_MAPS.includes(state.info.mapId) || mapNameLower.includes('doanh') || mapNameLower.includes('tống kim');
+                
+                if (isInTK) {
                     try {
                         const tkRes = await state.session.callRpc('getTkScoreDeepScan');
                         if (tkRes && tkRes.ok) {
