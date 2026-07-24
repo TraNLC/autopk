@@ -578,8 +578,10 @@ rpc.exports.getTkScoreDeepScan = function() {
                                     var rankVal = mRank ? parseInt(mRank[1]) : 0;
                                     var killsVal = mKills ? parseInt(mKills[1]) : 0;
                                     
-                                    // Scan nearby memory (±50KB) for the 10th place score string
+                                    // Scan nearby memory (±50KB) for the 10th place score string and TONG/KIM points
                                     var top10Score = 0;
+                                    var tongQuanSo = 0, tongTichLuy = 0;
+                                    var kimQuanSo = 0, kimTichLuy = 0;
                                     var startAddr = address.sub(50000);
                                     for (var offset = 0; offset < 100000; offset += 2) {
                                         try {
@@ -592,9 +594,25 @@ rpc.exports.getTkScoreDeepScan = function() {
                                                     var val = parseInt(m10[1]);
                                                     if (val > 1000 && val < 500000) {
                                                         top10Score = val;
-                                                        break; // Found it!
                                                     }
                                                 }
+                                                
+                                                var lowerCand = candidateStr.toLowerCase();
+                                                if (lowerCand.indexOf("tổng") !== -1 || lowerCand.indexOf("tống") !== -1 || lowerCand.indexOf("tong") !== -1) {
+                                                    var mTong = lowerCand.match(/(?:tổng|tống|tong).*?(?:quân số|quan so)\s+(\d+)\s+(?:tích lũy|tich luy)\s+(\d+)/);
+                                                    if (mTong) {
+                                                        tongQuanSo = parseInt(mTong[1]);
+                                                        tongTichLuy = parseInt(mTong[2]);
+                                                    }
+                                                }
+                                                if (lowerCand.indexOf("kim") !== -1 || lowerCand.indexOf("kím") !== -1) {
+                                                    var mKim = lowerCand.match(/kim.*?(?:quân số|quan so)\s+(\d+)\s+(?:tích lũy|tich luy)\s+(\d+)/);
+                                                    if (mKim) {
+                                                        kimQuanSo = parseInt(mKim[1]);
+                                                        kimTichLuy = parseInt(mKim[2]);
+                                                    }
+                                                }
+
                                                 offset += candidateStr.length * 2;
                                             }
                                         } catch(e) {}
@@ -605,7 +623,11 @@ rpc.exports.getTkScoreDeepScan = function() {
                                         score: scoreVal,
                                         rank: rankVal,
                                         kills: killsVal,
-                                        top10Score: top10Score
+                                        top10Score: top10Score,
+                                        tongQuanSo: tongQuanSo,
+                                        tongTichLuy: tongTichLuy,
+                                        kimQuanSo: kimQuanSo,
+                                        kimTichLuy: kimTichLuy
                                     });
                                     return 'stop';
                                 }
