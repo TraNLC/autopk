@@ -143,8 +143,8 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             }
             const port = parseInt(portMatch[1], 10);
             
-            // Accept local ADB connections or emulators
-            if (!deviceId.startsWith('127.0.0.1:') && !deviceId.startsWith('emulator-')) {
+            // Accept ONLY local ADB connections to avoid duplicates (emulator-xxxx is an alias)
+            if (!deviceId.startsWith('127.0.0.1:')) {
                 console.log(`[TRACE] [ADB-Helper] Bo qua thiet bi khong phai local IP: ${deviceId}`);
                 continue;
             }
@@ -179,12 +179,36 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             return { dev, isRunning, androidId };
         }));
 
-        // We remove the Android ID deduplication because cloned VMs might share the same Android ID,
-        // which incorrectly hides running emulators. 
+        // Deduplicate devices by grouping by Android ID
+        // This effectively groups all cloned LDPlayer ports. If they have a 5-digit ADB port (e.g. 16384),
+        // we will keep those and drop the duplicate 4-digit guest ports (e.g. 5555, 5557).
+        const groups = new Map(); // androidId -> [checkResult]
         for (const r of checkResults) {
-            // We can just keep all devices that are found
-            console.log(`[TRACE] [ADB-Helper] Chap nhan thiet bi: ${r.dev.id} (Game dang chay: ${r.isRunning})`);
-            validDevices.push(r.dev);
+            if (r.androidId) {
+                if (!groups.has(r.androidId)) {
+                    groups.set(r.androidId, []);
+                }
+                groups.get(r.androidId).push(r);
+            }
+        }
+
+        for (const [androidId, list] of groups.entries()) {
+            const has5Digit = list.some(r => {
+                const port = parseInt(r.dev.id.split(':')[1] || '0', 10);
+                return String(port).length >= 5;
+            });
+
+            for (const r of list) {
+                const port = parseInt(r.dev.id.split(':')[1] || '0', 10);
+                const is5Digit = String(port).length >= 5;
+
+                if (has5Digit && !is5Digit) {
+                    console.log(`[TRACE] [ADB-Helper] Loai bo cong guest duplicate (cung Android ID: ${androidId}): ${r.dev.id}`);
+                } else {
+                    console.log(`[TRACE] [ADB-Helper] Chap nhan thiet bi: ${r.dev.id} (Android ID: ${androidId}, Game dang chay: ${r.isRunning})`);
+                    validDevices.push(r.dev);
+                }
+            }
         }
 
         sendLog(`Tim thay ${validDevices.length} gia lap (quet ${SCAN_START}-${SCAN_END}).`, 'info');
