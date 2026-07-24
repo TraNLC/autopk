@@ -41,11 +41,15 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             scanPorts.add(p);
         }
         const commonPorts = [
-            5555, 5557, 5559, 5561, 5563, 5565, // LDPlayer, BlueStacks, etc.
             7555, 7556, 7557, 7558,             // MuMu defaults
-            21503, 21513, 21523, 21533,         // MEmu
-            62001, 62025, 62026, 52001          // Nox
         ];
+        // LDPlayer / BlueStacks (5555, 5557, 5559, ...) up to 50 instances
+        for (let i = 0; i < 50; i++) commonPorts.push(5555 + i * 2);
+        // MEmu (21503, 21513, 21523, ...) up to 50 instances
+        for (let i = 0; i < 50; i++) commonPorts.push(21503 + i * 10);
+        // Nox (62001, 62025, 62026, ...)
+        commonPorts.push(62001);
+        for (let i = 0; i < 50; i++) commonPorts.push(62025 + i);
         for (const p of commonPorts) {
             scanPorts.add(p);
         }
@@ -175,37 +179,12 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             return { dev, isRunning, androidId };
         }));
 
-        // Deduplicate devices by grouping by Android ID
-        // For cloned instances, they share the same Android ID but listen on different host ports (5-digit ports).
-        // A host port (5-digit) and a guest port (4-digit, like 5555) of the same VM also share the same Android ID.
-        // We want to keep all 5-digit ports, and only keep 4-digit ports if there are no 5-digit ports for that Android ID.
-        const groups = new Map(); // androidId -> [checkResult]
+        // We remove the Android ID deduplication because cloned VMs might share the same Android ID,
+        // which incorrectly hides running emulators. 
         for (const r of checkResults) {
-            if (r.androidId) {
-                if (!groups.has(r.androidId)) {
-                    groups.set(r.androidId, []);
-                }
-                groups.get(r.androidId).push(r);
-            }
-        }
-
-        for (const [androidId, list] of groups.entries()) {
-            const has5Digit = list.some(r => {
-                const port = parseInt(r.dev.id.split(':')[1] || '0', 10);
-                return String(port).length >= 5;
-            });
-
-            for (const r of list) {
-                const port = parseInt(r.dev.id.split(':')[1] || '0', 10);
-                const is5Digit = String(port).length >= 5;
-
-                if (has5Digit && !is5Digit) {
-                    console.log(`[TRACE] [ADB-Helper] Loai bo cong guest duplicate (cung Android ID: ${androidId}): ${r.dev.id}`);
-                } else {
-                    console.log(`[TRACE] [ADB-Helper] Chap nhan thiet bi: ${r.dev.id} (Android ID: ${androidId}, Game dang chay: ${r.isRunning})`);
-                    validDevices.push(r.dev);
-                }
-            }
+            // We can just keep all devices that are found
+            console.log(`[TRACE] [ADB-Helper] Chap nhan thiet bi: ${r.dev.id} (Game dang chay: ${r.isRunning})`);
+            validDevices.push(r.dev);
         }
 
         sendLog(`Tim thay ${validDevices.length} gia lap (quet ${SCAN_START}-${SCAN_END}).`, 'info');
