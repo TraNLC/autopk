@@ -101,3 +101,35 @@ rpc.exports.selfForceMoveTarget = function(x, y) {
     }
 };
 
+
+rpc.exports.hookMovement = function() {
+    var gotoFindingPathFn = il2cppBase.add(0xE4A620);
+    Interceptor.attach(gotoFindingPathFn, {
+        onEnter: function(args) {
+            var tx = args[1].toInt32();
+            var ty = args[2].toInt32();
+            var approach = args[3].toInt32();
+            console.log('[HOOK] GotoFindingPath(targetX=' + tx + ', targetY=' + ty + ', approach=' + approach + ')');
+        }
+    });
+    return { ok: true };
+};
+
+rpc.exports.writePositionMemory = function(x, y) {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+    try {
+        var npcontroller = _playerMainInstance.add(0x20).readPointer();
+        if (!npcontroller.isNull()) {
+            var pos = npcontroller.add(0x10).readPointer();
+            if (!pos.isNull()) {
+                pos.add(0x30).writeFloat(x);
+                pos.add(0x34).writeFloat(y);
+                return { ok: true };
+            }
+        }
+        return { ok: false, error: 'Cannot find pos pointer' };
+    } catch(e) {
+        return { ok: false, error: e.toString() };
+    }
+};

@@ -239,6 +239,26 @@ rpc.exports.switchHorse = function() {
     }
 };
 
+rpc.exports.clientMoveMemory = function(x, y) {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    try {
+        var npcontroller = _playerMainInstance.add(0x20).readPointer();
+        if (!npcontroller.isNull()) {
+            var pos = npcontroller.add(0x10).readPointer();
+            if (!pos.isNull()) {
+                pos.add(0x30).writeFloat(x);
+                pos.add(0x34).writeFloat(y);
+                return { ok: true, method: 'direct_memory' };
+            }
+        }
+        return { ok: false, error: 'Cannot find pos pointer' };
+    } catch(e) {
+        return { ok: false, error: e.toString() };
+    }
+};
+
 rpc.exports.clientMoveTo = function(x, y) {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
@@ -411,6 +431,97 @@ rpc.exports.getNearEnemies = function() {
     });
 };
 
+rpc.exports.getNearNpcs = function() {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    var npcs = [];
+    try {
+        var nearNpcsDict = _playerMainInstance.add(0xC8).readPointer(); // nearNpcs offset is 0xC8 in PlayerMain
+        if (nearNpcsDict && !nearNpcsDict.isNull()) {
+            var entriesPtr = nearNpcsDict.add(0x18).readPointer(); // entries array in Dictionary
+            if (entriesPtr && !entriesPtr.isNull()) {
+                var count = nearNpcsDict.add(0x20).readInt(); // count
+                for (var i = 0; i < count; i++) {
+                    // Entry struct: int hashCode, int next, key, value
+                    // Size of entry is usually 0x18 on 64-bit, but since we are on 32-bit it might be 0x10. Let's use 0x18 for standard dict
+                    var entryPtr = entriesPtr.add(0x20 + i * 0x18);
+                    // key is at offset 0x8, value is at offset 0xC or 0x10. Let's fallback to Il2cpp for now as it's safer
+                }
+            }
+        }
+    } catch(e) {}
+
+    // Fallback to Il2Cpp if direct read is too complex
+    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
+    return Il2Cpp.perform(function() {
+        try {
+            var pmClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerMain");
+            var pmInst = pmClass.field("instance").value;
+            if (!pmInst || pmInst.isNull()) return { ok: false, error: 'PlayerMain.instance is null' };
+
+            var nearNpcsDict = pmInst.field("nearNpcs").value;
+            if (!nearNpcsDict || nearNpcsDict.isNull()) {
+                return { ok: true, npcs: [] };
+            }
+
+            var count = nearNpcsDict.method("get_Count").invoke();
+            if (count === 0) {
+                return { ok: true, npcs: [] };
+            }
+
+            var keysCollection = nearNpcsDict.method("get_Keys").invoke();
+            var enumerator = keysCollection.method("GetEnumerator").invoke();
+            while (enumerator.method("MoveNext").invoke()) {
+                var key = enumerator.method("get_Current").invoke();
+                var keyStr = key ? key.content : "";
+                if (!keyStr) continue;
+
+                var valueOut = Memory.alloc(Process.pointerSize);
+                var success = nearNpcsDict.method("TryGetValue").invoke(key, valueOut);
+                if (success) {
+                    var controllerPtr = valueOut.readPointer();
+                    if (!controllerPtr.isNull() && parseInt(controllerPtr.toString()) > 0x10000) {
+                        try {
+                            var idnPtr = controllerPtr.add(0x28).readPointer();
+                            if (!idnPtr.isNull() && parseInt(idnPtr.toString()) > 0x10000) {
+                                var x = 0, y = 0;
+                                var posPtr = controllerPtr.add(0x10).readPointer();
+                                if (!posPtr.isNull() && parseInt(posPtr.toString()) > 0x10000) {
+                                    var mapPosPtr = posPtr.add(0x28).readPointer();
+                                    if (!mapPosPtr.isNull() && parseInt(mapPosPtr.toString()) > 0x10000) {
+                                        x = mapPosPtr.add(0x10).readInt();
+                                        y = mapPosPtr.add(0x14).readInt();
+                                    }
+                                }
+
+                                var name = "";
+                                var nameValPtr = idnPtr.add(0x48).readPointer();
+                                if (!nameValPtr.isNull() && parseInt(nameValPtr.toString()) > 0x10000) {
+                                    var len = nameValPtr.add(0x10).readInt();
+                                    if (len > 0 && len < 100) {
+                                        name = nameValPtr.add(0x14).readUtf16String(len);
+                                    }
+                                }
+
+                                npcs.push({
+                                    id: keyStr,
+                                    name: name,
+                                    x: x,
+                                    y: y
+                                });
+                            }
+                        } catch (innerErr) { }
+                    }
+                }
+            }
+            return { ok: true, npcs: npcs };
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
+    });
+};
+
 rpc.exports.getNearNpcNames = function() {
     if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
     var pmRes = readPlayerMainDirect();
@@ -449,6 +560,28 @@ rpc.exports.getNearNpcNames = function() {
                 }
             }
             return { ok: true, npcMap: npcMap };
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
+    });
+};
+
+rpc.exports.setGameSpeed = function(speed) {
+    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
+    return Il2Cpp.perform(function() {
+        try {
+            // Unity 2017/2018 often uses UnityEngine.CoreModule, older uses UnityEngine
+            var TimeClass = null;
+            try {
+                TimeClass = Il2Cpp.domain.assembly("UnityEngine.CoreModule").image.class("UnityEngine.Time");
+            } catch(e) {
+                TimeClass = Il2Cpp.domain.assembly("UnityEngine").image.class("UnityEngine.Time");
+            }
+            if (TimeClass) {
+                TimeClass.method("set_timeScale").invoke(speed);
+                return { ok: true, speed: speed };
+            }
+            return { ok: false, error: 'Time class not found' };
         } catch(e) {
             return { ok: false, error: e.message };
         }

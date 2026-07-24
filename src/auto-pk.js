@@ -321,9 +321,13 @@ class AutoPK {
 
     this.log(`[AutoPK] Không thấy địch. Tự động chạy dò đường đến (${targetX.toFixed(1)}, ${targetY.toFixed(1)})...`, 'info');
     
-    // Sử dụng game engine để tìm đường và chạy trên giao diện (client-side move)
+    // Sử dụng cơ chế bẻ khóa không gian (Direct Memory Write) để dịch chuyển
     if (this.session) {
-      await this.session.callRpc('gotoFindingPath', Math.round(targetX), Math.round(targetY), 20);
+      await this.session.callRpc('clientMoveMemory', targetX, targetY);
+      // Gửi gói tin cập nhật tọa độ lên server
+      if (this.injector) {
+        await this.injector.sendStringData(`1|${Math.round(targetX)}|${Math.round(targetY)}`);
+      }
     }
     
     this.lastRoamTime = now;
