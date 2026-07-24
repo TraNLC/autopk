@@ -115,8 +115,21 @@ window.api.onPlayerInfoUpdate(({ deviceId, info }) => {
     const dev = devicesMap.get(deviceId);
     dev.info = info;
     renderTable();
+    if (deviceId === currentSelectedDeviceId) {
+      updateItemCounts(info.itemCounts);
+    }
   }
 });
+
+function updateItemCounts(counts) {
+  counts = counts || { '45': 0, '51': 0, '50': 0 };
+  const lbl45 = document.getElementById('lbl-count-45');
+  const lbl51 = document.getElementById('lbl-count-51');
+  const lbl50 = document.getElementById('lbl-count-50');
+  if (lbl45) lbl45.innerText = `(${counts['45'] || 0})`;
+  if (lbl51) lbl51.innerText = `(${counts['51'] || 0})`;
+  if (lbl50) lbl50.innerText = `(${counts['50'] || 0})`;
+}
 
 // Device Scanning
 async function scanDevices() {
@@ -351,6 +364,7 @@ function selectDevice(id) {
   if (selLacInterval) {
     selLacInterval.value = cfg.lacInterval ? cfg.lacInterval.toString() : '180';
   }
+  updateItemCounts(dev.info ? dev.info.itemCounts : null);
 }
 
 function saveConfigForSelected() {

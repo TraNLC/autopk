@@ -368,6 +368,27 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                     info.top10Score = state.lastTop10Score;
                 }
 
+                // Get inventory items counts for Lắc
+                try {
+                    const invRes = await session.callRpc('getInventoryItems');
+                    if (invRes && invRes.ok && invRes.items) {
+                        const counts = { '45': 0, '51': 0, '50': 0 };
+                        // Debug log 1st time only
+                        if (!state.hasLoggedItems && invRes.items.length > 0) {
+                            state.hasLoggedItems = true;
+                            const itemDetails = invRes.items.map(i => `${i.name || 'Unknown'} (P:${i.particular}, G:${i.genre}, C:${i.count})`);
+                            traceLog(deviceId, `Danh sách vật phẩm: ${itemDetails.join(', ')}`, 'info', sendLog);
+                        }
+                        
+                        for (const item of invRes.items) {
+                            const p = item.particular.toString();
+                            if (counts[p] !== undefined) counts[p] += (item.count || 1);
+                        }
+                        info.itemCounts = counts;
+                        state.itemCounts = counts;
+                    }
+                } catch(e) {}
+
                 // Gui cap nhat trang thai len Renderer qua IPC (se duoc routed tu main.js)
                 if (globalThis._mainWindow) {
                     globalThis._mainWindow.webContents.send('player-info-update', { deviceId, info });
