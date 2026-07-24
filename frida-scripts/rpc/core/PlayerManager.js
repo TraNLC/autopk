@@ -8,6 +8,23 @@ function callNativeIl2Cpp(exportName, retType, argTypes, args) {
     return fn.apply(null, args);
 }
 
+rpc.exports.getUseItemRva = function() {
+    return new Promise(function(resolve) {
+        var waitForIl2cpp = setInterval(function() {
+            if (globalThis.il2cppBase) {
+                clearInterval(waitForIl2cpp);
+                try {
+                    var pm = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerMain");
+                    var method = pm.method("RequestUseItemFromBag");
+                    resolve("RVA: 0x" + method.relativeVirtualAddress.toString(16).toUpperCase());
+                } catch(e) {
+                    resolve("Error: " + e.message);
+                }
+            }
+        }, 500);
+    });
+};
+
 rpc.exports.getMySect = function() {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
@@ -215,6 +232,28 @@ rpc.exports.switchHorse = function() {
             try {
                 playerSwitchHorseFn(_playerMainInstance);
             } catch(e){}
+        });
+        return { ok: true };
+    } catch(e) {
+        return { ok: false, error: '' + e };
+    }
+};
+
+rpc.exports.clientMoveTo = function(x, y) {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+    if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
+
+    try {
+        // public void GotoFindingPath(int targetX, int targetY, int approach3d = 20, Action onFinish, Action<bool> onResponse)
+        var fn = new NativeFunction(il2cppBase.add(0x706A70), 'void', ['pointer', 'int', 'int', 'int', 'pointer', 'pointer', 'pointer']);
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                fn(_playerMainInstance, x, y, 20, ptr(0), ptr(0), ptr(0));
+            } catch(e) {
+                console.log("GotoFindingPath error: " + e.message);
+            }
         });
         return { ok: true };
     } catch(e) {
@@ -495,11 +534,11 @@ rpc.exports.useItem = function(itemIdx) {
                     if (success) {
                         var itemPtr = valueOut.readPointer();
                         if (!itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
-                            var requestUseItemFn = new NativeFunction(il2cppBase.add(0xE4D000), 'void', ['pointer', 'pointer']);
+                            var requestUseItemFn = new NativeFunction(il2cppBase.add(0xE4D000), 'void', ['pointer', 'pointer', 'pointer']);
                             globalThis._mainThreadActions = globalThis._mainThreadActions || [];
                             globalThis._mainThreadActions.push(function() {
                                 try {
-                                    requestUseItemFn(pmInst.handle, itemPtr);
+                                    requestUseItemFn(pmInst.handle, itemPtr, ptr(0));
                                 } catch(e){}
                             });
                             return { ok: true };

@@ -1357,6 +1357,23 @@ function callNativeIl2Cpp(exportName, retType, argTypes, args) {
     return fn.apply(null, args);
 }
 
+rpc.exports.getUseItemRva = function() {
+    return new Promise(function(resolve) {
+        var waitForIl2cpp = setInterval(function() {
+            if (globalThis.il2cppBase) {
+                clearInterval(waitForIl2cpp);
+                try {
+                    var pm = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("PlayerMain");
+                    var method = pm.method("RequestUseItemFromBag");
+                    resolve("RVA: 0x" + method.relativeVirtualAddress.toString(16).toUpperCase());
+                } catch(e) {
+                    resolve("Error: " + e.message);
+                }
+            }
+        }, 500);
+    });
+};
+
 rpc.exports.getMySect = function() {
     var pmRes = readPlayerMainDirect();
     if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
@@ -1564,6 +1581,27 @@ rpc.exports.switchHorse = function() {
             try {
                 playerSwitchHorseFn(_playerMainInstance);
             } catch(e){}
+        });
+        return { ok: true };
+    } catch(e) {
+        return { ok: false, error: '' + e };
+    }
+};
+
+rpc.exports.clientMoveTo = function(x, y) {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+    if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
+
+    try {
+        var fn = new NativeFunction(il2cppBase.add(0x706A70), 'void', ['pointer', 'int', 'int', 'int', 'pointer', 'pointer', 'pointer']);
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                fn(_playerMainInstance, x, y, 20, ptr(0), ptr(0), ptr(0));
+            } catch(e) {
+                console.log("GotoFindingPath error: " + e.message);
+            }
         });
         return { ok: true };
     } catch(e) {
@@ -1844,11 +1882,11 @@ rpc.exports.useItem = function(itemIdx) {
                     if (success) {
                         var itemPtr = valueOut.readPointer();
                         if (!itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
-                            var requestUseItemFn = new NativeFunction(il2cppBase.add(0xE4D000), 'void', ['pointer', 'pointer']);
+                            var requestUseItemFn = new NativeFunction(il2cppBase.add(0xE4D000), 'void', ['pointer', 'pointer', 'pointer']);
                             globalThis._mainThreadActions = globalThis._mainThreadActions || [];
                             globalThis._mainThreadActions.push(function() {
                                 try {
-                                    requestUseItemFn(pmInst.handle, itemPtr);
+                                    requestUseItemFn(pmInst.handle, itemPtr, ptr(0));
                                 } catch(e){}
                             });
                             return { ok: true };
@@ -2015,6 +2053,8 @@ rpc.exports.getInventoryItemsNoIl2cpp = function() {
                                     var depth = 0;
                                     while (current && !current.isNull() && parseInt(current.toString()) > 0x10000 && depth < 10) {
                                         try {
+                                            var key = current.add(0x10).readInt(); // Guessing key is at 0x10
+                                            var key2 = current.add(0x14).readInt(); // Guessing key is at 0x14
                                             var itemPtr = current.add(0x18).readPointer(); 
                                             if (itemPtr && !itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
                                                 var location = itemPtr.add(0x60).readInt();
@@ -2026,13 +2066,21 @@ rpc.exports.getInventoryItemsNoIl2cpp = function() {
                                                     
                                                     // Valid item?
                                                     if (genre >= 0 && genre < 100 && particular >= 0) {
+                                                        var id1 = -1, id2 = -1, id3 = -1, id4 = -1;
+                                                        try { id1 = itemPtr.add(0x10).readInt(); } catch(e){}
+                                                        try { id2 = itemPtr.add(0x14).readInt(); } catch(e){}
+                                                        try { id3 = itemPtr.add(0x18).readInt(); } catch(e){}
+                                                        try { id4 = itemPtr.add(0x30).readInt(); } catch(e){}
                                                         items.push({
+                                                            index: key, // Or key2, we will dump both to see
+                                                            key2: key2,
                                                             particular: particular,
                                                             genre: genre,
                                                             detail: detail,
                                                             count: count,
                                                             location: location,
-                                                            name: "Item_" + particular
+                                                            name: "Item_" + particular,
+                                                            id1: id1, id2: id2, id3: id3, id4: id4
                                                         });
                                                     }
                                                 }
@@ -2118,11 +2166,11 @@ rpc.exports.useItemNoIl2cpp = function(targetParticular) {
         }
 
         if (foundItemPtr) {
-            var requestUseItemFn = new NativeFunction(globalThis.il2cppBase.add(0xE4D000), 'void', ['pointer', 'pointer']);
+            var requestUseItemFn = new NativeFunction(globalThis.il2cppBase.add(0xE4D000), 'void', ['pointer', 'pointer', 'pointer']);
             globalThis._mainThreadActions = globalThis._mainThreadActions || [];
             globalThis._mainThreadActions.push(function() {
                 try {
-                    requestUseItemFn(pmInst, foundItemPtr);
+                    requestUseItemFn(pmInst, foundItemPtr, ptr(0));
                 } catch(e){}
             });
             return { ok: true, particular: targetParticular };

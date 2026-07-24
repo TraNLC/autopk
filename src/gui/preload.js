@@ -24,5 +24,10 @@ contextBridge.exposeInMainWorld('api', {
   onPlayerInfoUpdate: (callback) => {
     ipcRenderer.removeAllListeners('player-info-update');
     ipcRenderer.on('player-info-update', (event, data) => callback(data));
+  },
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  onUpdateStatus: (callback) => {
+    ipcRenderer.removeAllListeners('update-status');
+    ipcRenderer.on('update-status', (event, msg) => callback(msg));
   }
 });

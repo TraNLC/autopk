@@ -39,6 +39,22 @@ class AutoPK {
     // Skill dùng để reset target (ví dụ skill slot 9 - buff/AoE không cần target)
     // Đặt = 0 để tắt, hoặc set skill ID (vd: 102, 111, 129...) để cast khi clearFocus
     this.resetFocusSkillId = 0;
+
+    // Item usage tracking
+    this.lastUsedItems = {
+      '45': 0, // Phi Tốc
+      '51': 0, // Lệnh Bài
+      '50': 0  // Chiến Cổ
+    };
+    // Cooldown in ms (15 mins for Phi Toc, 30 mins for Lenh Bai/Chien Co)
+    this.itemCooldowns = {
+      '45': 15 * 60 * 1000,
+      '51': 30 * 60 * 1000,
+      '50': 30 * 60 * 1000
+    };
+
+    // Auto Roaming state
+    this.lastRoamTime = 0;
   }
 
   log(msg, type = 'info') {
@@ -248,6 +264,75 @@ class AutoPK {
     }
   }
 
+  async checkAndUseItems(currentMapId) {
+    const STAGING_MAPS = [323, 325, 379, 382, 972, 973, 974];
+    // In Tống Kim staging or battle maps
+    if (!STAGING_MAPS.includes(currentMapId) && currentMapId < 300) return;
+
+    if (!this.devCfg || !this.devCfg.lacs || this.devCfg.lacs.length === 0) return;
+
+    const now = Date.now();
+    const intervalMs = (this.devCfg.lacInterval || 30) * 1000;
+    
+    let shouldCheckInventory = false;
+    for (const particular of this.devCfg.lacs) {
+      if (!this.lastUsedItems[particular]) this.lastUsedItems[particular] = 0;
+      if (now - this.lastUsedItems[particular] > intervalMs) {
+        shouldCheckInventory = true;
+        break;
+      }
+    }
+
+    if (!shouldCheckInventory) return;
+
+    try {
+      const invRes = await this.session.callRpc('getInventoryItemsNoIl2cpp');
+      if (invRes && invRes.ok && invRes.items) {
+        for (const particular of this.devCfg.lacs) {
+          if (now - this.lastUsedItems[particular] > intervalMs) {
+            const item = invRes.items.find(i => i.particular.toString() === particular);
+            if (item && item.index !== undefined) {
+              this.log(`Cắn tự động: ${item.name || 'Vật phẩm ' + particular} (Chu kỳ ${intervalMs/1000}s)`, 'success');
+              await this.injector.sendPlayerUserItem(item.index);
+              this.lastUsedItems[particular] = now;
+              await new Promise(r => setTimeout(r, 500)); // Delay between items
+            }
+          }
+        }
+      }
+    } catch(e) {
+      // Ignore inventory check errors
+    }
+  }
+
+  /**
+   * Auto roam to find enemies when idle
+   */
+  async autoRoam(currentX, currentY) {
+    const now = Date.now();
+    if (now - this.lastRoamTime < 5000) return; // Only roam every 5 seconds at most
+
+    // Generate a random roam offset (-15 to 15 in Unity coordinates)
+    const offsetX = (Math.random() - 0.5) * 30;
+    const offsetY = (Math.random() - 0.5) * 30;
+    
+    const targetX = currentX + offsetX;
+    const targetY = currentY + offsetY;
+
+    this.log(`[AutoPK] Không thấy địch. Tự động chạy dò đường đến (${targetX.toFixed(1)}, ${targetY.toFixed(1)})...`, 'info');
+    await this.injector.sendMoveStart(targetX, targetY);
+    
+    // Stop after a brief movement
+    setTimeout(async () => {
+      try {
+        await this.injector.sendMoveStop(targetX, targetY);
+      } catch(e) {}
+    }, 1500);
+
+    this.lastRoamTime = now;
+  }
+
+
   /**
    * Core logic run at each tick interval.
    */
@@ -370,10 +455,21 @@ class AutoPK {
     }
 
     // Chỉ sync vị trí khi IDLE (không có mục tiêu) và mỗi 15 giây
-    if (!hasEnemy && now - this.lastLagFixTime > 15000) {
-      this.lastLagFixTime = now;
-      await this.injector.sendGotoPosition(info.x, info.y);
+    if (!hasEnemy) {
+      if (now - this.lastLagFixTime > 15000) {
+        this.lastLagFixTime = now;
+        await this.injector.sendGotoPosition(info.x, info.y);
+      }
+      
+      // Auto roam when idle in battle maps
+      const STAGING_MAPS = [323, 325, 379, 382, 972, 973, 974];
+      if (!STAGING_MAPS.includes(info.mapId)) {
+        await this.autoRoam(info.x, info.y);
+      }
     }
+
+    // Tự động kiểm tra và cắn thuốc nếu cần
+    await this.checkAndUseItems(info.mapId);
 
     const skillId = this.attackSkills[this.currentSkillIndex];
     this.currentSkillIndex = (this.currentSkillIndex + 1) % this.attackSkills.length;

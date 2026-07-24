@@ -206,7 +206,7 @@ function renderTable() {
     
     // Name
     const tdName = document.createElement('td');
-    let nameText = id;
+    let nameText = `Chưa đăng nhập (${id})`;
     if (dev.info && dev.info.name) {
       nameText = dev.info.name;
     }
@@ -438,6 +438,25 @@ function updateGlobalTK() {
 
 // Top Buttons
 btnRefresh.addEventListener('click', scanDevices);
+
+const btnUpdate = document.getElementById('btn-update');
+const updateStatusText = document.getElementById('update-status-text');
+if (btnUpdate) {
+  btnUpdate.addEventListener('click', async () => {
+    btnUpdate.disabled = true;
+    updateStatusText.innerText = "Đang kết nối...";
+    await window.api.checkForUpdates();
+  });
+}
+
+window.api.onUpdateStatus((msg) => {
+  if (updateStatusText) updateStatusText.innerText = msg;
+  if (btnUpdate) {
+    if (msg.includes('lỗi') || msg.includes('mới nhất')) {
+      btnUpdate.disabled = false;
+    }
+  }
+});
 btnRestart.addEventListener('click', () => {
   addLog('[System] Khoi dong lai toan bo ket noi...', 'warn');
   for (const [id, dev] of devicesMap.entries()) {

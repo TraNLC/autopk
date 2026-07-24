@@ -133,6 +133,36 @@ class PacketInjector {
     const body = encodeField(1, 'int32', itemIndex);
     return await this.sendRaw(49, body.toString('hex'));
   }
+
+  /**
+   * Send eStringData (opcode 9)
+   */
+  async sendStringData(str) {
+    // For eStringData, the payload is just the raw string bytes (no protobuf tags)
+    const body = Buffer.from(str, 'utf8');
+    return await this.sendRaw(9, body.toString('hex'));
+  }
+
+  /**
+   * Send Move Start (1|X|Y)
+   * x, y are actual float coordinates (already large integers like 48988)
+   */
+  async sendMoveStart(x, y) {
+    const intX = Math.round(x);
+    const intY = Math.round(y);
+    const payload = `1|${intX}|${intY}`;
+    return await this.sendStringData(payload);
+  }
+
+  /**
+   * Send Move Stop (2|X|Y|2)
+   */
+  async sendMoveStop(x, y) {
+    const intX = Math.round(x);
+    const intY = Math.round(y);
+    const payload = `2|${intX}|${intY}|2`;
+    return await this.sendStringData(payload);
+  }
 }
 
 module.exports = { PacketInjector, encodeField, writeVarint };

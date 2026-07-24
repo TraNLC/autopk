@@ -101,6 +101,16 @@ async function connectDevice(deviceId, pkgName, sendLog) {
     sniffer.start(200);
 
     session.onMessage((payload, data) => {
+        if (payload && payload.type === 'log') {
+            console.log(payload.message);
+        } else if (payload && payload.type === 'send') {
+            console.log('[DEBUG SEND] Opcode:', payload.opcode, 'Hex:', payload.hex);
+        } else if (payload && payload.type === 'recv') {
+            console.log('[DEBUG RECV] Opcode:', payload.opcode, 'Hex:', payload.hex);
+        } else {
+            console.log('[Frida Message]', payload);
+        }
+
         if (payload) {
             if (payload.log) {
                 // Chỉ hiển thị log thực sự quan trọng của Frida lên UI
@@ -477,6 +487,7 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                         if (isBattlefield) {
                             if (state.autoPK) {
                                 state.autoPK.fightTop1 = devCfg.fightTop1 === true;
+                                state.autoPK.devCfg = devCfg; // Pass the dynamic UI config to AutoPK
                                 
                                 // Logic dè chừng điểm:
                                 // Mặc định không chọn "đánh top 1" (fightTop1 !== true)

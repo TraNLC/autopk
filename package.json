@@ -13,7 +13,8 @@
     "test:memory": "node test/test-memory.js",
     "test:packet": "node test/test-packet.js",
     "gui": "electron src/gui/main.js",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "sniff": "node sniff-opcodes.js"
   },
   "dependencies": {
     "adbkit": "^2.11.1",

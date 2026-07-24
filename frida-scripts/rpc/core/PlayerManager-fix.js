@@ -80,6 +80,8 @@ rpc.exports.getInventoryItemsNoIl2cpp = function() {
                                     var depth = 0;
                                     while (current && !current.isNull() && parseInt(current.toString()) > 0x10000 && depth < 10) {
                                         try {
+                                            var key = current.add(0x10).readInt(); // Guessing key is at 0x10
+                                            var key2 = current.add(0x14).readInt(); // Guessing key is at 0x14
                                             var itemPtr = current.add(0x18).readPointer(); 
                                             if (itemPtr && !itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
                                                 var location = itemPtr.add(0x60).readInt();
@@ -91,13 +93,21 @@ rpc.exports.getInventoryItemsNoIl2cpp = function() {
                                                     
                                                     // Valid item?
                                                     if (genre >= 0 && genre < 100 && particular >= 0) {
+                                                        var id1 = -1, id2 = -1, id3 = -1, id4 = -1;
+                                                        try { id1 = itemPtr.add(0x10).readInt(); } catch(e){}
+                                                        try { id2 = itemPtr.add(0x14).readInt(); } catch(e){}
+                                                        try { id3 = itemPtr.add(0x18).readInt(); } catch(e){}
+                                                        try { id4 = itemPtr.add(0x30).readInt(); } catch(e){}
                                                         items.push({
+                                                            index: key, // Or key2, we will dump both to see
+                                                            key2: key2,
                                                             particular: particular,
                                                             genre: genre,
                                                             detail: detail,
                                                             count: count,
                                                             location: location,
-                                                            name: "Item_" + particular
+                                                            name: "Item_" + particular,
+                                                            id1: id1, id2: id2, id3: id3, id4: id4
                                                         });
                                                     }
                                                 }
@@ -183,11 +193,11 @@ rpc.exports.useItemNoIl2cpp = function(targetParticular) {
         }
 
         if (foundItemPtr) {
-            var requestUseItemFn = new NativeFunction(globalThis.il2cppBase.add(0xE4D000), 'void', ['pointer', 'pointer']);
+            var requestUseItemFn = new NativeFunction(globalThis.il2cppBase.add(0xE4D000), 'void', ['pointer', 'pointer', 'pointer']);
             globalThis._mainThreadActions = globalThis._mainThreadActions || [];
             globalThis._mainThreadActions.push(function() {
                 try {
-                    requestUseItemFn(pmInst, foundItemPtr);
+                    requestUseItemFn(pmInst, foundItemPtr, ptr(0));
                 } catch(e){}
             });
             return { ok: true, particular: targetParticular };

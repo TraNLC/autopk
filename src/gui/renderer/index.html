@@ -99,8 +99,10 @@
 
   <!-- BOTTOM: StatusBar -->
   <div class="status-bar">
-    <div class="bottom-left" style="color: #666; font-weight: bold; padding-left: 5px;">
+    <div class="bottom-left" style="color: #666; font-weight: bold; padding-left: 5px; display: flex; align-items: center; gap: 10px;">
       ✅ GST Auto PK
+      <button id="btn-update" style="padding: 2px 8px; font-size: 11px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; background: #fff;">Check Update</button>
+      <span id="update-status-text" style="font-size: 11px; font-weight: normal; color: #888;"></span>
     </div>
     <div class="bottom-right">
       <button id="btn-refresh" class="icon-btn" title="Làm mới thiết bị">🔄</button>

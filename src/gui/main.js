@@ -24,6 +24,8 @@ function createWindow() {
     }
   });
 
+  globalThis._mainWindow = mainWindow;
+
   mainWindow.setMenu(null);
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
@@ -34,6 +36,7 @@ function createWindow() {
     console.log('[TRACE] [Main] Cuaso chinh da dong. Dang thuc hien don dep tai nguyen...');
     await sessionManager.cleanup();
     mainWindow = null;
+    globalThis._mainWindow = null;
   });
 }
 
@@ -57,6 +60,36 @@ app.whenReady().then(() => {
     }).then(() => {
       autoUpdater.quitAndInstall();
     });
+  });
+  
+  autoUpdater.on('update-available', () => {
+    if (globalThis._mainWindow) {
+      globalThis._mainWindow.webContents.send('update-status', 'Đã tìm thấy bản cập nhật. Đang tải...');
+    }
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    if (globalThis._mainWindow) {
+      globalThis._mainWindow.webContents.send('update-status', 'Bạn đang dùng bản mới nhất!');
+    }
+  });
+
+  autoUpdater.on('error', (err) => {
+    if (globalThis._mainWindow) {
+      globalThis._mainWindow.webContents.send('update-status', 'Lỗi cập nhật: ' + err.message);
+    }
+  });
+
+  ipcMain.handle('check-for-updates', async () => {
+    try {
+      if (globalThis._mainWindow) {
+        globalThis._mainWindow.webContents.send('update-status', 'Đang kiểm tra cập nhật...');
+      }
+      return await autoUpdater.checkForUpdates();
+    } catch (e) {
+      console.log("[AutoUpdater] Loi khi check for updates", e.message);
+      return null;
+    }
   });
 });
 
