@@ -9,10 +9,10 @@ let mainWindow = null;
 function createWindow() {
   console.log('[TRACE] [Main] Khoi tao cua so Electron chinh (createWindow)...');
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 800,
-    minWidth: 850,
-    minHeight: 600,
+    width: 800,
+    height: 550,
+    minWidth: 750,
+    minHeight: 450,
     resizable: true,
     frame: true,
     autoHideMenuBar: true,
