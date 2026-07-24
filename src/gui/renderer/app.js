@@ -168,6 +168,13 @@ function renderTable() {
     const tr = document.createElement('tr');
     if (id === currentSelectedDeviceId) tr.classList.add('selected');
     
+    // Highlight if completed Tống Kim
+    const isTkDone = dev.info && dev.info.tkScore >= 30000;
+    if (isTkDone) {
+      tr.style.backgroundColor = '#e8f5e9'; // light green highlight
+      tr.title = 'Hoàn thành Tống Kim';
+    }
+    
     tr.addEventListener('click', (e) => {
       // Don't trigger if clicking checkbox
       if (e.target.tagName.toLowerCase() === 'input') return;
@@ -233,7 +240,12 @@ function renderTable() {
     } else if (dev.info && dev.info.mapId) {
       const TK_MAPS = [323, 324, 325, 379, 382, 972, 44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
       const mapNameLower = dev.info.mapName ? dev.info.mapName.toLowerCase() : '';
-      if (mapNameLower.includes('báo danh') || mapNameLower.includes('bao danh')) {
+      if (isTkDone) {
+        statusSpan.innerText = 'Hoàn thành TK';
+        statusSpan.style.color = '#e91e63'; // pink/red highlight for completion
+        statusSpan.style.fontWeight = 'bold';
+        statusSpan.innerHTML += ' <span style="font-size:10px;">🌟</span>';
+      } else if (mapNameLower.includes('báo danh') || mapNameLower.includes('bao danh')) {
         statusSpan.innerText = 'Báo danh TK';
         statusSpan.style.color = '#3498db'; // blue
       } else if (TK_MAPS.includes(dev.info.mapId) || mapNameLower.includes('doanh') || mapNameLower.includes('tống kim')) {
