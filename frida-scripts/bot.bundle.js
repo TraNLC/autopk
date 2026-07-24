@@ -3640,8 +3640,16 @@ rpc.exports.gotoFindingPath = function(x, y, approach) {
 
     try {
         var gotoFindingPathFn = new NativeFunction(il2cppBase.add(0xE4A620).add(1), 'void', ['pointer', 'int', 'int', 'int', 'pointer', 'pointer', 'pointer']);
-        gotoFindingPathFn(_playerMainInstance, x | 0, y | 0, (approach | 0) || 20, ptr(0), ptr(0), ptr(0));
-        return { ok: true, x: x, y: y, method: 'direct_native' };
+        
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                gotoFindingPathFn(_playerMainInstance, x | 0, y | 0, (approach | 0) || 20, ptr(0), ptr(0), ptr(0));
+            } catch(e) {
+                console.log('GotoFindingPath main thread error: ' + e);
+            }
+        });
+        return { ok: true, x: x, y: y, method: 'direct_native_queued' };
     } catch (e) {
         return { ok: false, error: 'GotoFindingPath exception: ' + e };
     }
