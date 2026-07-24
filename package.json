@@ -1,6 +1,6 @@
 {
   "name": "gst-auto-pk-node",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "GST Auto PK - VLTK1 Mobile Automation Tool (Node.js Rewrite)",
   "main": "src/gui/main.js",
   "scripts": {
