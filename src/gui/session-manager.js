@@ -379,8 +379,10 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                             if (invRes.items.length === 0) {
                                 traceLog(deviceId, `Túi đồ trống hoặc không đọc được vật phẩm (items.length = 0).`, 'warn', sendLog);
                             } else {
-                                const itemDetails = invRes.items.map(i => `${i.name || 'Unknown'} (P:${i.particular}, G:${i.genre}, C:${i.count})`);
-                                traceLog(deviceId, `Danh sách vật phẩm: ${itemDetails.join(', ')}`, 'info', sendLog);
+                                const allowedItems = ['45', '51', '50'];
+                                const filteredItems = invRes.items.filter(i => allowedItems.includes(i.particular.toString()));
+                                const itemDetails = filteredItems.map(i => `${i.name || 'Item_' + i.particular} (P:${i.particular}, G:${i.genre}, C:${i.count})`);
+                                traceLog(deviceId, `Danh sách Lắc (Phi tốc, Lệnh bài, Chiến cổ): ${itemDetails.join(', ')}`, 'info', sendLog);
                             }
                         }
                         

@@ -32,7 +32,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git pull origin main --rebase
           npm version patch -m "chore: auto-bump version to %s [skip ci]"
-          git push origin HEAD:main
+          git push origin HEAD:main --follow-tags
 
       - name: Cài đặt thư viện (Dependencies)
         run: npm install
