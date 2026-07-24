@@ -83,7 +83,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
       
       if (!cache._lastLacTime || (nowTime - cache._lastLacTime) >= lacIntervalMs) {
         try {
-          const invRes = await session.callRpc('getInventoryItems');
+          const invRes = await session.callRpc('getInventoryItemsNoIl2cpp');
           if (invRes && invRes.ok && invRes.items) {
             let usedCount = 0;
             const usedParticulars = new Set();
@@ -92,7 +92,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
                if (_lacs.includes(item.particular.toString()) && !usedParticulars.has(item.particular)) {
                  usedParticulars.add(item.particular);
                  sendLog(`[${deviceId}] [Buff] Dang su dung ${item.name || 'Lắc'}...`, 'info');
-                 await session.callRpc('useItem', item.index);
+                 await session.callRpc('useItemNoIl2cpp', item.particular);
                  await new Promise(r => setTimeout(r, 600));
                  usedCount++;
                }

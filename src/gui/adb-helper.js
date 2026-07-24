@@ -128,16 +128,19 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             const deviceId = parts[0];
             if (!deviceId) continue;
 
-            // Check port number and filter duplicates
-            const portMatch = deviceId.match(/:(\d+)$/);
+            let portMatch = deviceId.match(/:(\d+)$/);
             if (!portMatch) {
-                console.log(`[TRACE] [ADB-Helper] Bo qua thiet bi khong co cong: ${deviceId}`);
-                continue;
+                // Try emulator-xxxx pattern
+                portMatch = deviceId.match(/^emulator-(\d+)$/);
+                if (!portMatch) {
+                    console.log(`[TRACE] [ADB-Helper] Bo qua thiet bi khong hop le: ${deviceId}`);
+                    continue;
+                }
             }
             const port = parseInt(portMatch[1], 10);
             
-            // Only accept local ADB connections (starts with 127.0.0.1:)
-            if (!deviceId.startsWith('127.0.0.1:')) {
+            // Accept local ADB connections or emulators
+            if (!deviceId.startsWith('127.0.0.1:') && !deviceId.startsWith('emulator-')) {
                 console.log(`[TRACE] [ADB-Helper] Bo qua thiet bi khong phai local IP: ${deviceId}`);
                 continue;
             }

@@ -370,14 +370,18 @@ async function connectDevice(deviceId, pkgName, sendLog) {
 
                 // Get inventory items counts for Lắc
                 try {
-                    const invRes = await session.callRpc('getInventoryItems');
+                    const invRes = await session.callRpc('getInventoryItemsNoIl2cpp');
                     if (invRes && invRes.ok && invRes.items) {
                         const counts = { '45': 0, '51': 0, '50': 0 };
                         // Debug log 1st time only
-                        if (!state.hasLoggedItems && invRes.items.length > 0) {
+                        if (!state.hasLoggedItems) {
                             state.hasLoggedItems = true;
-                            const itemDetails = invRes.items.map(i => `${i.name || 'Unknown'} (P:${i.particular}, G:${i.genre}, C:${i.count})`);
-                            traceLog(deviceId, `Danh sách vật phẩm: ${itemDetails.join(', ')}`, 'info', sendLog);
+                            if (invRes.items.length === 0) {
+                                traceLog(deviceId, `Túi đồ trống hoặc không đọc được vật phẩm (items.length = 0).`, 'warn', sendLog);
+                            } else {
+                                const itemDetails = invRes.items.map(i => `${i.name || 'Unknown'} (P:${i.particular}, G:${i.genre}, C:${i.count})`);
+                                traceLog(deviceId, `Danh sách vật phẩm: ${itemDetails.join(', ')}`, 'info', sendLog);
+                            }
                         }
                         
                         for (const item of invRes.items) {
@@ -386,8 +390,16 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                         }
                         info.itemCounts = counts;
                         state.itemCounts = counts;
+                    } else if (!state.hasLoggedItems) {
+                        state.hasLoggedItems = true;
+                        traceLog(deviceId, `Loi doc tui do: ${JSON.stringify(invRes)}`, 'error', sendLog);
                     }
-                } catch(e) {}
+                } catch(e) {
+                    if (!state.hasLoggedItems) {
+                        state.hasLoggedItems = true;
+                        traceLog(deviceId, `Ngoai le khi doc tui do: ${e.message}`, 'error', sendLog);
+                    }
+                }
 
                 // Gui cap nhat trang thai len Renderer qua IPC (se duoc routed tu main.js)
                 if (globalThis._mainWindow) {

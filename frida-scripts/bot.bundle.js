@@ -1981,6 +1981,159 @@ function readIdentificationName(idnPtr) {
     return "";
 }
 
+// ─── GetInventoryItems WITHOUT Il2Cpp ───────────────────────────────────
+rpc.exports.getInventoryItemsNoIl2cpp = function() {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    var items = [];
+    try {
+        var pmInst = _playerMainInstance;
+        // Instead of calling NativeFunction which might crash, scan pmInst for the items dictionary
+        for (var pmOffset = 0x10; pmOffset < 0x200; pmOffset += Process.pointerSize) {
+            var itemsDict = null;
+            try { itemsDict = pmInst.add(pmOffset).readPointer(); } catch(e) { continue; }
+            
+            if (itemsDict && !itemsDict.isNull() && parseInt(itemsDict.toString()) > 0x10000) {
+                var m_tables = null;
+                try { m_tables = itemsDict.add(0x10).readPointer(); } catch(e) { continue; }
+                
+                if (m_tables && !m_tables.isNull() && parseInt(m_tables.toString()) > 0x10000) {
+                    for (var offset = 0x10; offset < 0x50; offset += Process.pointerSize) {
+                        var arrPtr = null;
+                        try { arrPtr = m_tables.add(offset).readPointer(); } catch(e) { continue; }
+                        
+                        if (arrPtr && !arrPtr.isNull() && parseInt(arrPtr.toString()) > 0x10000) {
+                            var len = 0;
+                            try { len = arrPtr.add(0x18).readU32(); } catch(e){}
+                            if (len > 0 && len < 2000) {
+                                for (var i = 0; i < len; i++) {
+                                    var nodePtr = null;
+                                    try { nodePtr = arrPtr.add(0x20 + i * Process.pointerSize).readPointer(); } catch(e) { break; }
+                                    
+                                    var current = nodePtr;
+                                    var depth = 0;
+                                    while (current && !current.isNull() && parseInt(current.toString()) > 0x10000 && depth < 10) {
+                                        try {
+                                            var itemPtr = current.add(0x18).readPointer(); 
+                                            if (itemPtr && !itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
+                                                var location = itemPtr.add(0x60).readInt();
+                                                if (location === 2 || location === 1) { 
+                                                    var particular = itemPtr.add(0x4C).readInt();
+                                                    var genre = itemPtr.add(0x44).readInt();
+                                                    var detail = itemPtr.add(0x48).readInt();
+                                                    var count = itemPtr.add(0x58).readInt();
+                                                    
+                                                    // Valid item?
+                                                    if (genre >= 0 && genre < 100 && particular >= 0) {
+                                                        items.push({
+                                                            particular: particular,
+                                                            genre: genre,
+                                                            detail: detail,
+                                                            count: count,
+                                                            location: location,
+                                                            name: "Item_" + particular
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                            current = current.add(0x20).readPointer(); 
+                                        } catch(e) { break; }
+                                        depth++;
+                                    }
+                                }
+                                if (items.length > 0) break; // found it
+                            }
+                        }
+                    }
+                }
+            }
+            if (items.length > 0) break; // stop scanning pmInst
+        }
+        
+        return { ok: true, items: items };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+};
+
+// ─── UseItem WITHOUT Il2Cpp ─────────────────────────────────────────
+rpc.exports.useItemNoIl2cpp = function(targetParticular) {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'no PlayerMain' };
+
+    try {
+        var pmInst = _playerMainInstance;
+        var foundItemPtr = null;
+
+        for (var pmOffset = 0x10; pmOffset < 0x200; pmOffset += Process.pointerSize) {
+            var itemsDict = null;
+            try { itemsDict = pmInst.add(pmOffset).readPointer(); } catch(e) { continue; }
+            
+            if (itemsDict && !itemsDict.isNull() && parseInt(itemsDict.toString()) > 0x10000) {
+                var m_tables = null;
+                try { m_tables = itemsDict.add(0x10).readPointer(); } catch(e) { continue; }
+                
+                if (m_tables && !m_tables.isNull() && parseInt(m_tables.toString()) > 0x10000) {
+                    for (var offset = 0x10; offset < 0x50; offset += Process.pointerSize) {
+                        var arrPtr = null;
+                        try { arrPtr = m_tables.add(offset).readPointer(); } catch(e) { continue; }
+                        
+                        if (arrPtr && !arrPtr.isNull() && parseInt(arrPtr.toString()) > 0x10000) {
+                            var len = 0;
+                            try { len = arrPtr.add(0x18).readU32(); } catch(e){}
+                            if (len > 0 && len < 2000) {
+                                for (var i = 0; i < len; i++) {
+                                    var nodePtr = null;
+                                    try { nodePtr = arrPtr.add(0x20 + i * Process.pointerSize).readPointer(); } catch(e) { break; }
+                                    
+                                    var current = nodePtr;
+                                    var depth = 0;
+                                    while (current && !current.isNull() && parseInt(current.toString()) > 0x10000 && depth < 10) {
+                                        try {
+                                            var itemPtr = current.add(0x18).readPointer(); 
+                                            if (itemPtr && !itemPtr.isNull() && parseInt(itemPtr.toString()) > 0x10000) {
+                                                var location = itemPtr.add(0x60).readInt();
+                                                if (location === 2) { // only bag
+                                                    var particular = itemPtr.add(0x4C).readInt();
+                                                    if (particular === parseInt(targetParticular)) {
+                                                        foundItemPtr = itemPtr;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            current = current.add(0x20).readPointer(); 
+                                        } catch(e) { break; }
+                                        depth++;
+                                    }
+                                    if (foundItemPtr) break;
+                                }
+                            }
+                        }
+                        if (foundItemPtr) break;
+                    }
+                }
+            }
+            if (foundItemPtr) break;
+        }
+
+        if (foundItemPtr) {
+            var requestUseItemFn = new NativeFunction(globalThis.il2cppBase.add(0xE4CEFC), 'void', ['pointer', 'pointer']);
+            globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+            globalThis._mainThreadActions.push(function() {
+                try {
+                    requestUseItemFn(pmInst, foundItemPtr);
+                } catch(e){}
+            });
+            return { ok: true, particular: targetParticular };
+        }
+        
+        return { ok: false, error: 'Item not found in bag' };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+};
+
 // ─── GetNearEnemies WITHOUT Il2Cpp ─────────────────────────────────────
 rpc.exports.getNearEnemiesNoIl2cpp = function() {
     var pmRes = readPlayerMainDirect();
@@ -2052,24 +2205,21 @@ rpc.exports.getPlayerInfoNoIl2cpp = function() {
         var pmInst = _playerMainInstance;
         var res = { ok: true };
         
-        // Read via target → controller → position → identify
-        var targetField = pmInst.add(0xA0).readPointer();
-        if (targetField && !targetField.isNull()) {
-            var ctrl = targetField.add(0x10).readPointer();
-            if (ctrl && !ctrl.isNull()) {
-                var pos = ctrl.add(0x10).readPointer();
-                if (pos && !pos.isNull()) {
-                    var idn = pos.add(0x80).readPointer();
-                    if (idn && !idn.isNull()) {
-                        res.camp = idn.add(0x50).readInt();   // campValue
-                        res.series = idn.add(0x54).readInt(); // seriesValue
-                        res.hp = idn.add(0x58).readInt();     // healthCurrent
-                        res.maxHp = idn.add(0x5C).readInt();  // healthMax
-                        res.name = readIdentificationName(idn);
-                    }
-                    res.x = pos.add(0x30).readFloat();  // Vector2.x
-                    res.y = pos.add(0x34).readFloat(); // Vector2.y
-                }
+        // Read via player's own ObjController (0x20) -> Identification (0x28)
+        var npcontroller = pmInst.add(0x20).readPointer();
+        if (npcontroller && !npcontroller.isNull()) {
+            var idn = npcontroller.add(0x28).readPointer();
+            if (idn && !idn.isNull()) {
+                res.camp = idn.add(0x50).readInt();   // campValue
+                res.series = idn.add(0x54).readInt(); // seriesValue
+                res.hp = idn.add(0x58).readInt();     // healthCurrent
+                res.maxHp = idn.add(0x5C).readInt();  // healthMax
+                res.name = readIdentificationName(idn);
+            }
+            var pos = npcontroller.add(0x10).readPointer();
+            if (pos && !pos.isNull()) {
+                res.x = pos.add(0x30).readFloat();
+                res.y = pos.add(0x34).readFloat();
             }
         }
         
