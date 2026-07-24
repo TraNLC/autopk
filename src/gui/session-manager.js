@@ -344,15 +344,6 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                 if (info.mapId) {
                     info.mapName = getMapName(info.mapId);
                 }
-                
-                // Track coordinates for idle detection
-                if (state.info && info.x === state.info.x && info.y === state.info.y) {
-                    state.idleTicks = (state.idleTicks || 0) + 1;
-                } else {
-                    state.idleTicks = 0;
-                }
-                info.isIdle = (state.idleTicks >= 5); // 10s standing still
-
                 state.info = info;
 
                 if (info.error && info.error !== state.lastLoggedError) {
