@@ -338,13 +338,11 @@ function selectDevice(id) {
     chkLac1.checked = true;
     chkLac2.checked = true;
     chkLac3.checked = true;
-    const chkBaoDanh = document.getElementById('chk-auto-baodanh');
-    if (chkBaoDanh) chkBaoDanh.checked = true;
     return;
   }
   
   const dev = devicesMap.get(id);
-  const cfg = dev.tkConfig || { side: 'auto', lacs: [], autoBaoDanh: true, lacInterval: 180 };
+  const cfg = dev.tkConfig || { side: 'auto', lacs: [], lacInterval: 180 };
   radSides.forEach(rb => rb.checked = (rb.value === (cfg.side || 'auto')));
   chkLac1.checked = cfg.lacs ? cfg.lacs.includes('45') : false;
   chkLac2.checked = cfg.lacs ? cfg.lacs.includes('51') : false;
@@ -352,11 +350,6 @@ function selectDevice(id) {
   
   if (selLacInterval) {
     selLacInterval.value = cfg.lacInterval ? cfg.lacInterval.toString() : '180';
-  }
-  
-  const chkBaoDanh = document.getElementById('chk-auto-baodanh');
-  if (chkBaoDanh) {
-    chkBaoDanh.checked = cfg.autoBaoDanh !== false;
   }
 }
 
@@ -373,11 +366,6 @@ function saveConfigForSelected() {
   });
   dev.tkConfig.side = selectedSide;
   
-  const chkBaoDanh = document.getElementById('chk-auto-baodanh');
-  if (chkBaoDanh) {
-    dev.tkConfig.autoBaoDanh = chkBaoDanh.checked;
-  }
-  
   const lacs = [];
   if (chkLac1.checked) lacs.push('45');
   if (chkLac2.checked) lacs.push('51');
@@ -392,15 +380,17 @@ function saveConfigForSelected() {
   
   // Create a descriptive log message
   const sideName = selectedSide === 'song' ? 'Tống' : (selectedSide === 'jin' ? 'Kim' : 'Tự động');
-  const baoDanhStr = dev.tkConfig.autoBaoDanh ? 'Bật' : 'Tắt';
   const lacNames = [];
   if (lacs.includes('45')) lacNames.push('Phi tốc');
   if (lacs.includes('51')) lacNames.push('Lệnh bài');
   if (lacs.includes('50')) lacNames.push('Chiến cổ');
   const lacsStr = lacNames.length > 0 ? lacNames.join(', ') : 'Không dùng';
-  const intervalStr = selLacInterval ? selLacInterval.options[selLacInterval.selectedIndex].text : '3 phút';
-
-  addLog(`[${currentSelectedDeviceId}] Lưu cấu hình: Phe ${sideName} | Báo danh: ${baoDanhStr} | Lắc: ${lacsStr} (${intervalStr})`, 'info');
+  let lacIntervalText = '';
+  if (lacs.length > 0) {
+    lacIntervalText = ` (${dev.tkConfig.lacInterval / 60} phút)`;
+  }
+  
+  addLog(`[${currentSelectedDeviceId}] Lưu cấu hình: Phe ${sideName} | Lắc: ${lacsStr}${lacIntervalText}`, 'info');
 }
 
 radSides.forEach(rb => rb.addEventListener('change', saveConfigForSelected));
