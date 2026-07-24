@@ -57,3 +57,39 @@ rpc.exports.findJoysticks = function() {
 rpc.exports.joystickSet = function(idx, dx, dy) {
     return { ok: false, error: 'Joystick control needs bridge (disabled for stability)' };
 };
+
+rpc.exports.teleportSynchronous = function(x, y) {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'PlayerMain not found' };
+    if (!il2cppBase) return { ok: false, error: 'il2cppBase not found' };
+
+    try {
+        var tpFn = new NativeFunction(il2cppBase.add(0xE4BB60), 'void', ['pointer', 'int', 'int']);
+        globalThis._mainThreadActions = globalThis._mainThreadActions || [];
+        globalThis._mainThreadActions.push(function() {
+            try {
+                tpFn(_playerMainInstance, y | 0, x | 0);
+            } catch(e) {
+                console.log('Teleport error: ' + e);
+            }
+        });
+        return { ok: true, method: 'teleportSynchronous' };
+    } catch (e) {
+        return { ok: false, error: 'Exception: ' + e };
+    }
+};
+
+rpc.exports.selfForceMoveTarget = function(x, y) {
+    var pmRes = readPlayerMainDirect();
+    if (!pmRes.ok || !_playerMainInstance) return { ok: false, error: 'PlayerMain not found' };
+    if (!il2cppBase) return { ok: false, error: 'il2cppBase not found' };
+
+    try {
+        // Need to create a string array... this is too complex in pure C API.
+        // Let's use the TeleportSynchronous instead!
+        return { ok: false, error: 'not implemented' };
+    } catch (e) {
+        return { ok: false, error: 'Exception: ' + e };
+    }
+};
+
