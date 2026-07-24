@@ -1,0 +1,36 @@
+name: Build and Release AutoPK
+
+on:
+  push:
+    tags:
+      - 'v*' # Hệ thống tự động kích hoạt khi anh gắn tag phiên bản (VD: v1.0.5)
+  workflow_dispatch: # Cho phép anh có thể bấm nút chạy thủ công trên giao diện web Github
+
+jobs:
+  release:
+    runs-on: windows-latest
+    
+    # Cấp quyền cho Github Actions được phép tạo bài Release mới
+    permissions:
+      contents: write 
+
+    steps:
+      - name: Tải mã nguồn về máy chủ Github
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Node.js môi trường
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' 
+          cache: 'npm'
+
+      - name: Cài đặt thư viện (Dependencies)
+        run: npm install
+
+      - name: Build hệ thống Frida
+        run: npm run build:frida
+
+      - name: Đóng gói và tự động đăng bài Release
+        run: npm run dist -- -p always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
