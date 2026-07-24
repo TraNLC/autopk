@@ -555,7 +555,8 @@ rpc.exports.useItem = function(itemIdx) {
 
 rpc.exports.getTkScoreDeepScan = function() {
     return new Promise(function(resolve) {
-        var pattern = "?? 00 e1 00 20 00 ?? 00 68 00 e2 00 ?? 00"; // Case-insensitive "Cá nhân" in UTF-16LE
+        // "Cá nhân" in UTF-16LE exactly: 'C' (43 00) 'á' (e1 00) ' ' (20 00) 'n' (6e 00) 'h' (68 00) 'â' (e2 00) 'n' (6e 00)
+        var pattern = "43 00 e1 00 20 00 6e 00 68 00 e2 00 6e 00"; 
         var ranges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
         
         function scanRange(index) {
@@ -566,7 +567,7 @@ rpc.exports.getTkScoreDeepScan = function() {
             Memory.scan(ranges[index].base, ranges[index].size, pattern, {
                 onMatch: function(address, size) {
                     try {
-                        var str = address.readUtf16String(50);
+                        var str = address.readUtf16String(80);
                         if (str) {
                             var lowerStr = str.toLowerCase();
                             if (lowerStr.indexOf("cá nhân") !== -1 && (lowerStr.indexOf("điểm") !== -1 || lowerStr.indexOf("diem") !== -1)) {
