@@ -1904,7 +1904,8 @@ rpc.exports.useItem = function(itemIdx) {
 
 rpc.exports.getTkScoreDeepScan = function() {
     return new Promise(function(resolve) {
-        var pattern = "?? 00 e1 00 20 00 ?? 00 68 00 e2 00 ?? 00"; // Case-insensitive "Cá nhân" in UTF-16LE
+        // "Cá nhân" in UTF-16LE exactly: 'C' (43 00) 'á' (e1 00) ' ' (20 00) 'n' (6e 00) 'h' (68 00) 'â' (e2 00) 'n' (6e 00)
+        var pattern = "43 00 e1 00 20 00 6e 00 68 00 e2 00 6e 00"; 
         var ranges = Process.enumerateRanges({ protection: 'rw-', coalesce: true });
         
         function scanRange(index) {
@@ -1915,7 +1916,7 @@ rpc.exports.getTkScoreDeepScan = function() {
             Memory.scan(ranges[index].base, ranges[index].size, pattern, {
                 onMatch: function(address, size) {
                     try {
-                        var str = address.readUtf16String(50);
+                        var str = address.readUtf16String(80);
                         if (str) {
                             var lowerStr = str.toLowerCase();
                             if (lowerStr.indexOf("cá nhân") !== -1 && (lowerStr.indexOf("điểm") !== -1 || lowerStr.indexOf("diem") !== -1)) {
@@ -1927,8 +1928,10 @@ rpc.exports.getTkScoreDeepScan = function() {
                                     var rankVal = mRank ? parseInt(mRank[1]) : 0;
                                     var killsVal = mKills ? parseInt(mKills[1]) : 0;
                                     
-                                    // Scan nearby memory (±50KB) for the 10th place score string
+                                    // Scan nearby memory (±50KB) for the 10th place score string and TONG/KIM points
                                     var top10Score = 0;
+                                    var tongQuanSo = 0, tongTichLuy = 0;
+                                    var kimQuanSo = 0, kimTichLuy = 0;
                                     var startAddr = address.sub(50000);
                                     for (var offset = 0; offset < 100000; offset += 2) {
                                         try {
@@ -1941,9 +1944,25 @@ rpc.exports.getTkScoreDeepScan = function() {
                                                     var val = parseInt(m10[1]);
                                                     if (val > 1000 && val < 500000) {
                                                         top10Score = val;
-                                                        break; // Found it!
                                                     }
                                                 }
+                                                
+                                                var lowerCand = candidateStr.toLowerCase();
+                                                if (lowerCand.indexOf("tổng") !== -1 || lowerCand.indexOf("tống") !== -1 || lowerCand.indexOf("tong") !== -1) {
+                                                    var mTong = lowerCand.match(/(?:tổng|tống|tong).*?(?:quân số|quan so)\s+(\d+)\s+(?:tích lũy|tich luy)\s+(\d+)/);
+                                                    if (mTong) {
+                                                        tongQuanSo = parseInt(mTong[1]);
+                                                        tongTichLuy = parseInt(mTong[2]);
+                                                    }
+                                                }
+                                                if (lowerCand.indexOf("kim") !== -1 || lowerCand.indexOf("kím") !== -1) {
+                                                    var mKim = lowerCand.match(/kim.*?(?:quân số|quan so)\s+(\d+)\s+(?:tích lũy|tich luy)\s+(\d+)/);
+                                                    if (mKim) {
+                                                        kimQuanSo = parseInt(mKim[1]);
+                                                        kimTichLuy = parseInt(mKim[2]);
+                                                    }
+                                                }
+
                                                 offset += candidateStr.length * 2;
                                             }
                                         } catch(e) {}
@@ -1954,7 +1973,11 @@ rpc.exports.getTkScoreDeepScan = function() {
                                         score: scoreVal,
                                         rank: rankVal,
                                         kills: killsVal,
-                                        top10Score: top10Score
+                                        top10Score: top10Score,
+                                        tongQuanSo: tongQuanSo,
+                                        tongTichLuy: tongTichLuy,
+                                        kimQuanSo: kimQuanSo,
+                                        kimTichLuy: kimTichLuy
                                     });
                                     return 'stop';
                                 }
@@ -3616,7 +3639,7 @@ rpc.exports.gotoFindingPath = function(x, y, approach) {
     if (!il2cppBase) return { ok: false, error: 'il2cppBase not found' };
 
     try {
-        var gotoFindingPathFn = new NativeFunction(il2cppBase.add(0xE4A620), 'void', ['pointer', 'int', 'int', 'int', 'pointer', 'pointer', 'pointer']);
+        var gotoFindingPathFn = new NativeFunction(il2cppBase.add(0xE4A620).add(1), 'void', ['pointer', 'int', 'int', 'int', 'pointer', 'pointer', 'pointer']);
         gotoFindingPathFn(_playerMainInstance, x | 0, y | 0, (approach | 0) || 20, ptr(0), ptr(0), ptr(0));
         return { ok: true, x: x, y: y, method: 'direct_native' };
     } catch (e) {
@@ -3674,7 +3697,7 @@ rpc.exports.teleportSynchronous = function(x, y) {
     if (!il2cppBase) return { ok: false, error: 'il2cppBase not found' };
 
     try {
-        var tpFn = new NativeFunction(il2cppBase.add(0xE4BB60), 'void', ['pointer', 'int', 'int']);
+        var tpFn = new NativeFunction(il2cppBase.add(0xE4BB60).add(1), 'void', ['pointer', 'int', 'int']);
         globalThis._mainThreadActions = globalThis._mainThreadActions || [];
         globalThis._mainThreadActions.push(function() {
             try {

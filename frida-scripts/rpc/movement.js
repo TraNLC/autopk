@@ -6,7 +6,7 @@ rpc.exports.gotoFindingPath = function(x, y, approach) {
     if (!il2cppBase) return { ok: false, error: 'il2cppBase not found' };
 
     try {
-        var gotoFindingPathFn = new NativeFunction(il2cppBase.add(0xE4A620), 'void', ['pointer', 'int', 'int', 'int', 'pointer', 'pointer', 'pointer']);
+        var gotoFindingPathFn = new NativeFunction(il2cppBase.add(0xE4A620).add(1), 'void', ['pointer', 'int', 'int', 'int', 'pointer', 'pointer', 'pointer']);
         gotoFindingPathFn(_playerMainInstance, x | 0, y | 0, (approach | 0) || 20, ptr(0), ptr(0), ptr(0));
         return { ok: true, x: x, y: y, method: 'direct_native' };
     } catch (e) {
@@ -64,7 +64,7 @@ rpc.exports.teleportSynchronous = function(x, y) {
     if (!il2cppBase) return { ok: false, error: 'il2cppBase not found' };
 
     try {
-        var tpFn = new NativeFunction(il2cppBase.add(0xE4BB60), 'void', ['pointer', 'int', 'int']);
+        var tpFn = new NativeFunction(il2cppBase.add(0xE4BB60).add(1), 'void', ['pointer', 'int', 'int']);
         globalThis._mainThreadActions = globalThis._mainThreadActions || [];
         globalThis._mainThreadActions.push(function() {
             try {

@@ -353,22 +353,8 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                     state.lastLoggedError = null;
                 }
 
-                // Deep scan for TK Score every 30 ticks (60 seconds) if in battle map
+                // (Deep scan for TK Score has been moved to global 30s sequential scanner)
                 state.pollCount = (state.pollCount || 0) + 1;
-                const BATTLE_MAPS = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
-                if (info.mapId && BATTLE_MAPS.includes(info.mapId) && state.pollCount % 30 === 0) {
-                    try {
-                        const tkRes = await session.callRpc('getTkScoreDeepScan');
-                        if (tkRes && tkRes.ok) {
-                            info.tkScore = tkRes.score;
-                            info.tkRank = tkRes.rank;
-                            info.tkKills = tkRes.kills;
-                            info.top10Score = tkRes.top10Score || 0;
-                            state.lastTkScore = tkRes.score; // cache it
-                            state.lastTop10Score = tkRes.top10Score || 0;
-                        }
-                    } catch(e) {}
-                }
                 
                 // Use cached score for intermediate ticks
                 if (state.lastTkScore !== undefined) {
@@ -584,6 +570,52 @@ async function runCollectPoints(deviceId, sendLog) {
     await collectPoints(deviceId, state.session, sendLog || ((msg, type) => traceLog(deviceId, msg, type)));
     return { ok: true };
 }
+
+let globalTkScanInterval = null;
+let isTkScanRunning = false;
+
+function startGlobalTkScanner() {
+    if (globalTkScanInterval) return;
+    
+    globalTkScanInterval = setInterval(async () => {
+        if (isTkScanRunning) return;
+        isTkScanRunning = true;
+        
+        try {
+            const BATTLE_MAPS = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
+            for (const [deviceId, state] of sessions.entries()) {
+                if (state.info && state.info.mapId && BATTLE_MAPS.includes(state.info.mapId)) {
+                    try {
+                        const tkRes = await state.session.callRpc('getTkScoreDeepScan');
+                        if (tkRes && tkRes.ok) {
+                            state.info.tkScore = tkRes.score;
+                            state.info.tkRank = tkRes.rank;
+                            state.info.tkKills = tkRes.kills;
+                            state.info.top10Score = tkRes.top10Score || 0;
+                            
+                            // Save tong/kim scores
+                            state.info.tongQuanSo = tkRes.tongQuanSo || 0;
+                            state.info.tongTichLuy = tkRes.tongTichLuy || 0;
+                            state.info.kimQuanSo = tkRes.kimQuanSo || 0;
+                            state.info.kimTichLuy = tkRes.kimTichLuy || 0;
+                            
+                            state.lastTkScore = tkRes.score; 
+                            state.lastTop10Score = tkRes.top10Score || 0;
+                        }
+                    } catch(e) {}
+                    
+                    // Quét tuần tự từng acc, nghỉ 500ms giữa các acc để tránh disgame
+                    await new Promise(r => setTimeout(r, 500));
+                }
+            }
+        } finally {
+            isTkScanRunning = false;
+        }
+    }, 30000); // Quét 30s 1 lần
+}
+
+// Bắt đầu vòng lặp quét bộ nhớ toàn cục ngay khi khởi tạo module
+startGlobalTkScanner();
 
 module.exports = {
     sessions,
