@@ -373,23 +373,21 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                     const invRes = await session.callRpc('getInventoryItemsNoIl2cpp');
                     if (invRes && invRes.ok && invRes.items) {
                         const counts = { '45': 0, '51': 0, '50': 0 };
+                        for (const item of invRes.items) {
+                            const p = item.particular.toString();
+                            if (counts[p] !== undefined) counts[p] += (item.count || 1);
+                        }
+
                         // Debug log 1st time only
                         if (!state.hasLoggedItems) {
                             state.hasLoggedItems = true;
                             if (invRes.items.length === 0) {
                                 traceLog(deviceId, `Túi đồ trống hoặc không đọc được vật phẩm (items.length = 0).`, 'warn', sendLog);
                             } else {
-                                const allowedItems = ['45', '51', '50'];
-                                const filteredItems = invRes.items.filter(i => allowedItems.includes(i.particular.toString()));
-                                const itemDetails = filteredItems.map(i => `${i.name || 'Item_' + i.particular} (P:${i.particular}, G:${i.genre}, C:${i.count})`);
-                                traceLog(deviceId, `Danh sách Lắc (Phi tốc, Lệnh bài, Chiến cổ): ${itemDetails.join(', ')}`, 'info', sendLog);
+                                traceLog(deviceId, `Số lượng Lắc: Phi tốc (${counts['45']}), Lệnh bài (${counts['51']}), Chiến cổ (${counts['50']})`, 'info', sendLog);
                             }
                         }
                         
-                        for (const item of invRes.items) {
-                            const p = item.particular.toString();
-                            if (counts[p] !== undefined) counts[p] += (item.count || 1);
-                        }
                         info.itemCounts = counts;
                         state.itemCounts = counts;
                     } else if (!state.hasLoggedItems) {
