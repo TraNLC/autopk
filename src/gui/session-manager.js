@@ -611,7 +611,7 @@ function startGlobalTkScanner() {
         } finally {
             isTkScanRunning = false;
         }
-    }, 30000); // Quét 30s 1 lần
+    }, 15000); // Quét 15s 1 lần
 }
 
 // Bắt đầu vòng lặp quét bộ nhớ toàn cục ngay khi khởi tạo module
