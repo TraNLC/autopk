@@ -183,7 +183,7 @@ rpc.exports.useItemNoIl2cpp = function(targetParticular) {
         }
 
         if (foundItemPtr) {
-            var requestUseItemFn = new NativeFunction(globalThis.il2cppBase.add(0xE4CEFC), 'void', ['pointer', 'pointer']);
+            var requestUseItemFn = new NativeFunction(globalThis.il2cppBase.add(0xE4D000), 'void', ['pointer', 'pointer']);
             globalThis._mainThreadActions = globalThis._mainThreadActions || [];
             globalThis._mainThreadActions.push(function() {
                 try {
