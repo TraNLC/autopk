@@ -46,7 +46,8 @@
       {
         "provider": "github",
         "owner": "TraNLC",
-        "repo": "autopk"
+        "repo": "autopk",
+        "releaseType": "release"
       }
     ],
     "files": [
