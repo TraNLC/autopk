@@ -4,6 +4,18 @@ const btnRestart = document.getElementById('btn-restart');
 const deviceTableBody = document.getElementById('device-table-body');
 const globalLogContainer = document.getElementById('global-log-container');
 
+// UI Status Constants
+const UI_STATUS = {
+    ERROR: { text: 'Lỗi', color: 'red' },
+    DONE_TK: { text: 'Hoàn thành TK 🌟', color: '#e91e63' },
+    SIGNUP_TK: { text: 'Báo danh TK', color: '#3498db' },
+    FIGHT_TK: { text: 'Đánh TK', color: '#27ae60' },
+    IDLE_TK: { text: 'NV đứng im', color: '#c0392b' },
+    WAIT_TK: { text: 'Chờ TK', color: '#e67e22' },
+    READING: { text: 'Đang đọc...', color: 'inherit' },
+    WAITING: { text: 'Chờ', color: 'inherit' }
+};
+
 // TK Settings Elements
 const btnToggleAutoTk = document.getElementById('btn-toggle-auto-tk');
 const lblSelectedAcc = document.getElementById('lbl-selected-acc');
@@ -235,29 +247,37 @@ function renderTable() {
     const statusSpan = document.createElement('span');
     statusSpan.className = dev.connected ? 'text-blue' : '';
     if (dev.info && dev.info.error) {
-      statusSpan.style.color = 'red';
-      statusSpan.innerText = 'Lỗi';
+      statusSpan.style.color = UI_STATUS.ERROR.color;
+      statusSpan.innerText = UI_STATUS.ERROR.text;
     } else if (dev.info && dev.info.mapId) {
       const TK_MAPS = [323, 324, 325, 379, 382, 972, 44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
       const mapNameLower = dev.info.mapName ? dev.info.mapName.toLowerCase() : '';
+      
+      let currentStatus = UI_STATUS.WAIT_TK;
       if (isTkDone) {
-        statusSpan.innerText = 'Hoàn thành TK';
-        statusSpan.style.color = '#e91e63'; // pink/red highlight for completion
-        statusSpan.style.fontWeight = 'bold';
-        statusSpan.innerHTML += ' <span style="font-size:10px;">🌟</span>';
+        currentStatus = UI_STATUS.DONE_TK;
       } else if (mapNameLower.includes('báo danh') || mapNameLower.includes('bao danh')) {
-        statusSpan.innerText = 'Báo danh TK';
-        statusSpan.style.color = '#3498db'; // blue
+        currentStatus = UI_STATUS.SIGNUP_TK;
       } else if (TK_MAPS.includes(dev.info.mapId) || mapNameLower.includes('doanh') || mapNameLower.includes('tống kim')) {
-        statusSpan.innerText = 'Đánh TK';
-        statusSpan.style.color = '#27ae60'; // green
-      } else {
-        statusSpan.innerText = 'Chờ TK';
-        statusSpan.style.color = '#e67e22'; // orange
+        // If in TK and idle, show IDLE_TK, else FIGHT_TK
+        if (dev.info.isIdle) {
+          currentStatus = UI_STATUS.IDLE_TK;
+        } else {
+          currentStatus = UI_STATUS.FIGHT_TK;
+        }
       }
+      
+      if (currentStatus === UI_STATUS.DONE_TK) {
+        statusSpan.innerText = 'Hoàn thành TK';
+        statusSpan.innerHTML += ' <span style="font-size:10px;">🌟</span>';
+      } else {
+        statusSpan.innerText = currentStatus.text;
+      }
+      statusSpan.style.color = currentStatus.color;
       statusSpan.style.fontWeight = 'bold';
     } else {
-      statusSpan.innerText = dev.connected ? 'Đang đọc...' : 'Chờ';
+      statusSpan.innerText = dev.connected ? UI_STATUS.READING.text : UI_STATUS.WAITING.text;
+      statusSpan.style.color = dev.connected ? UI_STATUS.READING.color : UI_STATUS.WAITING.color;
     }
     tdStatus.appendChild(statusSpan);
     
