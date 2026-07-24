@@ -17,12 +17,21 @@ jobs:
     steps:
       - name: Tải mã nguồn về máy chủ Github
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cài đặt Node.js môi trường
         uses: actions/setup-node@v4
         with:
           node-version: '20' 
           cache: 'npm'
+
+      - name: Tự động tăng phiên bản (Auto Bump Version)
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          npm version patch -m "chore: auto-bump version to %s [skip ci]"
+          git push
 
       - name: Cài đặt thư viện (Dependencies)
         run: npm install
