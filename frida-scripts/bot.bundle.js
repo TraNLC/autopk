@@ -1594,6 +1594,7 @@ rpc.exports.clientMoveTo = function(x, y) {
     if (!il2cppBase) return { ok: false, error: 'no il2cppBase' };
 
     try {
+        // public void GotoFindingPath(int targetX, int targetY, int approach3d = 20, Action onFinish, Action<bool> onResponse)
         var fn = new NativeFunction(il2cppBase.add(0x706A70), 'void', ['pointer', 'int', 'int', 'int', 'pointer', 'pointer', 'pointer']);
         globalThis._mainThreadActions = globalThis._mainThreadActions || [];
         globalThis._mainThreadActions.push(function() {

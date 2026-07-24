@@ -320,15 +320,12 @@ class AutoPK {
     const targetY = currentY + offsetY;
 
     this.log(`[AutoPK] Không thấy địch. Tự động chạy dò đường đến (${targetX.toFixed(1)}, ${targetY.toFixed(1)})...`, 'info');
-    await this.injector.sendMoveStart(targetX, targetY);
     
-    // Stop after a brief movement
-    setTimeout(async () => {
-      try {
-        await this.injector.sendMoveStop(targetX, targetY);
-      } catch(e) {}
-    }, 1500);
-
+    // Sử dụng game engine để tìm đường và chạy trên giao diện (client-side move)
+    if (this.session) {
+      await this.session.callRpc('gotoFindingPath', Math.round(targetX), Math.round(targetY), 20);
+    }
+    
     this.lastRoamTime = now;
   }
 
