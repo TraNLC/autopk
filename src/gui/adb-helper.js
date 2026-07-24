@@ -143,9 +143,9 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             }
             const port = parseInt(portMatch[1], 10);
             
-            // Accept ONLY local ADB connections to avoid duplicates (emulator-xxxx is an alias)
-            if (!deviceId.startsWith('127.0.0.1:')) {
-                console.log(`[TRACE] [ADB-Helper] Bo qua thiet bi khong phai local IP: ${deviceId}`);
+            // Allow 127.0.0.1:xxxx and emulator-xxxx
+            if (!deviceId.startsWith('127.0.0.1:') && !deviceId.startsWith('emulator-')) {
+                console.log(`[TRACE] [ADB-Helper] Bo qua thiet bi khong phai local IP hay emulator: ${deviceId}`);
                 continue;
             }
             
