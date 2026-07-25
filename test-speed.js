@@ -17,8 +17,16 @@ async function main() {
   const deviceId = res.devices[0].id;
   console.log(`Kết nối vào thiết bị ${deviceId}...`);
 
-  const session = new FridaSession(deviceId);
-  await session.start();
+  const session = new FridaSession(deviceId, 'vn.perfingame.jx1mobile');
+  const ok = await session.connect();
+  if (!ok) {
+    console.log('Lỗi kết nối frida server vào game!');
+    return process.exit(1);
+  }
+
+  const bundlePath = path.join(process.cwd(), 'frida-scripts', 'bot.bundle.js');
+  await session.loadScript(bundlePath);
+
   await new Promise(r => setTimeout(r, 2000));
 
   const speed = process.argv.length >= 3 ? parseFloat(process.argv[2]) : 3.0;

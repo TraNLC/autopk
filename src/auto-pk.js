@@ -1,5 +1,6 @@
 // src/auto-pk.js -- Auto PK and Tong Kim Loop Module (Step 5)
 const fs = require('fs');
+const { encodeField } = require('./packet-injector');
 const path = require('path');
 
 class AutoPK {
@@ -55,6 +56,11 @@ class AutoPK {
 
     // Auto Roaming state
     this.lastRoamTime = 0;
+
+    // Trinh Sát NPC scanning state
+    this._trinhSatCache = {};       // { mapId: { x, y, ts } }
+    this._lastTrinhSatScanTime = 0;
+    this._trinhSatTeleported = false; // Đã tốc biến đến Trinh Sát trong lần staging hiện tại chưa
   }
 
   log(msg, type = 'info') {
@@ -333,6 +339,117 @@ class AutoPK {
     this.lastRoamTime = now;
   }
 
+  /**
+   * Quét NPC Trinh Sát bằng Opcode 71/72 (server-side) và tốc biến đến tọa độ NPC.
+   * Dùng khi nhân vật đang ở doanh trại (staging map) để nhanh chóng tiếp cận Trinh Sát.
+   * @param {object} info - Thông tin nhân vật (x, y, mapId)
+   * @returns {boolean} true nếu đã tốc biến thành công (skip tick)
+   */
+  async scanAndTeleportTrinhSat(info) {
+    const now = Date.now();
+    const mapId = info.mapId;
+
+    // Kiểm tra cache: nếu đã có tọa độ Trinh Sát cho map này, dùng luôn
+    const cached = this._trinhSatCache[mapId];
+    if (cached && cached.x && cached.y) {
+      // Đã tốc biến rồi thì không cần nữa
+      if (this._trinhSatTeleported) return false;
+
+      const dist = Math.sqrt(Math.pow(cached.x - info.x, 2) + Math.pow(cached.y - info.y, 2));
+      if (dist < 80) {
+        // Đã đứng gần Trinh Sát, đánh dấu hoàn thành
+        this._trinhSatTeleported = true;
+        return false;
+      }
+
+      // Tốc biến đến Trinh Sát
+      this.log(`⚡ Tốc biến đến NPC Trinh Sát (${cached.x}, ${cached.y}). Cự ly: ${dist.toFixed(0)}`, 'success');
+      try {
+        await this.session.callRpc('clientMoveMemory', cached.x, cached.y);
+        if (this.injector) {
+          await this.injector.sendStringData(`1|${Math.round(cached.x)}|${Math.round(cached.y)}`);
+          await new Promise(r => setTimeout(r, 300));
+          await this.injector.sendStringData(`2|${Math.round(cached.x)}|${Math.round(cached.y)}|2`);
+        }
+        this.lastX = cached.x;
+        this.lastY = cached.y;
+        this._trinhSatTeleported = true;
+      } catch (e) {
+        this.log(`Lỗi tốc biến Trinh Sát: ${e.message}`, 'error');
+      }
+      return true; // Skip tick này
+    }
+
+    // Chưa có cache -> quét bằng Opcode 71/72 (cooldown 15s)
+    if (now - this._lastTrinhSatScanTime < 15000) return false;
+    this._lastTrinhSatScanTime = now;
+
+    this.log(`[Staging] Quét tọa độ NPC Trinh Sát bằng Opcode 71 (mapId: ${mapId})...`, 'info');
+    try {
+      // Xóa buffer packet cũ
+      await this.session.callRpc('getRecvPackets', 72, 100).catch(() => {});
+
+      // Gửi yêu cầu quét NPC list
+      const hexReq = encodeField(1, 'int32', mapId).toString('hex');
+      await this.injector.sendRaw(71, hexReq);
+
+      // Đợi server phản hồi
+      await new Promise(r => setTimeout(r, 1500));
+
+      // Đọc kết quả Opcode 72
+      const recvRes = await this.session.callRpc('getRecvPackets', 72, 20);
+      if (recvRes && recvRes.ok && recvRes.packets && recvRes.packets.length > 0) {
+        for (const pkt of recvRes.packets) {
+          const buf = Buffer.from(pkt.hex, 'hex');
+          let offset = 0;
+          let cx = 0, cy = 0, cName = '';
+          while (offset < buf.length) {
+            const tag = buf[offset++];
+            const wireType = tag & 0x7;
+            const fieldNum = tag >> 3;
+            if (wireType === 0) {
+              let val = 0n, shift = 0n;
+              while (offset < buf.length) {
+                const b = buf[offset++];
+                val |= BigInt(b & 0x7f) << shift;
+                if ((b & 0x80) === 0) break;
+                shift += 7n;
+              }
+              if (fieldNum === 3) cx = Number(val);
+              if (fieldNum === 4) cy = Number(val);
+            } else if (wireType === 2) {
+              let len = 0, shift = 0;
+              while (offset < buf.length) {
+                const b = buf[offset++];
+                len |= (b & 0x7f) << shift;
+                if ((b & 0x80) === 0) break;
+                shift += 7;
+              }
+              if (len > 0 && offset + len <= buf.length) {
+                if (fieldNum === 2) {
+                  cName = buf.slice(offset, offset + len).toString('utf8').toLowerCase();
+                  if (cName.includes('trinh sát') || cName.includes('trinh sat')) {
+                    this._trinhSatCache[mapId] = { x: cx, y: cy, ts: now };
+                    this.log(`🎯 Tìm thấy NPC Trinh Sát tại (${cx}, ${cy})!`, 'success');
+                  }
+                }
+                offset += len;
+              }
+            } else if (wireType === 5) { offset += 4; } else if (wireType === 1) { offset += 8; }
+          }
+        }
+      }
+
+      if (!this._trinhSatCache[mapId]) {
+        this.log(`[Staging] Không tìm thấy NPC Trinh Sát ở mapId ${mapId}.`, 'warn');
+      }
+    } catch (e) {
+      this.log(`[Staging] Lỗi quét Trinh Sát: ${e.message}`, 'error');
+    }
+
+    return false;
+  }
+
 
   /**
    * Core logic run at each tick interval.
@@ -351,6 +468,13 @@ class AutoPK {
     // 0.5. Nhận thuốc từ Quân Nhu nếu đang đứng ở doanh trại (gần Quân Nhu)
     const STAGING_MAPS = [323, 325, 379, 382, 972, 973, 974];
     const isStagingArea = STAGING_MAPS.includes(info.mapId);
+
+    // ── Staging: Quét tọa độ NPC Trinh Sát và tốc biến đến ──
+    if (isStagingArea) {
+      const didTeleport = await this.scanAndTeleportTrinhSat(info);
+      if (didTeleport) return; // Đã tốc biến, bỏ qua tick này
+    }
+
     if (isStagingArea && (!this._lastQuanNhuTime || (now - this._lastQuanNhuTime) > 30000)) {
       this._lastQuanNhuTime = now;
       try {
@@ -390,6 +514,7 @@ class AutoPK {
       this.log(`Phat hien thay doi ban do (${this.lastMapId || 'None'} -> ${info.mapId}). Thuc hien reset target...`, 'warn');
       this.lastTargetId = null;
       this.lastMapId = info.mapId;
+      this._trinhSatTeleported = false; // Reset cờ tốc biến khi đổi map
       await this.resetTarget(info.x, info.y);
       try {
         await this.injector.sendApplyAutoplayProfile(false, this.profileGuid);

@@ -493,6 +493,17 @@ rpc.exports.getNearNpcs = function() {
                                         x = mapPosPtr.add(0x10).readInt();
                                         y = mapPosPtr.add(0x14).readInt();
                                     }
+                                    // Fallback: đọc float position (offset 0x30/0x34) cho NPC tĩnh
+                                    if (x === 0 && y === 0) {
+                                        try {
+                                            var fx = posPtr.add(0x30).readFloat();
+                                            var fy = posPtr.add(0x34).readFloat();
+                                            if (fx > 100 && fy > 100) {
+                                                x = Math.round(fx);
+                                                y = Math.round(fy);
+                                            }
+                                        } catch(e) {}
+                                    }
                                 }
 
                                 var name = "";
@@ -567,25 +578,38 @@ rpc.exports.getNearNpcNames = function() {
 };
 
 rpc.exports.setGameSpeed = function(speed) {
-    if (typeof Il2Cpp === 'undefined') return { ok: false, error: 'no il2cpp' };
-    return Il2Cpp.perform(function() {
-        try {
-            // Unity 2017/2018 often uses UnityEngine.CoreModule, older uses UnityEngine
-            var TimeClass = null;
+    if (typeof Il2Cpp !== 'undefined') {
+        var res = Il2Cpp.perform(function() {
             try {
-                TimeClass = Il2Cpp.domain.assembly("UnityEngine.CoreModule").image.class("UnityEngine.Time");
-            } catch(e) {
-                TimeClass = Il2Cpp.domain.assembly("UnityEngine").image.class("UnityEngine.Time");
-            }
-            if (TimeClass) {
-                TimeClass.method("set_timeScale").invoke(speed);
-                return { ok: true, speed: speed };
-            }
-            return { ok: false, error: 'Time class not found' };
-        } catch(e) {
-            return { ok: false, error: e.message };
-        }
-    });
+                var TimeClass = null;
+                try {
+                    TimeClass = Il2Cpp.domain.assembly("UnityEngine.CoreModule").image.class("UnityEngine.Time");
+                } catch(e) {
+                    TimeClass = Il2Cpp.domain.assembly("UnityEngine").image.class("UnityEngine.Time");
+                }
+                if (TimeClass) {
+                    TimeClass.method("set_timeScale").invoke(speed);
+                    return { ok: true, speed: speed, method: 'il2cpp' };
+                }
+            } catch(e) {}
+            
+            // Try hooking game.Game.GameSpeed directly if TimeScale doesn't work
+            try {
+                var GameClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("game.Game");
+                if (GameClass) {
+                    var m = GameClass.method("set_GameSpeed");
+                    if (m) {
+                        m.invoke(speed);
+                        return { ok: true, speed: speed, method: 'game_speed' };
+                    }
+                }
+            } catch(e) {}
+            return null;
+        });
+        if (res) return res;
+    }
+
+    return { ok: false, error: 'no il2cpp found - hack speed failed' };
 };
 
 rpc.exports.getInventoryItems = function() {

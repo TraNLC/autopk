@@ -91,8 +91,8 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
                // Only use items that match the selected lacs and haven't been used in this cycle
                if (_lacs.includes(item.particular.toString()) && !usedParticulars.has(item.particular)) {
                  usedParticulars.add(item.particular);
-                 sendLog(`[${deviceId}] [Buff] Dang su dung ${item.name || 'Lắc'}...`, 'info');
-                 await session.callRpc('useItemNoIl2cpp', item.particular);
+                 sendLog(`[${deviceId}] [Buff] Dang su dung Item_${item.particular}...`, 'info');
+                 await injector.sendPlayerUserItem(item.index);
                  await new Promise(r => setTimeout(r, 600));
                  usedCount++;
                }
@@ -133,6 +133,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         if (cache.lastMapId !== mapId) {
           cache.enterStagingTime = Date.now();
           cache._lastHealTime = 0; // Đảm bảo lấy thuốc ngay lập tức khi mới vào map
+          cache._trinhSatReached = false; // Reset tốc biến để chạy lại khi vào map mới
         }
         cache.lastMapId = mapId;
 
@@ -158,93 +159,90 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           }
         }
 
-        // Nếu chưa có tọa độ Trinh Sát, dùng Opcode 71 để quét và lấy tọa độ chính xác!
-        if (!cache.trinhSatX) {
-            try {
-                // Xóa buffer cũ
-                await session.callRpc('getRecvPackets', 72, 100).catch(() => {});
-                
-                // Gửi yêu cầu lấy NPC list
-                const { encodeField } = require('../packet-injector');
-                const hexReq = encodeField(1, 'int32', mapId).toString('hex');
-                await injector.sendRaw(71, hexReq);
-                
-                // Đợi 1.5s
-                await new Promise(r => setTimeout(r, 1500));
-                
-                // Lấy kết quả
-                const recvRes = await session.callRpc('getRecvPackets', 72, 10);
-                if (recvRes && recvRes.ok && recvRes.packets && recvRes.packets.length > 0) {
-                    for (const pkt of recvRes.packets) {
-                        const buf = Buffer.from(pkt.hex, 'hex');
-                        let offset = 0;
-                        let cx = 0, cy = 0, cName = "";
-                        while (offset < buf.length) {
-                            const tag = buf[offset++];
-                            const wireType = tag & 0x7;
-                            const fieldNum = tag >> 3;
-                            if (wireType === 0) {
-                                let val = 0n, shift = 0n;
-                                while (offset < buf.length) {
-                                    const b = buf[offset++];
-                                    val |= BigInt(b & 0x7f) << shift;
-                                    if ((b & 0x80) === 0) break;
-                                    shift += 7n;
-                                }
-                                if (fieldNum === 3) cx = Number(val);
-                                if (fieldNum === 4) cy = Number(val);
-                            } else if (wireType === 2) {
-                                let len = 0, shift = 0;
-                                while (offset < buf.length) {
-                                    const b = buf[offset++];
-                                    len |= (b & 0x7f) << shift;
-                                    if ((b & 0x80) === 0) break;
-                                    shift += 7;
-                                }
-                                if (len > 0 && offset + len <= buf.length) {
-                                    if (fieldNum === 2) {
-                                        cName = buf.slice(offset, offset + len).toString('utf8').toLowerCase();
-                                        if (cName.includes('trinh sát') || cName.includes('trinh sat')) {
-                                            cache.trinhSatX = cx;
-                                            cache.trinhSatY = cy;
-                                            sendLog(`[${deviceId}] [Ra Tran] Đã học được tọa độ Trinh Sát: (${cx}, ${cy})`, 'success');
-                                        }
-                                    }
-                                    offset += len;
-                                }
-                            } else if (wireType === 5) { offset += 4; } else if (wireType === 1) { offset += 8; }
-                        }
-                    }
-                }
-            } catch(e) {
-                sendLog(`[${deviceId}] Lỗi quét Trinh Sát bằng Opcode 71: ${e.message}`, 'error');
-            }
-        }
-
-        // Quét RAM tìm ID Trình Sát và Quân Nhu dynamically nếu một trong hai chưa có ID
-        if (!trinhSatId || !quanNhuId) {
+        // Quét NPC bằng Opcode 71 (Gửi request và đọc packet 72 từ mảng riêng)
+        if (!trinhSatId || !cache.trinhSatX) {
           try {
-            const npcNames = await session.callRpc('getNearNpcNames');
-            if (npcNames && npcNames.ok && npcNames.npcMap) {
-              for (const [npcId, npcName] of Object.entries(npcNames.npcMap)) {
-                const lower = String(npcName).toLowerCase();
-                if (lower.includes('trinh sát') || lower.includes('trinh sat')) {
-                  if (!trinhSatId) { trinhSatId = npcId; cache.trinhSatId = npcId; }
-                } // else if (lower.includes('quân nhu') || lower.includes('quan nhu') || lower.includes('quan y') || lower.includes('quân y')) {
-                //  if (!quanNhuId) { quanNhuId = npcId; cache.quanNhuId = npcId; }
-                // }
+            // Không spam quét, cách nhau ít nhất 5s
+            if (!cache._lastNpcScan || (Date.now() - cache._lastNpcScan > 5000)) {
+              cache._lastNpcScan = Date.now();
+              
+              const { encodeField } = require('./packet-injector');
+              const hexReq = encodeField(1, 'int32', mapId).toString('hex');
+              await injector.sendRaw(71, hexReq);
+              
+              // Chờ server trả packet
+              await new Promise(r => setTimeout(r, 1000));
+              
+              const npcRes = await session.callRpc('getNpcPackets');
+              if (npcRes && npcRes.ok && npcRes.packets && npcRes.packets.length > 0) {
+                for (const pkt of npcRes.packets) {
+                  const buf = Buffer.from(pkt.hex, 'hex');
+                  let offset = 0, cx = 0, cy = 0, cName = '', cId = '';
+                  while (offset < buf.length) {
+                    const tag = buf[offset++];
+                    const wireType = tag & 0x7;
+                    const fieldNum = tag >> 3;
+                    if (wireType === 0) {
+                      let val = 0n, shift = 0n;
+                      while (offset < buf.length) {
+                        const b = buf[offset++];
+                        val |= BigInt(b & 0x7f) << shift;
+                        if ((b & 0x80) === 0) break;
+                        shift += 7n;
+                      }
+                      if (fieldNum === 3) cx = Number(val);
+                      if (fieldNum === 4) cy = Number(val);
+                    } else if (wireType === 2) {
+                      let len = 0, shift = 0;
+                      while (offset < buf.length) {
+                        const b = buf[offset++];
+                        len |= (b & 0x7f) << shift;
+                        if ((b & 0x80) === 0) break;
+                        shift += 7;
+                      }
+                      if (len > 0 && offset + len <= buf.length) {
+                        if (fieldNum === 1) {
+                          cId = buf.slice(offset, offset + len).toString('ascii');
+                        } else if (fieldNum === 2) {
+                          cName = buf.slice(offset, offset + len).toString('utf8').toLowerCase();
+                        }
+                        offset += len;
+                      }
+                    } else if (wireType === 5) { offset += 4; } else if (wireType === 1) { offset += 8; }
+                  }
+                  
+                  if (cName.includes('trinh sát') || cName.includes('trinh sat')) {
+                    if (!trinhSatId) { trinhSatId = cId; cache.trinhSatId = cId; }
+                    if (cx && cy && !cache.trinhSatX) {
+                      cache.trinhSatX = cx;
+                      cache.trinhSatY = cy;
+                      sendLog(`[${deviceId}] [Staging] 🎯 Network Trinh Sát: tọa độ=(${cx}, ${cy})`, 'success');
+                    }
+                  }
+                }
               }
             }
           } catch(e) {}
         }
-        // Tiến hành chạy về phía Trình Sát mỗi 1.5s (áp dụng khi vào map mới hoặc hồi sinh từ lúc chết)
-        if (cache.trinhSatX && cache.trinhSatY) {
-            const nowTime = Date.now();
-            if (!cache._lastMoveTime || (nowTime - cache._lastMoveTime) > 1500) {
-                cache._lastMoveTime = nowTime;
+
+        // Tốc biến đến Trinh Sát (clientMoveMemory + sync server) — chỉ 1 lần
+        if (cache.trinhSatX && cache.trinhSatY && !cache._trinhSatReached) {
+            const dist = Math.sqrt(Math.pow((cache.trinhSatX - (info.x || 0)), 2) + Math.pow((cache.trinhSatY - (info.y || 0)), 2));
+            if (dist > 50) {
+                sendLog(`[${deviceId}] [Staging] ⚡ Tốc biến đến NPC Trinh Sát (${cache.trinhSatX}, ${cache.trinhSatY}). Cự ly: ${dist.toFixed(0)}`, 'success');
                 try {
-                    await injector.sendGotoPosition(cache.trinhSatX, cache.trinhSatY);
-                } catch(e) {}
+                    await session.callRpc('clientMoveMemory', cache.trinhSatX, cache.trinhSatY);
+                    await injector.sendStringData(`1|${Math.round(cache.trinhSatX)}|${Math.round(cache.trinhSatY)}`);
+                    await new Promise(r => setTimeout(r, 300));
+                    await injector.sendStringData(`2|${Math.round(cache.trinhSatX)}|${Math.round(cache.trinhSatY)}|2`);
+                    cache._trinhSatReached = true;
+                    sendLog(`[${deviceId}] [Staging] ✅ Đã tốc biến thành công!`, 'success');
+                } catch(e) {
+                    sendLog(`[${deviceId}] [Staging] Lỗi tốc biến: ${e.message}`, 'warn');
+                    try { await injector.sendGotoPosition(cache.trinhSatX, cache.trinhSatY); } catch(e2) {}
+                }
+            } else {
+                cache._trinhSatReached = true;
             }
         }
 

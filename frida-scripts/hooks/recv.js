@@ -66,6 +66,13 @@
                         globalThis.recvBuffer.push(pkt);
                         globalThis._recvTotal = (globalThis._recvTotal || 0) + 1;
                         if (globalThis.recvBuffer.length > 3000) globalThis.recvBuffer.shift();
+
+                        // Bắt cứng Opcode 72 (thông tin NPC từ server) để tránh bị sniffer xóa mất
+                        if (opcode === 72) {
+                            if (!globalThis._npcPackets) globalThis._npcPackets = [];
+                            globalThis._npcPackets.push(pkt);
+                            if (globalThis._npcPackets.length > 20) globalThis._npcPackets.shift();
+                        }
                     }
 
                     // AUTO-DETECT: lock gameFd when we see a valid game opcode

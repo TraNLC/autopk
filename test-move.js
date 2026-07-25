@@ -59,15 +59,82 @@ async function main() {
   console.log(`=> Tọa độ hiện tại: X=${startX}, Y=${startY}`);
 
   // Có thể truyền tọa độ xác định qua command line, ví dụ: node test-move.js 52000 52000
-  let targetX = startX + 600;
-  let targetY = startY + 600;
+  let targetX = startX - 400;
+  let targetY = startY - 400;
+
+  console.log('\n[SCAN NPC] Bắt đầu quét NPC bằng Opcode 71...');
+  try {
+    const mapId = pmRes.mapId;
+    if (mapId) {
+      await session.callRpc('getRecvPackets', 72, 100).catch(() => { }); // Xóa buffer cũ
+      const { encodeField } = require('./src/packet-injector');
+      const hexReq = encodeField(1, 'int32', mapId).toString('hex');
+      await injector.sendRaw(71, hexReq);
+      console.log(`   Đã gửi yêu cầu quét NPC ở mapId: ${mapId}`);
+
+      await new Promise(r => setTimeout(r, 1500)); // Chờ server trả về
+
+      const recvRes = await session.callRpc('getRecvPackets', 72, 20);
+      let foundDaTau = false;
+      if (recvRes && recvRes.ok && recvRes.packets && recvRes.packets.length > 0) {
+        for (const pkt of recvRes.packets) {
+          const buf = Buffer.from(pkt.hex, 'hex');
+          let offset = 0;
+          let cx = 0, cy = 0, cName = "";
+          while (offset < buf.length) {
+            const tag = buf[offset++];
+            const wireType = tag & 0x7;
+            const fieldNum = tag >> 3;
+            if (wireType === 0) {
+              let val = 0n, shift = 0n;
+              while (offset < buf.length) {
+                const b = buf[offset++];
+                val |= BigInt(b & 0x7f) << shift;
+                if ((b & 0x80) === 0) break;
+                shift += 7n;
+              }
+              if (fieldNum === 3) cx = Number(val);
+              if (fieldNum === 4) cy = Number(val);
+            } else if (wireType === 2) {
+              let len = 0, shift = 0;
+              while (offset < buf.length) {
+                const b = buf[offset++];
+                len |= (b & 0x7f) << shift;
+                if ((b & 0x80) === 0) break;
+                shift += 7;
+              }
+              if (len > 0 && offset + len <= buf.length) {
+                if (fieldNum === 2) {
+                  cName = buf.slice(offset, offset + len).toString('utf8').toLowerCase();
+                  if (cName.includes('dã tẩu') || cName.includes('da tau')) {
+                    targetX = cx;
+                    targetY = cy;
+                    foundDaTau = true;
+                    console.log(`\n🎉 TÌM THẤY DÃ TẨU! Tọa độ: X=${cx}, Y=${cy}`);
+                  }
+                }
+                offset += len;
+              }
+            } else if (wireType === 5) { offset += 4; } else if (wireType === 1) { offset += 8; }
+          }
+        }
+      }
+      if (!foundDaTau) {
+        console.log('   Không tìm thấy Dã Tẩu ở bản đồ này.');
+      }
+    } else {
+      console.log('   Không lấy được mapId hiện tại, không thể quét NPC.');
+    }
+  } catch (err) {
+    console.log('   Lỗi khi quét NPC: ' + err.message);
+  }
 
   if (process.argv.length >= 4) {
     targetX = parseFloat(process.argv[2]);
     targetY = parseFloat(process.argv[3]);
     console.log(`\n=> Nhận được yêu cầu nhảy tới Tọa độ xác định: X=${targetX}, Y=${targetY}`);
   } else {
-    console.log(`\n=> Không nhập tọa độ, mặc định nhảy đi xa 600 mét...`);
+    console.log(`\n=> Sẽ nhảy tới tọa độ X=${targetX}, Y=${targetY}...`);
   }
 
   console.log(`\n=> CÁCH 5: Dịch chuyển tức thời bằng Direct Memory Write tới tọa độ X=${targetX}, Y=${targetY}`);

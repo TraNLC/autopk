@@ -312,10 +312,11 @@ rpc.exports.getNearNpcNames = function() {
 
         var found = 0;
         var rangeIdx = 0;
+        var npcCoords = {};
 
         function scanNextRange() {
             if (rangeIdx >= filteredRanges.length || found >= 200) {
-                return resolve({ ok: true, npcMap: npcMap, count: found, mapId: mapId });
+                return resolve({ ok: true, npcMap: npcMap, npcCoords: npcCoords, count: found, mapId: mapId });
             }
             var range = filteredRanges[rangeIdx++];
             try {
@@ -337,7 +338,28 @@ rpc.exports.getNearNpcNames = function() {
                                         lower.indexOf('rương') !== -1 || lower.indexOf('ruong') !== -1;
                                     
                                     if (isTongKimNpc) {
-                                        npcMap[npcId] = name;
+                                        npcMap[npcId] = name; // Backward compatible: string
+
+                                        // Quét tọa độ x,y từ Datafield object
+                                        var tryOffsets = [
+                                            [0x48, 0x4C], [0x4C, 0x50], [0x50, 0x54], [0x54, 0x58],
+                                            [0x58, 0x5C], [0x5C, 0x60], [0x60, 0x64], [0x64, 0x68],
+                                            [0x18, 0x1C], [0x1C, 0x20], [0x20, 0x24], [0x24, 0x28],
+                                            [0x28, 0x2C], [0x2C, 0x30], [0x30, 0x34], [0x34, 0x38],
+                                            [0x38, 0x3C], [0x3C, 0x40]
+                                        ];
+                                        for (var ti = 0; ti < tryOffsets.length; ti++) {
+                                            try {
+                                                var tx = obj.add(tryOffsets[ti][0]).readS32();
+                                                var ty = obj.add(tryOffsets[ti][1]).readS32();
+                                                if (tx > 1000 && tx < 200000 && ty > 1000 && ty < 200000) {
+                                                    if (!npcCoords) npcCoords = {};
+                                                    npcCoords[npcId] = { x: tx, y: ty };
+                                                    break;
+                                                }
+                                            } catch(e) {}
+                                        }
+
                                         found++;
                                     }
                                 }

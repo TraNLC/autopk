@@ -109,6 +109,16 @@ rpc.exports.getRecvPackets = function(opcodeFilter, maxCount) {
 };
 
 /**
+ * Get buffered NPC info packets (Opcode 72) safely saved by the recv hook.
+ * Avoids being cleared by general getRecvPackets calls.
+ */
+rpc.exports.getNpcPackets = function() {
+    var result = globalThis._npcPackets || [];
+    globalThis._npcPackets = []; // clear after read
+    return { ok: true, count: result.length, packets: result };
+};
+
+/**
  * Get buffered sent packets.
  */
 rpc.exports.getSentPackets = function(maxCount) {
