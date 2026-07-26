@@ -101,14 +101,18 @@ async function connectDevice(deviceId, pkgName, sendLog) {
     sniffer.start(200);
 
     session.onMessage((payload, data) => {
-        if (payload && payload.type === 'log') {
-            console.log(payload.message);
-        } else if (payload && payload.type === 'send') {
-            console.log('[DEBUG SEND] Opcode:', payload.opcode, 'Hex:', payload.hex);
-        } else if (payload && payload.type === 'recv') {
-            console.log('[DEBUG RECV] Opcode:', payload.opcode, 'Hex:', payload.hex);
-        } else {
-            console.log('[Frida Message]', payload);
+        const DEBUG_FRIDA_MESSAGES = false; // Đổi thành true nếu cần xem chi tiết gói tin mạng từ Frida
+
+        if (DEBUG_FRIDA_MESSAGES) {
+            if (payload && payload.type === 'log') {
+                console.log(payload.message);
+            } else if (payload && payload.type === 'send') {
+                console.log('[DEBUG SEND] Opcode:', payload.opcode, 'Hex:', payload.hex);
+            } else if (payload && payload.type === 'recv') {
+                console.log('[DEBUG RECV] Opcode:', payload.opcode, 'Hex:', payload.hex);
+            } else {
+                console.log('[Frida Message]', payload);
+            }
         }
 
         if (payload) {
@@ -507,9 +511,11 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                                 traceLog(deviceId, `Nhan vat dang o Duong suc/Thanh. Tam dung luong PK.`, 'warn', sendLog);
                                 await state.autoPK.stop();
                             }
-                            // Goi autoTongKimLoop de mua thuoc / buff / bao danh vao san
-                            await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh, true, devCfg.stopMaxScore, devCfg.lacInterval);
                         }
+                        
+                        // Goi autoTongKimLoop de mua thuoc / buff / bao danh vao san (goi o moi map de buff hoat dong)
+                        await autoTongKimLoop(deviceId, state.session, state.info, devCfg.side, devCfg.lacs, sendLog, devCfg.autoBaoDanh, true, devCfg.stopMaxScore, devCfg.lacInterval);
+
                     } catch (e) {
                         traceLog(deviceId, `Loi trong vong lapa Tong Kim: ${e.message}`, 'error', sendLog);
                     }

@@ -252,12 +252,12 @@ rpc.exports.getNearNpcNames = function() {
 
     // Try cac class name kha thi cho NPC (quét 1 lần đầu tiên)
     var npcKlass = globalThis.cachedNpcKlass || null;
+    
     if (!npcKlass) {
         var classNames = [
-            'game.resource.settings.npcres.Datafield',
-            'NpcRes.Normal',
-            'Normal',
             'NpcController',
+            'game.logic.npc.NpcController',
+            'game.resource.settings.npcres.Datafield',
             'game.resource.settings.npcres.Controller'
         ];
         for (var ci = 0; ci < classNames.length; ci++) {
@@ -324,44 +324,55 @@ rpc.exports.getNearNpcNames = function() {
                     onMatch: function(address, size) {
                         try {
                             var obj = address;
-                            var npcId = readIl2CppString(obj.add(idOffset).readPointer());
-                            if (npcId && !npcMap[npcId]) {
-                                var name = readIl2CppString(obj.add(nameOffset).readPointer());
-                                if (name) {
-                                    var lower = name.toLowerCase();
-                                    var isTongKimNpc = 
-                                        lower.indexOf('quân nhu') !== -1 || lower.indexOf('quan nhu') !== -1 ||
-                                        lower.indexOf('trinh') !== -1 ||
-                                        lower.indexOf('chiêu binh') !== -1 || lower.indexOf('chieu binh') !== -1 ||
-                                        lower.indexOf('mộ binh') !== -1 || lower.indexOf('mo binh') !== -1 ||
-                                        lower.indexOf('xa phu') !== -1 ||
-                                        lower.indexOf('rương') !== -1 || lower.indexOf('ruong') !== -1;
+                            var npcId = null;
+                            var name = null;
+                            
+                            var isNpcController = (globalThis.cachedNpcKlassName === 'NpcController' || 
+                                                   globalThis.cachedNpcKlassName === 'game.logic.npc.NpcController' || 
+                                                   globalThis.cachedNpcKlassName === 'NpcRes.Normal' || 
+                                                   globalThis.cachedNpcKlassName === 'Normal');
+                            
+                            if (isNpcController) {
+                                // Extract via Identification
+                                var idn = obj.add(0x28).readPointer();
+                                if (idn && !idn.isNull()) {
+                                    npcId = obj.toString();
                                     
-                                    if (isTongKimNpc) {
-                                        npcMap[npcId] = name; // Backward compatible: string
-
-                                        // Quét tọa độ x,y từ Datafield object
-                                        var tryOffsets = [
-                                            [0x48, 0x4C], [0x4C, 0x50], [0x50, 0x54], [0x54, 0x58],
-                                            [0x58, 0x5C], [0x5C, 0x60], [0x60, 0x64], [0x64, 0x68],
-                                            [0x18, 0x1C], [0x1C, 0x20], [0x20, 0x24], [0x24, 0x28],
-                                            [0x28, 0x2C], [0x2C, 0x30], [0x30, 0x34], [0x34, 0x38],
-                                            [0x38, 0x3C], [0x3C, 0x40]
-                                        ];
-                                        for (var ti = 0; ti < tryOffsets.length; ti++) {
-                                            try {
-                                                var tx = obj.add(tryOffsets[ti][0]).readS32();
-                                                var ty = obj.add(tryOffsets[ti][1]).readS32();
-                                                if (tx > 1000 && tx < 200000 && ty > 1000 && ty < 200000) {
-                                                    if (!npcCoords) npcCoords = {};
-                                                    npcCoords[npcId] = { x: tx, y: ty };
-                                                    break;
-                                                }
-                                            } catch(e) {}
-                                        }
-
-                                        found++;
+                                    var namePtr = idn.add(0x18).readPointer();
+                                    if (namePtr && !namePtr.isNull()) {
+                                        name = readIl2CppString(namePtr);
                                     }
+                                }
+                            } else {
+                                // Fallback to Datafield logic
+                                var idPtr = obj.add(idOffset).readPointer();
+                                if (idPtr && !idPtr.isNull()) {
+                                    npcId = readIl2CppString(idPtr);
+                                }
+                                if (npcId) {
+                                    var nPtr = obj.add(nameOffset).readPointer();
+                                    if (nPtr && !nPtr.isNull()) {
+                                        name = readIl2CppString(nPtr);
+                                    }
+                                }
+                            }
+                            
+                            if (npcId && !npcMap[npcId] && name) {
+                                npcMap[npcId] = name;
+                                found++;
+                                
+                                if (isNpcController) {
+                                    try {
+                                        var pos = obj.add(0x10).readPointer();
+                                        if (!pos.isNull()) {
+                                            var rx = pos.add(0x30).readFloat();
+                                            var ry = pos.add(0x34).readFloat();
+                                            if (rx > 1000 && rx < 500000 && ry > 1000 && ry < 500000) {
+                                                if (!npcCoords) npcCoords = {};
+                                                npcCoords[npcId] = { x: Math.round(rx), y: Math.round(ry) };
+                                            }
+                                        }
+                                    } catch(e) {}
                                 }
                             }
                         } catch(e) {}

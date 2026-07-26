@@ -367,14 +367,21 @@ function selectDevice(id) {
   }
   
   const dev = devicesMap.get(id);
-  const cfg = dev.tkConfig || { side: 'auto', lacs: [], lacInterval: 180 };
+  const cfg = dev.tkConfig || { side: 'auto', lacs: [], lacInterval: 5 };
   radSides.forEach(rb => rb.checked = (rb.value === (cfg.side || 'auto')));
+  
+  const radUseLac = document.getElementsByName('rad-use-lac');
+  const useLac = (cfg.lacs && cfg.lacs.length > 0) ? 'yes' : 'no';
+  radUseLac.forEach(rb => rb.checked = (rb.value === useLac));
+  const lacOptions = document.getElementById('lac-options');
+  if (lacOptions) lacOptions.style.display = useLac === 'yes' ? 'block' : 'none';
+
   chkLac1.checked = cfg.lacs ? cfg.lacs.includes('45') : false;
   chkLac2.checked = cfg.lacs ? cfg.lacs.includes('51') : false;
   chkLac3.checked = cfg.lacs ? cfg.lacs.includes('50') : false;
   
   if (selLacInterval) {
-    selLacInterval.value = cfg.lacInterval ? cfg.lacInterval.toString() : '180';
+    selLacInterval.value = cfg.lacInterval ? cfg.lacInterval.toString() : '5';
   }
   updateItemCounts(dev.info ? dev.info.itemCounts : null);
 }
@@ -393,13 +400,21 @@ function saveConfigForSelected() {
   dev.tkConfig.side = selectedSide;
   
   const lacs = [];
-  if (chkLac1.checked) lacs.push('45');
-  if (chkLac2.checked) lacs.push('51');
-  if (chkLac3.checked) lacs.push('50');
+  let useLac = 'yes';
+  const radUseLac = document.getElementsByName('rad-use-lac');
+  radUseLac.forEach(rb => {
+    if (rb.checked) useLac = rb.value;
+  });
+
+  if (useLac === 'yes') {
+    if (chkLac1.checked) lacs.push('45');
+    if (chkLac2.checked) lacs.push('51');
+    if (chkLac3.checked) lacs.push('50');
+  }
   dev.tkConfig.lacs = lacs;
   
   if (selLacInterval) {
-    dev.tkConfig.lacInterval = parseInt(selLacInterval.value) || 180;
+    dev.tkConfig.lacInterval = parseInt(selLacInterval.value) || 5;
   }
   
   updateGlobalTK();
@@ -420,6 +435,8 @@ function saveConfigForSelected() {
 }
 
 radSides.forEach(rb => rb.addEventListener('change', saveConfigForSelected));
+const radUseLacButtons = document.getElementsByName('rad-use-lac');
+radUseLacButtons.forEach(rb => rb.addEventListener('change', saveConfigForSelected));
 if (chkLac1) chkLac1.addEventListener('change', saveConfigForSelected);
 if (chkLac2) chkLac2.addEventListener('change', saveConfigForSelected);
 if (chkLac3) chkLac3.addEventListener('change', saveConfigForSelected);
@@ -478,3 +495,205 @@ setTimeout(() => {
   addLog('[System] Đang khởi tạo và tìm kiếm giả lập...', 'info');
 }, 500);
 scanDevices();
+
+// ==========================================
+// TABS & TEST NPC LOGIC
+// ==========================================
+
+// Tab Switching
+const tabBtns = document.querySelectorAll('.tab-btn');
+const tabContents = document.querySelectorAll('.tab-content');
+
+tabBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    // Xóa active hiện tại
+    tabBtns.forEach(b => b.classList.remove('active'));
+    tabContents.forEach(c => c.classList.remove('active'));
+    
+    // Gán active mới
+    btn.classList.add('active');
+    const targetId = btn.getAttribute('data-tab');
+    document.getElementById(targetId).classList.add('active');
+  });
+});
+
+// Test NPC Buttons
+const btnTestScanNpc = document.getElementById('btn-test-scan-npc');
+const btnTestSaveTxt = document.getElementById('btn-test-save-txt');
+const testNpcTbody = document.getElementById('test-npc-tbody');
+const btnTestMove = document.getElementById('btn-test-move');
+const testInputX = document.getElementById('test-input-x');
+const testInputY = document.getElementById('test-input-y');
+
+let lastScannedNpcs = [];
+
+if (btnTestScanNpc) {
+  btnTestScanNpc.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      alert('Vui lòng chọn 1 tài khoản (click vào tên nhân vật bên trái) trước!');
+      return;
+    }
+    
+    btnTestScanNpc.innerText = 'Đang quét... (chờ 1s)';
+    btnTestScanNpc.disabled = true;
+    testNpcTbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Đang phân tích gói tin mạng...</td></tr>';
+    
+    try {
+      const res = await window.api.testNpcNetworkScan(currentSelectedDeviceId);
+      btnTestScanNpc.innerText = '1. Quét NPC (Opcode 72)';
+      btnTestScanNpc.disabled = false;
+      
+      if (res && res.ok && res.npcs && res.npcs.length > 0) {
+        lastScannedNpcs = res.npcs;
+        testNpcTbody.innerHTML = '';
+        res.npcs.forEach(npc => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${npc.id || '-'}</td>
+            <td><b>${npc.name || '-'}</b></td>
+            <td style="color: blue; font-weight: bold; cursor: pointer;" title="Click để copy tọa độ" onclick="document.getElementById('test-input-x').value='${npc.x}'; document.getElementById('test-input-y').value='${npc.y}';">
+              ${npc.x}, ${npc.y}
+            </td>
+            <td>${npc.mapId || '-'}</td>
+          `;
+          testNpcTbody.appendChild(tr);
+        });
+        btnTestSaveTxt.style.display = 'block';
+      } else {
+        testNpcTbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #c0392b;">Không tìm thấy NPC nào quanh đây!</td></tr>';
+        btnTestSaveTxt.style.display = 'none';
+        lastScannedNpcs = [];
+      }
+    } catch (e) {
+      btnTestScanNpc.innerText = '1. Quét NPC (Opcode 72)';
+      btnTestScanNpc.disabled = false;
+      testNpcTbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: red;">Lỗi: ${e.message}</td></tr>`;
+    }
+  });
+}
+
+if (btnTestSaveTxt) {
+  btnTestSaveTxt.addEventListener('click', async () => {
+    if (lastScannedNpcs.length === 0) return;
+    try {
+      const res = await window.api.saveNpcCoordinates(lastScannedNpcs);
+      if (res && res.ok) {
+        alert('Đã lưu thành công tại:\n' + res.path);
+      } else {
+        alert('Lỗi lưu file: ' + (res ? res.error : 'Unknown'));
+      }
+    } catch(e) {
+      alert('Exception: ' + e.message);
+    }
+  });
+}
+
+if (btnTestMove) {
+  btnTestMove.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      alert('Vui lòng chọn tài khoản cần test Move!');
+      return;
+    }
+    const x = parseInt(testInputX.value);
+    const y = parseInt(testInputY.value);
+    if (isNaN(x) || isNaN(y)) {
+      alert('Tọa độ X và Y không hợp lệ!');
+      return;
+    }
+    
+    addLog(`[${currentSelectedDeviceId}] [Test] Gửi lệnh Move đến tọa độ (${x}, ${y})`, 'warn');
+    await window.api.testMove(currentSelectedDeviceId, x, y);
+  });
+}
+
+// ========== CHECK POSITION + SAVE NPC COORD ==========
+let _savedPosX = 0, _savedPosY = 0, _savedPosMapId = 0, _savedPosCamp = 0;
+
+const btnCheckPosition = document.getElementById('btn-check-position');
+const lblCurrentPos = document.getElementById('lbl-current-pos');
+const btnSaveNpcCoord = document.getElementById('btn-save-npc-coord');
+const inputSaveNpcName = document.getElementById('input-save-npc-name');
+
+if (btnCheckPosition) {
+  btnCheckPosition.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      alert('Vui lòng chọn tài khoản trước!');
+      return;
+    }
+    btnCheckPosition.disabled = true;
+    btnCheckPosition.innerText = '...';
+    try {
+      const res = await window.api.getPlayerPosition(currentSelectedDeviceId);
+      if (res && res.ok) {
+        // Lấy phe từ radio button thay vì tự động nhận diện
+        let pheValue = 1;
+        const radPhe = document.getElementsByName('rad-save-phe');
+        radPhe.forEach(rb => {
+          if (rb.checked) pheValue = parseInt(rb.value);
+        });
+
+        _savedPosX = res.x;
+        _savedPosY = res.y;
+        _savedPosMapId = res.mapId;
+        _savedPosCamp = pheValue; // Ghi đè phe bằng giá trị user chọn
+        
+        let pheStr = pheValue == 1 ? 'Tống' : 'Kim';
+        const dev = devicesMap.get(currentSelectedDeviceId);
+        let mapName = dev && dev.info && dev.info.mapName ? dev.info.mapName : `Map ${res.mapId}`;
+        
+        lblCurrentPos.innerText = `X: ${res.x}, Y: ${res.y}, Map: ${mapName}, Phe: ${pheStr}`;
+        lblCurrentPos.style.color = '#28a745';
+        // Tự điền vào ô X, Y của Move
+        if (testInputX) testInputX.value = res.x;
+        if (testInputY) testInputY.value = res.y;
+      } else {
+        lblCurrentPos.innerText = 'Lỗi: ' + (res ? res.error : 'Unknown');
+        lblCurrentPos.style.color = '#dc3545';
+      }
+    } catch(e) {
+      lblCurrentPos.innerText = 'Lỗi: ' + e.message;
+      lblCurrentPos.style.color = '#dc3545';
+    }
+    btnCheckPosition.disabled = false;
+    btnCheckPosition.innerText = '📍 Lấy vị trí';
+  });
+}
+
+if (btnSaveNpcCoord) {
+  btnSaveNpcCoord.addEventListener('click', async () => {
+    // Hardcode tên NPC theo yêu cầu
+    const npcName = "Trinh Sát";
+    
+    if (!_savedPosX || !_savedPosY) {
+      alert('Vui lòng bấm "Lấy vị trí" trước để lấy tọa độ hiện tại!');
+      return;
+    }
+
+    // Luôn đọc lại radio phe một lần nữa trước khi lưu để đảm bảo chính xác
+    let pheValue = 1;
+    const radPhe = document.getElementsByName('rad-save-phe');
+    radPhe.forEach(rb => {
+      if (rb.checked) pheValue = parseInt(rb.value);
+    });
+    _savedPosCamp = pheValue;
+    try {
+      const res = await window.api.saveNpcCoordsManual({
+        npcName,
+        x: _savedPosX,
+        y: _savedPosY,
+        mapId: _savedPosMapId,
+        camp: _savedPosCamp
+      });
+      if (res && res.ok) {
+        let phe = _savedPosCamp == 1 ? 'Tống' : _savedPosCamp == 2 ? 'Kim' : _savedPosCamp;
+        addLog(`✅ Đã lưu tọa độ NPC "${npcName}" = (${_savedPosX}, ${_savedPosY}) map ${_savedPosMapId} Phe ${phe}`, 'success');
+        btnSaveNpcCoord.innerText = '✅ Đã lưu!';
+        setTimeout(() => { btnSaveNpcCoord.innerText = '💾 Lưu'; }, 2000);
+      } else {
+        alert('Lỗi lưu: ' + (res ? res.error : 'Unknown'));
+      }
+    } catch(e) {
+      alert('Exception: ' + e.message);
+    }
+  });
+}

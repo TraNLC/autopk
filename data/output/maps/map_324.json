@@ -1,0 +1,22 @@
+{
+    "map_id": 324,
+    "map_name": "Phòng chờ Tống Kim",
+    "npc_count": 3,
+    "npcs": [
+        {
+            "name": "Mộ binh quan",
+            "x": 30236,
+            "y": 30236
+        },
+        {
+            "name": "Xa phu",
+            "x": 30236,
+            "y": 30236
+        },
+        {
+            "name": "Quán Nhu quan",
+            "x": 30236,
+            "y": 30236
+        }
+    ]
+}

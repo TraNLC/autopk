@@ -40,20 +40,19 @@ async function scanDevices(adbPath, execAsync, sendLog) {
         for (let p = SCAN_START; p <= SCAN_END; p++) {
             scanPorts.add(p);
         }
-        const commonPorts = [
-            7555, 7556, 7557, 7558,             // MuMu defaults
-        ];
-        // LDPlayer / BlueStacks (5555, 5557, 5559, ...) up to 50 instances
-        for (let i = 0; i < 50; i++) commonPorts.push(5555 + i * 2);
+        const commonPorts = [];
         // MEmu (21503, 21513, 21523, ...) up to 50 instances
         for (let i = 0; i < 50; i++) commonPorts.push(21503 + i * 10);
         // Nox (62001, 62025, 62026, ...)
         commonPorts.push(62001);
         for (let i = 0; i < 50; i++) commonPorts.push(62025 + i);
+        
         for (const p of commonPorts) {
-            scanPorts.add(p);
+            if (p >= 10000) {
+                scanPorts.add(p);
+            }
         }
-        const allPorts = Array.from(scanPorts).sort((a, b) => a - b);
+        const allPorts = Array.from(scanPorts).filter(p => p >= 10000).sort((a, b) => a - b);
 
         // Phase 1: TCP scan all ports in parallel (lightning fast)
         console.log(`[TRACE] [ADB-Helper] Quet song song ${allPorts.length} cong...`);
@@ -149,9 +148,9 @@ async function scanDevices(adbPath, execAsync, sendLog) {
                 continue;
             }
             
-            // Skip MuMu's 4-digit duplicate ports (7555-7560) to avoid double listing
-            if (port >= 7555 && port <= 7560) {
-                console.log(`[TRACE] [ADB-Helper] Bo qua cong duplicate cua MuMu: ${deviceId}`);
+            // Skip all 4-digit ports (5555, 7555, etc) to ensure we only use stable 5-digit ports (16384, etc)
+            if (port > 0 && port < 10000) {
+                console.log(`[TRACE] [ADB-Helper] Bo qua cong 4 so: ${deviceId}`);
                 continue;
             }
 

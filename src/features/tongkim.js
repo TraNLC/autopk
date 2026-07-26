@@ -48,13 +48,8 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
     const injector = new PacketInjector(session);
     const mapId    = info.mapId;
     
-    // ── 0. KIỂM TRA BÁO DANH TRONG MAP 324 (PHÒNG CHỜ CHÍNH VÀO PHÒNG CHUẨN BỊ) ──
-    if (mapId === 324) {
-      return; // Bỏ qua tự động báo danh, người dùng báo danh bằng tay
-    }
-
     const BATTLE_MAPS  = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
-    const STAGING_MAPS = [323, 325, 379, 382, 972, 973, 974];
+    const STAGING_MAPS = [323, 324, 325, 379, 382, 972, 973, 974];
     const CITY_MAPS    = [1, 11, 37, 78, 162, 176];
 
     const isBattlefield = BATTLE_MAPS.includes(mapId);
@@ -76,10 +71,10 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
     }
 
     // ── 1.5. SỬ DỤNG LẮC (BUFF) ───────────────────────────────────────────
-    if ((isStagingArea || isBattlefield) && info.hp > 0 && _lacs && _lacs.length > 0) {
+    if (info.hp > 0 && _lacs && _lacs.length > 0) {
       const cache = ensureCache(deviceId);
       const nowTime = Date.now();
-      const lacIntervalMs = (lacInterval || 180) * 1000;
+      const lacIntervalMs = (lacInterval || 5) * 1000;
       
       if (!cache._lastLacTime || (nowTime - cache._lastLacTime) >= lacIntervalMs) {
         try {
@@ -217,6 +212,30 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
                       cache.trinhSatX = cx;
                       cache.trinhSatY = cy;
                       sendLog(`[${deviceId}] [Staging] 🎯 Network Trinh Sát: tọa độ=(${cx}, ${cy})`, 'success');
+                    } else if (!cache.trinhSatX) {
+                      try {
+                          const fs = require('fs');
+                          const path = require('path');
+                          const dbFile = path.join(process.cwd(), 'data/output/npc_db.json');
+                          if (fs.existsSync(dbFile)) {
+                              const dbData = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+                              const mapKey = String(mapId);
+                              if (dbData[mapKey]) {
+                                  // Lấy theo camp hiện tại
+                                  const campVal = info.camp || 0;
+                                  const keys = Object.keys(dbData[mapKey]);
+                                  for (const k of keys) {
+                                      const n = dbData[mapKey][k];
+                                      if (n && n.name && (n.name.toLowerCase().includes('trinh sát') || n.name.toLowerCase().includes('trinh sat')) && n.camp == campVal) {
+                                          cache.trinhSatX = n.x;
+                                          cache.trinhSatY = n.y;
+                                          sendLog(`[${deviceId}] [Staging] 🎯 Hardcoded Trinh Sát (Phe ${campVal}): tọa độ=(${cache.trinhSatX}, ${cache.trinhSatY})`, 'success');
+                                          break;
+                                      }
+                                  }
+                              }
+                          }
+                      } catch (e) {}
                     }
                   }
                 }
@@ -229,17 +248,32 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         if (cache.trinhSatX && cache.trinhSatY && !cache._trinhSatReached) {
             const dist = Math.sqrt(Math.pow((cache.trinhSatX - (info.x || 0)), 2) + Math.pow((cache.trinhSatY - (info.y || 0)), 2));
             if (dist > 50) {
-                sendLog(`[${deviceId}] [Staging] ⚡ Tốc biến đến NPC Trinh Sát (${cache.trinhSatX}, ${cache.trinhSatY}). Cự ly: ${dist.toFixed(0)}`, 'success');
+                // Thêm logic chờ 2.5s trước khi tốc biến
+                if (!cache._waitBeforeTeleport) {
+                    cache._waitBeforeTeleport = Date.now();
+                    sendLog(`[${deviceId}] [Staging] ⏳ Phát hiện Trinh Sát ở xa. Chờ 2.5s trước khi tốc biến...`, 'warn');
+                    return; // Thoát loop này, chờ loop sau
+                }
+                if (Date.now() - cache._waitBeforeTeleport < 2500) {
+                    return; // Vẫn đang trong thời gian chờ
+                }
+
+                sendLog(`[${deviceId}] [Staging] ⚡ Đã chờ 2.5s, Tốc biến đến NPC Trinh Sát (${cache.trinhSatX}, ${cache.trinhSatY}). Cự ly: ${dist.toFixed(0)}`, 'success');
                 try {
                     await session.callRpc('clientMoveMemory', cache.trinhSatX, cache.trinhSatY);
                     await injector.sendStringData(`1|${Math.round(cache.trinhSatX)}|${Math.round(cache.trinhSatY)}`);
                     await new Promise(r => setTimeout(r, 300));
                     await injector.sendStringData(`2|${Math.round(cache.trinhSatX)}|${Math.round(cache.trinhSatY)}|2`);
+                    
+                    // Thêm gotoFindingPath RPC giống bên test-move
+                    try {
+                        await session.callRpc('gotoFindingPath', cache.trinhSatX, cache.trinhSatY, 20);
+                    } catch(e) {}
+
                     cache._trinhSatReached = true;
                     sendLog(`[${deviceId}] [Staging] ✅ Đã tốc biến thành công!`, 'success');
                 } catch(e) {
                     sendLog(`[${deviceId}] [Staging] Lỗi tốc biến: ${e.message}`, 'warn');
-                    try { await injector.sendGotoPosition(cache.trinhSatX, cache.trinhSatY); } catch(e2) {}
                 }
             } else {
                 cache._trinhSatReached = true;

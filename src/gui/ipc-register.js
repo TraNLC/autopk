@@ -38,6 +38,7 @@ function sendLog(msg, type = 'info') {
 function traceLog(ipcName, deviceId, msg) {
     const timeStr = new Date().toLocaleTimeString();
     console.log(`[TRACE] [${timeStr}] [IPC:${ipcName}] [${deviceId || 'SYSTEM'}] ${msg}`);
+    sendLog(`[${deviceId || 'SYSTEM'}] [Test NPC] ${msg}`, 'warn');
 }
 
 function registerHandlers(win) {
@@ -228,6 +229,283 @@ function registerHandlers(win) {
         }
     });
 
+    // =====================================
+    // GET PLAYER POSITION
+    // =====================================
+    ipcMain.handle('get-player-position', async (event, deviceId) => {
+        const state = sessionManager.sessions.get(deviceId);
+        if (!state || !state.session) return { ok: false, error: 'Chưa kết nối' };
+        try {
+            const res = await state.session.callRpc('getPlayerInfoNoIl2cpp');
+            if (res && res.ok) {
+                return { ok: true, x: res.x || 0, y: res.y || 0, mapId: res.mapId || 0, camp: res.camp || 0 };
+            }
+            return { ok: false, error: 'Không đọc được thông tin nhân vật' };
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
+    });
+
+    // =====================================
+    // SAVE NPC COORDS MANUAL (hardcode to npc_db.json + toado_trinhsat.txt)
+    // =====================================
+    ipcMain.handle('save-npc-coords-manual', async (event, { npcName, x, y, mapId, camp }) => {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            
+            // 1. Lưu vào npc_db.json để Auto đọc (sử dụng process.cwd() để hỗ trợ app build)
+            const dbDir = path.join(process.cwd(), 'data/output');
+            if (!fs.existsSync(dbDir)) {
+                fs.mkdirSync(dbDir, { recursive: true });
+            }
+            const dbFile = path.join(dbDir, 'npc_db.json');
+            let db = {};
+            if (fs.existsSync(dbFile)) {
+                try {
+                    db = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+                } catch(e) {}
+            }
+            const key = String(mapId);
+            if (!db[key]) db[key] = {};
+            
+            const npcKey = `${npcName}_${camp}`;
+            db[key][npcKey] = { name: npcName, x, y, camp };
+            fs.writeFileSync(dbFile, JSON.stringify(db, null, 2), 'utf8');
+
+            // 2. Lưu vào file txt cho user dễ nhìn
+            const txtFile = path.join(process.cwd(), 'toado_trinhsat.txt');
+            const now = new Date();
+            const timeStr = `${now.getHours()}:${now.getMinutes()} ${now.getDate()}/${now.getMonth()+1}/${now.getFullYear()}`;
+            const pheStr = camp == 1 ? 'Tống' : (camp == 2 ? 'Kim' : camp);
+            const logLine = `[${timeStr}] Tên: ${npcName} | Phe: ${pheStr} | MapID: ${mapId} | Tọa độ: (${x}, ${y})\r\n`;
+            
+            fs.appendFileSync(txtFile, logLine, 'utf8');
+
+            return { ok: true };
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
+    });    // =====================================
+    // TEST NPC (OPCODE 72) IPC ENDPOINTS
+    // =====================================
+    ipcMain.handle('test-npc-network-scan', async (event, deviceId) => {
+        const state = sessionManager.sessions.get(deviceId);
+        if (!state || !state.session) {
+            return { ok: false, error: 'Chưa kết nối thiết bị' };
+        }
+
+        try {
+            traceLog('test-npc-network-scan', deviceId, `Bat dau quet bo nho de tim danh sach NPC (cuc manh)...`);
+            
+            // Gọi hàm quét bộ nhớ Il2Cpp (quét toàn bộ NPC đang hiển thị trên Map)
+            const scanRes = await state.session.callRpc('getNearNpcNames');
+            
+            if (!scanRes || !scanRes.ok) {
+                traceLog('test-npc-network-scan', deviceId, `Loi khi quet bo nho: ${scanRes ? scanRes.error : 'Unknown'}`);
+                return { ok: false, error: 'Không quét được bộ nhớ' };
+            }
+            
+            const npcMap = scanRes.npcMap || {};
+            const npcCoords = scanRes.npcCoords || {};
+            const mapId = scanRes.mapId || 0;
+
+            // KÍCH HOẠT QUÉT BẰNG MẠNG (OPCODE 71) ĐỂ TÌM TỌA ĐỘ CHÍNH XÁC
+            try {
+                const { PacketInjector, encodeField } = require('../packet-injector');
+                const injector = new PacketInjector(state.session);
+                const hexReq = encodeField(1, 'int32', mapId).toString('hex');
+                await injector.sendRaw(71, hexReq);
+                
+                await new Promise(r => setTimeout(r, 3000)); // Chờ server trả kết quả (tăng lên 3s cho Tống Kim)
+                
+                const npcRes = await state.session.callRpc('getNpcPackets');
+                if (npcRes && npcRes.ok && npcRes.packets) {
+                    traceLog('test-npc-network-scan', deviceId, `Nhan duoc ${npcRes.packets.length} packets tu mang`);
+                    for (const pkt of npcRes.packets) {
+                        const buf = Buffer.from(pkt.hex, 'hex');
+                        let offset = 0, cx = 0, cy = 0, cName = '', cId = '';
+                        while (offset < buf.length) {
+                            const tag = buf[offset++];
+                            const wireType = tag & 0x7;
+                            const fieldNum = tag >> 3;
+                            if (wireType === 0) {
+                                let val = 0n, shift = 0n;
+                                while (offset < buf.length) {
+                                    const b = buf[offset++];
+                                    val |= BigInt(b & 0x7f) << shift;
+                                    if ((b & 0x80) === 0) break;
+                                    shift += 7n;
+                                }
+                                if (fieldNum === 3) cx = Number(val);
+                                if (fieldNum === 4) cy = Number(val);
+                            } else if (wireType === 2) {
+                                let len = 0, shift = 0;
+                                while (offset < buf.length) {
+                                    const b = buf[offset++];
+                                    len |= (b & 0x7f) << shift;
+                                    if ((b & 0x80) === 0) break;
+                                    shift += 7;
+                                }
+                                if (len > 0 && offset + len <= buf.length) {
+                                    if (fieldNum === 1) cId = buf.slice(offset, offset + len).toString('ascii');
+                                    else if (fieldNum === 2) cName = buf.slice(offset, offset + len).toString('utf8');
+                                    offset += len;
+                                }
+                            } else if (wireType === 5) { offset += 4; } 
+                            else if (wireType === 1) { offset += 8; }
+                        }
+                        
+                        if (cId && cx && cy) {
+                            traceLog('test-npc-network-scan', deviceId, `Network NPC: ${cId} - ${cName} - ${cx},${cy}`);
+                            npcMap[cId] = cName;
+                            npcCoords[cId] = { x: cx, y: cy };
+                        }
+                    }
+                } else {
+                    traceLog('test-npc-network-scan', deviceId, `Khong nhan duoc packet mang nao hoac loi`);
+                }
+            } catch(e) {
+                traceLog('test-npc-network-scan', deviceId, 'Loi quet mang: ' + e.message);
+            }
+
+            const results = [];
+            
+            // Các từ khóa nhận diện Shop, Rương, hoặc Tượng người chơi để bỏ qua
+            const ignoreKeywords = [
+                'rương', 'tiền trang', 'cửa hàng', 'tạp hóa', 'vũ khí', 'phòng cụ', 
+                'dược', 'y quán', 'thợ rèn', 'thương nhân', 'chủ', 'chưởng quỹ', 
+                '1st', '2nd', '3rd', 'top', 'heo trắng', 'hươu đốm', 'kim miêu', 'bán', 'mua'
+            ];
+            
+            for (const npcId in npcMap) {
+                const name = npcMap[npcId];
+                const lowerName = name.toLowerCase();
+                const coords = npcCoords[npcId] || { x: 0, y: 0 };
+                
+                let isGhost = false;
+                // --- FALLBACK TỌA ĐỘ TĨNH TỪ MAP DATA NẾU NHƯ (0, 0) ---
+                if (coords.x === 0 && coords.y === 0) {
+                    try {
+                        const fs = require('fs');
+                        const path = require('path');
+                        // ipc-register.js is in src/gui/, so data/ is at ../../data/
+                        const mapFile = path.join(__dirname, '../../data/output/maps', `map_${mapId}.json`);
+                        if (fs.existsSync(mapFile)) {
+                            const mapData = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+                            if (mapData && mapData.npcs) {
+                                // Tìm NPC trong map có tên khớp một phần
+                                const staticNpc = mapData.npcs.find(n => n.name === name || name.includes(n.name) || n.name.includes(name));
+                                if (staticNpc && staticNpc.x && staticNpc.y) {
+                                    coords.x = staticNpc.x;
+                                    coords.y = staticNpc.y;
+                                } else {
+                                    // Tồn tại file cấu hình map nhưng không có NPC này => Bóng ma từ map trước
+                                    isGhost = true;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // ignore error
+                    }
+                }
+                
+                // 1. Lọc NPC bóng ma (chỉ lọc khi biết chắc chắn map không có NPC này)
+                if (isGhost) continue;
+                
+                // 2. Lọc shop bán hàng bằng ID chuỗi (vd: "mua set H")
+                if (typeof npcId === 'string' && (npcId.includes('salesman') || isNaN(parseInt(npcId, 10)))) continue;
+                
+                // 3. Lọc người chơi thực (ID thường là số cực lớn >= 5000)
+                const numericId = parseInt(npcId, 10);
+                if (!isNaN(numericId) && numericId >= 5000) continue;
+                
+                // 4. Lọc theo danh sách từ khóa cấm (Thú cưng, Shop, Top Server...)
+                const isIgnored = ignoreKeywords.some(kw => lowerName.includes(kw));
+                if (isIgnored) continue;
+                
+                results.push({
+                    id: npcId,
+                    name: name,
+                    x: coords.x,
+                    y: coords.y,
+                    mapId: scanRes.mapId || 0
+                });
+            }
+            
+            traceLog('test-npc-network-scan', deviceId, `Quet xong! Tim thay ${results.length} NPC (đã lọc shop/người chơi).`);
+            
+            // Xuất ra Terminal VSCode cho anh dễ nhìn
+            console.log(`\n========== DANH SÁCH NPC (Map ${scanRes.mapId}) ==========`);
+            results.forEach(r => {
+                console.log(`[ID: ${r.id}] ${r.name} - Tọa độ: (${r.x}, ${r.y})`);
+            });
+            console.log(`==========================================================\n`);
+
+            return { ok: true, npcs: results };
+            
+        } catch (err) {
+            traceLog('test-npc-network-scan', deviceId, `Loi: ${err.message}`);
+            return { ok: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('save-npc-coordinates', async (event, npcs) => {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const dateStr = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+            
+            const lines = ['ID NPC | Tên NPC | Tọa độ NPC (X, Y) | ID map', '-------------------------------------------------------'];
+            npcs.forEach(n => {
+                lines.push(`${n.id} | ${n.name} | ${n.x}, ${n.y} | ${n.mapId}`);
+            });
+            
+            const fileName = `toado_${dateStr}.txt`;
+            const outPath = path.join(process.cwd(), fileName);
+            fs.writeFileSync(outPath, lines.join('\n'), 'utf8');
+            
+            return { ok: true, path: outPath };
+        } catch(e) {
+            return { ok: false, error: e.message };
+        }
+    });
+
+    ipcMain.handle('test-move', async (event, deviceId, x, y) => {
+        traceLog('test-move', deviceId, `[Step 1] Gui lenh nhay den (${x}, ${y})`);
+        const state = sessionManager.sessions.get(deviceId);
+        if (!state || !state.session || !state.injector) return { ok: false, error: 'Chua ket noi' };
+        try {
+            // Step 1: Write memory (teleport)
+            const memRes = await state.session.callRpc('clientMoveMemory', parseInt(x), parseInt(y));
+            traceLog('test-move', deviceId, `[Step 2] clientMoveMemory: ${JSON.stringify(memRes)}`);
+
+            // Step 2: Sync position to server (Opcode 9)
+            await state.injector.sendStringData(`1|${Math.round(x)}|${Math.round(y)}`);
+            traceLog('test-move', deviceId, `[Step 3] Da gui Opcode 9 dong bo server`);
+
+            // Step 3: Send GotoPosition to trigger movement animation (same as bot TongKim)
+            await new Promise(r => setTimeout(r, 200));
+            await state.injector.sendStringData(`2|${Math.round(x)}|${Math.round(y)}|20`);
+            traceLog('test-move', deviceId, `[Step 4] Da gui lenh GotoPosition (2|x|y|20)`);
+
+            // Step 4: Try sendGotoPosition RPC if available (lech di 50 pixel de ep camera cap nhat)
+            try {
+                await state.session.callRpc('gotoFindingPath', parseInt(x) + 50, parseInt(y) + 50, 0);
+                traceLog('test-move', deviceId, `[Step 5] gotoFindingPath offset thanh cong de update UI`);
+            } catch(e2) {
+                traceLog('test-move', deviceId, `[Step 5] gotoFindingPath khong co hoac loi: ${e2.message}`);
+            }
+
+            traceLog('test-move', deviceId, `[Done] Move hoan tat (${x}, ${y})`);
+            return { ok: true };
+        } catch(e) {
+            traceLog('test-move', deviceId, `[ERROR] ${e.message}`);
+            return { ok: false, error: e.message };
+        }
+    });
 
 
     // 7. Bật/Tắt Tống Kim toàn cục

@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('api', {
   npcInteract: (deviceId, npcId) => ipcRenderer.invoke('npc-interact', deviceId, npcId),
   npcSelectOption: (deviceId, index) => ipcRenderer.invoke('npc-select-option', deviceId, index),
   collectPoints: (deviceId) => ipcRenderer.invoke('collect-points', deviceId),
+  testNpcNetworkScan: (deviceId) => ipcRenderer.invoke('test-npc-network-scan', deviceId),
+  saveNpcCoordinates: (data) => ipcRenderer.invoke('save-npc-coordinates', data),
+  testMove: (deviceId, x, y) => ipcRenderer.invoke('test-move', deviceId, x, y),
+  getPlayerPosition: (deviceId) => ipcRenderer.invoke('get-player-position', deviceId),
+  saveNpcCoordsManual: (data) => ipcRenderer.invoke('save-npc-coords-manual', data),
   
   // Event listeners
   onTabLog: (callback) => {

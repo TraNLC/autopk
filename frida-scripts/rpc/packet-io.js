@@ -123,7 +123,7 @@ rpc.exports.getNpcPackets = function() {
  */
 rpc.exports.getSentPackets = function(maxCount) {
     var max = maxCount || 20;
-    var result = sendBuffer.slice(-max);
+    var result = (globalThis.sendBuffer || []).slice(-max);
     return { ok: true, count: result.length, packets: result };
 };
 
