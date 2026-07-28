@@ -585,25 +585,32 @@ rpc.exports.setGameSpeed = function(speed) {
                 try {
                     TimeClass = Il2Cpp.domain.assembly("UnityEngine.CoreModule").image.class("UnityEngine.Time");
                 } catch(e) {
+                    console.log("[Frida] failed UnityEngine.CoreModule: " + e.message);
                     TimeClass = Il2Cpp.domain.assembly("UnityEngine").image.class("UnityEngine.Time");
                 }
                 if (TimeClass) {
-                    TimeClass.method("set_timeScale").invoke(speed);
+                    // Cần parse float explicitly vì argument qua RPC có thể là double hoặc string
+                    var spd = Il2Cpp.corlib.class("System.Single").alloc();
+                    spd.value = parseFloat(speed);
+                    TimeClass.method("set_timeScale").invoke(parseFloat(speed));
                     return { ok: true, speed: speed, method: 'il2cpp' };
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.log("[Frida] Exception timeScale: " + e.message);
+            }
             
-            // Try hooking game.Game.GameSpeed directly if TimeScale doesn't work
             try {
                 var GameClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("game.Game");
                 if (GameClass) {
                     var m = GameClass.method("set_GameSpeed");
                     if (m) {
-                        m.invoke(speed);
+                        m.invoke(parseFloat(speed));
                         return { ok: true, speed: speed, method: 'game_speed' };
                     }
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.log("[Frida] Exception game_speed: " + e.message);
+            }
             return null;
         });
         if (res) return res;

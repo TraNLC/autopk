@@ -1151,7 +1151,7 @@ rpc.exports.getNpcPackets = function() {
  */
 rpc.exports.getSentPackets = function(maxCount) {
     var max = maxCount || 20;
-    var result = sendBuffer.slice(-max);
+    var result = (globalThis.sendBuffer || []).slice(-max);
     return { ok: true, count: result.length, packets: result };
 };
 
@@ -1951,25 +1951,32 @@ rpc.exports.setGameSpeed = function(speed) {
                 try {
                     TimeClass = Il2Cpp.domain.assembly("UnityEngine.CoreModule").image.class("UnityEngine.Time");
                 } catch(e) {
+                    console.log("[Frida] failed UnityEngine.CoreModule: " + e.message);
                     TimeClass = Il2Cpp.domain.assembly("UnityEngine").image.class("UnityEngine.Time");
                 }
                 if (TimeClass) {
-                    TimeClass.method("set_timeScale").invoke(speed);
+                    // Cần parse float explicitly vì argument qua RPC có thể là double hoặc string
+                    var spd = Il2Cpp.corlib.class("System.Single").alloc();
+                    spd.value = parseFloat(speed);
+                    TimeClass.method("set_timeScale").invoke(parseFloat(speed));
                     return { ok: true, speed: speed, method: 'il2cpp' };
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.log("[Frida] Exception timeScale: " + e.message);
+            }
             
-            // Try hooking game.Game.GameSpeed directly if TimeScale doesn't work
             try {
                 var GameClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("game.Game");
                 if (GameClass) {
                     var m = GameClass.method("set_GameSpeed");
                     if (m) {
-                        m.invoke(speed);
+                        m.invoke(parseFloat(speed));
                         return { ok: true, speed: speed, method: 'game_speed' };
                     }
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.log("[Frida] Exception game_speed: " + e.message);
+            }
             return null;
         });
         if (res) return res;
@@ -3694,17 +3701,15 @@ rpc.exports.getNearNpcNames = function() {
 
     var npcMap = {};
 
-    // Reset cache mỗi lần scan để tránh dùng klass sai từ lần trước
-    globalThis.cachedNpcKlass = null;
-    globalThis.cachedNpcKlassName = null;
-    var npcKlass = null;
+    // Try cac class name kha thi cho NPC (quét 1 lần đầu tiên)
+    var npcKlass = globalThis.cachedNpcKlass || null;
     
     if (!npcKlass) {
         var classNames = [
             'NpcController',
             'game.logic.npc.NpcController',
-            'game.resource.settings.npcres.Normal',
-            'game.resource.settings.npcres.Datafield'
+            'game.resource.settings.npcres.Datafield',
+            'game.resource.settings.npcres.Controller'
         ];
         for (var ci = 0; ci < classNames.length; ci++) {
             npcKlass = __findClassDirect(classNames[ci]);
@@ -3718,12 +3723,14 @@ rpc.exports.getNearNpcNames = function() {
     }
     if (!npcKlass) return { ok: false, error: 'No NPC klass found in metadata', mapId: mapId };
 
+    // Set dynamic offsets based on which class was resolved
+    var idOffset = 0x28;
+    var nameOffset = 0x30;
     var matchedKlassName = globalThis.cachedNpcKlassName || '';
-    // isControllerClass: class Normal/Controller có layout: position@0x10, identify@0x28, data(Datafield)@0x30
-    var isControllerClass = (matchedKlassName === 'game.resource.settings.npcres.Normal' ||
-                             matchedKlassName === 'game.resource.settings.npcres.Controller');
-    var idOffset = 0x10;
-    var nameOffset = 0x40;
+    if (matchedKlassName.indexOf('Datafield') !== -1) {
+        idOffset = 0x10;
+        nameOffset = 0x40;
+    }
 
     // Helper to read C# string from pointer
     function readIl2CppString(strPtr) {
@@ -3770,84 +3777,50 @@ rpc.exports.getNearNpcNames = function() {
                             var obj = address;
                             var npcId = null;
                             var name = null;
-                            var isSalesman = false;
                             
-                            var isNpcCtrl = (globalThis.cachedNpcKlassName === 'NpcController' || 
-                                            globalThis.cachedNpcKlassName === 'game.logic.npc.NpcController');
+                            var isNpcController = (globalThis.cachedNpcKlassName === 'NpcController' || 
+                                                   globalThis.cachedNpcKlassName === 'game.logic.npc.NpcController' || 
+                                                   globalThis.cachedNpcKlassName === 'NpcRes.Normal' || 
+                                                   globalThis.cachedNpcKlassName === 'Normal');
                             
-                            if (isControllerClass) {
-                                // Controller layout:
-                                //   0x10 = position (Position*)
-                                //   0x28 = identify (Identification*)
-                                //   0x30 = data (Datafield*)
-                                var dataPtr = obj.add(0x30).readPointer();
-                                if (dataPtr && !dataPtr.isNull()) {
-                                    // Datafield: cid@0x10, name@0x40, isSalesman@0x69
-                                    var cidPtr = dataPtr.add(0x10).readPointer();
-                                    if (cidPtr && !cidPtr.isNull()) {
-                                        npcId = readIl2CppString(cidPtr);
-                                    }
-                                    if (npcId) {
-                                        var nPtr = dataPtr.add(0x40).readPointer();
-                                        if (nPtr && !nPtr.isNull()) {
-                                            name = readIl2CppString(nPtr);
-                                        }
-                                        try { isSalesman = dataPtr.add(0x69).readU8() !== 0; } catch(e) {}
-                                    }
-                                }
-                            } else if (isNpcCtrl) {
-                                // NpcController via Identification
+                            if (isNpcController) {
+                                // Extract via Identification
                                 var idn = obj.add(0x28).readPointer();
                                 if (idn && !idn.isNull()) {
                                     npcId = obj.toString();
+                                    
                                     var namePtr = idn.add(0x18).readPointer();
                                     if (namePtr && !namePtr.isNull()) {
                                         name = readIl2CppString(namePtr);
                                     }
                                 }
                             } else {
-                                // Datafield direct scan (legacy)
+                                // Fallback to Datafield logic
                                 var idPtr = obj.add(idOffset).readPointer();
                                 if (idPtr && !idPtr.isNull()) {
                                     npcId = readIl2CppString(idPtr);
                                 }
                                 if (npcId) {
-                                    var nPtr2 = obj.add(nameOffset).readPointer();
-                                    if (nPtr2 && !nPtr2.isNull()) {
-                                        name = readIl2CppString(nPtr2);
+                                    var nPtr = obj.add(nameOffset).readPointer();
+                                    if (nPtr && !nPtr.isNull()) {
+                                        name = readIl2CppString(nPtr);
                                     }
-                                    try { isSalesman = obj.add(0x69).readU8() !== 0; } catch(e) {}
                                 }
                             }
-                            
-                            // Skip salesmen at memory level
-                            if (isSalesman) return;
                             
                             if (npcId && !npcMap[npcId] && name) {
                                 npcMap[npcId] = name;
                                 found++;
                                 
-                                // Read position from Controller.position.mapPositionFloat (Vector2)
-                                if (isControllerClass) {
+                                if (isNpcController) {
                                     try {
-                                        var posObj = obj.add(0x10).readPointer();
-                                        if (posObj && !posObj.isNull()) {
-                                            // Position.mapPositionFloat @ 0x30 (Vector2: x@+0, y@+4)
-                                            var rx = posObj.add(0x30).readFloat();
-                                            var ry = posObj.add(0x34).readFloat();
+                                        var pos = obj.add(0x10).readPointer();
+                                        if (!pos.isNull()) {
+                                            var rx = pos.add(0x30).readFloat();
+                                            var ry = pos.add(0x34).readFloat();
                                             if (rx > 1000 && rx < 500000 && ry > 1000 && ry < 500000) {
+                                                if (!npcCoords) npcCoords = {};
                                                 npcCoords[npcId] = { x: Math.round(rx), y: Math.round(ry) };
-                                            }
-                                        }
-                                    } catch(e) {}
-                                } else if (isNpcCtrl) {
-                                    try {
-                                        var pos2 = obj.add(0x10).readPointer();
-                                        if (pos2 && !pos2.isNull()) {
-                                            var rx2 = pos2.add(0x30).readFloat();
-                                            var ry2 = pos2.add(0x34).readFloat();
-                                            if (rx2 > 1000 && rx2 < 500000 && ry2 > 1000 && ry2 < 500000) {
-                                                npcCoords[npcId] = { x: Math.round(rx2), y: Math.round(ry2) };
                                             }
                                         }
                                     } catch(e) {}
