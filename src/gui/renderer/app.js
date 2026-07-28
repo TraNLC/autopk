@@ -738,9 +738,21 @@ if (btnFpsRestore) {
 
 if (btnAdbLow) {
   btnAdbLow.addEventListener('click', async () => {
-    const res = await window.api.optimizeAdbResolution(true);
+    const res = await window.api.optimizeAdbResolution('low');
     if (res && res.ok) {
       addLog(`✅ Đã gửi lệnh ADB ép độ phân giải 480x854 (DPI 120) cho ${res.count} giả lập. Hãy Restart game để áp dụng!`, 'success');
+    } else {
+      addLog(`❌ Lỗi ép độ phân giải ADB: ${res ? res.error : 'Unknown'}`, 'error');
+    }
+  });
+}
+
+const btnAdbSuperlow = document.getElementById('btn-adb-superlow');
+if (btnAdbSuperlow) {
+  btnAdbSuperlow.addEventListener('click', async () => {
+    const res = await window.api.optimizeAdbResolution('superlow');
+    if (res && res.ok) {
+      addLog(`✅ Đã gửi lệnh ADB ép độ phân giải 240x432 (DPI 60) cho ${res.count} giả lập. Hãy Restart game để áp dụng!`, 'success');
     } else {
       addLog(`❌ Lỗi ép độ phân giải ADB: ${res ? res.error : 'Unknown'}`, 'error');
     }

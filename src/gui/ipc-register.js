@@ -263,7 +263,7 @@ function registerHandlers(win) {
             const exec = util.promisify(require('child_process').exec);
             const { scanDevices } = require('./adb-helper');
             
-            const scanRes = await scanDevices(() => {});
+            const scanRes = await scanDevices(config.ADB_PATH || 'adb', exec, () => {});
             if (!scanRes || !scanRes.ok || !scanRes.devices || scanRes.devices.length === 0) {
                 console.log(`[OPTIMIZE] Khong tim thay thiet bi nao de toi uu ADB.`);
                 return { ok: false, error: 'No devices found' };
@@ -274,8 +274,12 @@ function registerHandlers(win) {
             for (const dev of devices) {
                 try {
                     console.log(`[OPTIMIZE] Dang xu ly ADB cho thiet bi ${dev.id}...`);
-                    if (isLow) {
-                        // Ép cấu hình siêu thấp
+                    if (isLow === 'superlow') {
+                        // Cấu hình mờ tịt (tiết kiệm tối đa)
+                        await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm size 240x432`);
+                        await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm density 60`);
+                    } else if (isLow === 'low' || isLow === true) {
+                        // Ép cấu hình thấp
                         await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm size 480x854`);
                         await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm density 120`);
                     } else {
