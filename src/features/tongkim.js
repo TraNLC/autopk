@@ -48,13 +48,15 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
     const injector = new PacketInjector(session);
     const mapId    = info.mapId;
     
+    const mapNameLower = (info.mapName || '').toLowerCase();
+    
     const BATTLE_MAPS  = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
     const STAGING_MAPS = [323, 324, 325, 379, 382, 972, 973, 974];
     const CITY_MAPS    = [1, 11, 37, 78, 162, 176];
 
-    const isBattlefield = BATTLE_MAPS.includes(mapId);
-    const isStagingArea = STAGING_MAPS.includes(mapId);
-    const isCity        = CITY_MAPS.includes(mapId);
+    const isBattlefield = BATTLE_MAPS.includes(mapId) || (mapNameLower.includes('tống kim') && !mapNameLower.includes('danh'));
+    const isStagingArea = STAGING_MAPS.includes(mapId) || mapNameLower.includes('báo danh') || mapNameLower.includes('bao danh');
+    const isCity        = CITY_MAPS.includes(mapId) || mapNameLower.includes('tương dương') || mapNameLower.includes('ba lăng');
 
     // ── 1. HOI SINH KHI CHET ─────────────────────────────────────────────
     if (info.hp !== undefined && info.hp <= 0) {
@@ -152,96 +154,6 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
               cache.trinhSatY = shared.trinhSatY;
             }
           }
-        }
-
-        // Quét NPC bằng Opcode 71 (Gửi request và đọc packet 72 từ mảng riêng)
-        if (!trinhSatId || !cache.trinhSatX) {
-          try {
-            // Không spam quét, cách nhau ít nhất 5s
-            if (!cache._lastNpcScan || (Date.now() - cache._lastNpcScan > 5000)) {
-              cache._lastNpcScan = Date.now();
-              
-              const { encodeField } = require('./packet-injector');
-              const hexReq = encodeField(1, 'int32', mapId).toString('hex');
-              await injector.sendRaw(71, hexReq);
-              
-              // Chờ server trả packet
-              await new Promise(r => setTimeout(r, 1000));
-              
-              const npcRes = await session.callRpc('getNpcPackets');
-              if (npcRes && npcRes.ok && npcRes.packets && npcRes.packets.length > 0) {
-                for (const pkt of npcRes.packets) {
-                  const buf = Buffer.from(pkt.hex, 'hex');
-                  let offset = 0, cx = 0, cy = 0, cName = '', cId = '';
-                  while (offset < buf.length) {
-                    const tag = buf[offset++];
-                    const wireType = tag & 0x7;
-                    const fieldNum = tag >> 3;
-                    if (wireType === 0) {
-                      let val = 0n, shift = 0n;
-                      while (offset < buf.length) {
-                        const b = buf[offset++];
-                        val |= BigInt(b & 0x7f) << shift;
-                        if ((b & 0x80) === 0) break;
-                        shift += 7n;
-                      }
-                      if (fieldNum === 3) cx = Number(val);
-                      if (fieldNum === 4) cy = Number(val);
-                    } else if (wireType === 2) {
-                      let len = 0, shift = 0;
-                      while (offset < buf.length) {
-                        const b = buf[offset++];
-                        len |= (b & 0x7f) << shift;
-                        if ((b & 0x80) === 0) break;
-                        shift += 7;
-                      }
-                      if (len > 0 && offset + len <= buf.length) {
-                        if (fieldNum === 1) {
-                          cId = buf.slice(offset, offset + len).toString('ascii');
-                        } else if (fieldNum === 2) {
-                          cName = buf.slice(offset, offset + len).toString('utf8').toLowerCase();
-                        }
-                        offset += len;
-                      }
-                    } else if (wireType === 5) { offset += 4; } else if (wireType === 1) { offset += 8; }
-                  }
-                  
-                  if (cName.includes('trinh sát') || cName.includes('trinh sat')) {
-                    if (!trinhSatId) { trinhSatId = cId; cache.trinhSatId = cId; }
-                    if (cx && cy && !cache.trinhSatX) {
-                      cache.trinhSatX = cx;
-                      cache.trinhSatY = cy;
-                      sendLog(`[${deviceId}] [Staging] 🎯 Network Trinh Sát: tọa độ=(${cx}, ${cy})`, 'success');
-                    } else if (!cache.trinhSatX) {
-                      try {
-                          const fs = require('fs');
-                          const path = require('path');
-                          const dbFile = path.join(process.cwd(), 'data/output/npc_db.json');
-                          if (fs.existsSync(dbFile)) {
-                              const dbData = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
-                              const mapKey = String(mapId);
-                              if (dbData[mapKey]) {
-                                  // Lấy theo camp hiện tại
-                                  const campVal = info.camp || 0;
-                                  const keys = Object.keys(dbData[mapKey]);
-                                  for (const k of keys) {
-                                      const n = dbData[mapKey][k];
-                                      if (n && n.name && (n.name.toLowerCase().includes('trinh sát') || n.name.toLowerCase().includes('trinh sat')) && n.camp == campVal) {
-                                          cache.trinhSatX = n.x;
-                                          cache.trinhSatY = n.y;
-                                          sendLog(`[${deviceId}] [Staging] 🎯 Hardcoded Trinh Sát (Phe ${campVal}): tọa độ=(${cache.trinhSatX}, ${cache.trinhSatY})`, 'success');
-                                          break;
-                                      }
-                                  }
-                              }
-                          }
-                      } catch (e) {}
-                    }
-                  }
-                }
-              }
-            }
-          } catch(e) {}
         }
 
         // Tốc biến đến Trinh Sát (clientMoveMemory + sync server) — chỉ 1 lần

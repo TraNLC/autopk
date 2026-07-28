@@ -465,45 +465,29 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
             state.session.callRpc('setBlockNpcDialog', true).catch(() => {});
         }
         if (!globalAutoTKInterval) {
-            globalAutoTKInterval = setInterval(async () => {
-                for (const [deviceId, state] of sessions.entries()) {
+            let isRunning = true;
+            globalAutoTKInterval = { stop: () => { isRunning = false; } };
+
+            const loopFn = async () => {
+                if (!isRunning) return;
+
+                await Promise.all(Array.from(sessions.entries()).map(async ([deviceId, state]) => {
                     try {
                         const devCfg = globalTkConfigs[deviceId] || { side: 'auto', lacs: [] };
                         const mapId = state.info ? state.info.mapId : 0;
+                        const mapNameLower = (state.info && state.info.mapName) ? state.info.mapName.toLowerCase() : '';
                         const isBattlefield = [
                             44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988
-                        ].includes(mapId);
+                        ].includes(mapId) || (mapNameLower.includes('tống kim') && !mapNameLower.includes('danh'));
 
                         if (isBattlefield) {
                             if (state.autoPK) {
                                 state.autoPK.fightTop1 = devCfg.fightTop1 === true;
                                 state.autoPK.devCfg = devCfg; // Pass the dynamic UI config to AutoPK
                                 
-                                // Logic dè chừng điểm:
-                                // Mặc định không chọn "đánh top 1" (fightTop1 !== true)
-                                // Đủ 30k điểm (score >= 30000) thì phải dè chừng: luôn thấp điểm hơn người hạng 10 (top10Score)
-                                const myScore = (state.info && state.info.tkScore) ? state.info.tkScore : 0;
-                                const top10Score = (state.info && state.info.top10Score) ? state.info.top10Score : 0;
-                                
-                                let shouldPauseCombat = false;
-                                if (devCfg.fightTop1 !== true) {
-
-                                    if (top10Score > 0 && myScore >= top10Score) {
-                                        // Hoặc lỡ cao điểm hơn hạng 10 thì dừng auto
-                                        shouldPauseCombat = true;
-                                    }
-                                }
-                                
-                                if (shouldPauseCombat) {
-                                    if (state.autoPK.running) {
-                                        traceLog(deviceId, `Tam dung AutoPK: Dat moc diem gioi han (Diem cua ban: ${myScore}, Hang 10: ${top10Score}).`, 'warn', sendLog);
-                                        await state.autoPK.stop();
-                                    }
-                                } else {
-                                    if (!state.autoPK.running) {
-                                        traceLog(deviceId, `Kich hoat / Tiep tuc AutoPK (Diem cua ban: ${myScore}, Hang 10: ${top10Score}).`, 'success', sendLog);
-                                        state.autoPK.start();
-                                    }
+                                if (!state.autoPK.running) {
+                                    traceLog(deviceId, `Kich hoat / Tiep tuc AutoPK (Trong chien truong).`, 'success', sendLog);
+                                    state.autoPK.start();
                                 }
                             }
                         } else {
@@ -519,8 +503,13 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
                     } catch (e) {
                         traceLog(deviceId, `Loi trong vong lapa Tong Kim: ${e.message}`, 'error', sendLog);
                     }
+                }));
+
+                if (isRunning) {
+                    setTimeout(loopFn, 1000);
                 }
-            }, 1000);
+            };
+            loopFn();
         }
     } else {
         traceLog('SYSTEM', `TAT Auto Tong Kim toan cuc.`, 'warn', sendLog);
@@ -529,7 +518,7 @@ function toggleGlobalAutoTK(enable, tkConfigs, sendLog) {
             state.session.callRpc('setBlockNpcDialog', false).catch(() => {});
         }
         if (globalAutoTKInterval) {
-            clearInterval(globalAutoTKInterval);
+            globalAutoTKInterval.stop();
             globalAutoTKInterval = null;
         }
         // Dung toan bo cac luong PK dang chay
