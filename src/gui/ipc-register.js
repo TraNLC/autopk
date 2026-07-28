@@ -236,11 +236,11 @@ function registerHandlers(win) {
     // Set Game Speed (Freeze FPS)
     ipcMain.handle('set-game-speed', async (event, deviceId, speed) => {
         const state = sessionManager.sessions.get(deviceId);
-        if (!state || !state.frida) {
+        if (!state || !state.session) {
             return { ok: false, error: 'Not connected' };
         }
         try {
-            const res = await state.frida.callRpc('setGameSpeed', parseFloat(speed));
+            const res = await state.session.callRpc('setGameSpeed', parseFloat(speed));
             if (res && res.ok) {
                 return { ok: true, method: res.method };
             }
