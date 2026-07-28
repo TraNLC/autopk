@@ -578,44 +578,35 @@ rpc.exports.getNearNpcNames = function() {
 };
 
 rpc.exports.setGameSpeed = function(speed) {
-    if (typeof Il2Cpp !== 'undefined') {
-        var res = Il2Cpp.perform(function() {
-            try {
-                var TimeClass = null;
-                try {
-                    TimeClass = Il2Cpp.domain.assembly("UnityEngine.CoreModule").image.class("UnityEngine.Time");
-                } catch(e) {
-                    console.log("[Frida] failed UnityEngine.CoreModule: " + e.message);
-                    TimeClass = Il2Cpp.domain.assembly("UnityEngine").image.class("UnityEngine.Time");
-                }
-                if (TimeClass) {
-                    // Cần parse float explicitly vì argument qua RPC có thể là double hoặc string
-                    var spd = Il2Cpp.corlib.class("System.Single").alloc();
-                    spd.value = parseFloat(speed);
-                    TimeClass.method("set_timeScale").invoke(parseFloat(speed));
-                    return { ok: true, speed: speed, method: 'il2cpp' };
-                }
-            } catch(e) {
-                console.log("[Frida] Exception timeScale: " + e.message);
+    try {
+        var fps = parseFloat(speed) < 1.0 ? 1 : 60;
+        
+        // Cố gắng dùng il2cpp_resolve_icall gốc của Unity để set FrameRate
+        var resolve_icall_ptr = Module.findExportByName("libil2cpp.so", "il2cpp_resolve_icall");
+        if (resolve_icall_ptr) {
+            var resolve_icall = new NativeFunction(resolve_icall_ptr, 'pointer', ['pointer']);
+            
+            // 1. Ép FPS = 1
+            var set_fps_ptr = resolve_icall(Memory.allocUtf8String("UnityEngine.Application::set_targetFrameRate"));
+            if (!set_fps_ptr.isNull()) {
+                var set_targetFrameRate = new NativeFunction(set_fps_ptr, 'void', ['int']);
+                set_targetFrameRate(fps);
             }
             
-            try {
-                var GameClass = Il2Cpp.domain.assembly("Assembly-CSharp").image.class("game.Game");
-                if (GameClass) {
-                    var m = GameClass.method("set_GameSpeed");
-                    if (m) {
-                        m.invoke(parseFloat(speed));
-                        return { ok: true, speed: speed, method: 'game_speed' };
-                    }
-                }
-            } catch(e) {
-                console.log("[Frida] Exception game_speed: " + e.message);
+            // 2. Tắt Quality Settings (Graphic = Low) nếu FPS = 1
+            var set_quality_ptr = resolve_icall(Memory.allocUtf8String("UnityEngine.QualitySettings::SetQualityLevel"));
+            if (!set_quality_ptr.isNull()) {
+                // SetQualityLevel(int index, bool applyExpensiveChanges)
+                var set_quality = new NativeFunction(set_quality_ptr, 'void', ['int', 'bool']);
+                set_quality(fps === 1 ? 0 : 3, true); 
             }
-            return null;
-        });
-        if (res) return res;
+            
+            return { ok: true, speed: speed, method: 'native_icall' };
+        }
+    } catch(e) {
+        console.log("[Frida] Exception setGameSpeed (native_icall): " + e.message);
     }
-
+    
     return { ok: false, error: 'no il2cpp found - hack speed failed' };
 };
 
