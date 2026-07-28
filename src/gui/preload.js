@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld('api', {
   getPlayerPosition: (deviceId) => ipcRenderer.invoke('get-player-position', deviceId),
   saveNpcCoordsManual: (data) => ipcRenderer.invoke('save-npc-coords-manual', data),
   
+  // Optimization
+  setGameSpeed: (deviceId, speed) => ipcRenderer.invoke('set-game-speed', deviceId, speed),
+  optimizeAdbResolution: (isLow) => ipcRenderer.invoke('optimize-adb-resolution', isLow),
+  
   // Event listeners
   onTabLog: (callback) => {
     ipcRenderer.removeAllListeners('tab-log');
