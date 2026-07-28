@@ -235,36 +235,45 @@ function registerHandlers(win) {
     
     // Set Game Speed (Freeze FPS)
     ipcMain.handle('set-game-speed', async (event, deviceId, speed) => {
+        console.log(`[OPTIMIZE] Yeu cau setGameSpeed = ${speed} cho thiet bi ${deviceId}...`);
         const state = sessionManager.sessions.get(deviceId);
         if (!state || !state.session) {
+            console.log(`[OPTIMIZE] Loi setGameSpeed: Not connected (Thiet bi ${deviceId})`);
             return { ok: false, error: 'Not connected' };
         }
         try {
             const res = await state.session.callRpc('setGameSpeed', parseFloat(speed));
             if (res && res.ok) {
+                console.log(`[OPTIMIZE] setGameSpeed thanh cong cho ${deviceId}. Method: ${res.method}`);
                 return { ok: true, method: res.method };
             }
+            console.log(`[OPTIMIZE] Loi setGameSpeed RPC: ${res ? res.error : 'Unknown'}`);
             return { ok: false, error: res ? res.error : 'Unknown error from rpc' };
         } catch (e) {
+            console.log(`[OPTIMIZE] Exception setGameSpeed: ${e.message}`);
             return { ok: false, error: e.message };
         }
     });
 
     // Optimize ADB Resolution
     ipcMain.handle('optimize-adb-resolution', async (event, isLow) => {
+        console.log(`[OPTIMIZE] Yeu cau ADB Optimize (isLow=${isLow}). Dang quet thiet bi...`);
         try {
             const util = require('util');
             const exec = util.promisify(require('child_process').exec);
-            const { getConnectedDevices } = require('./adb-helper');
+            const { scanDevices } = require('./adb-helper');
             
-            const devices = await getConnectedDevices();
-            if (!devices || devices.length === 0) {
+            const scanRes = await scanDevices(() => {});
+            if (!scanRes || !scanRes.ok || !scanRes.devices || scanRes.devices.length === 0) {
+                console.log(`[OPTIMIZE] Khong tim thay thiet bi nao de toi uu ADB.`);
                 return { ok: false, error: 'No devices found' };
             }
+            const devices = scanRes.devices;
 
             let successCount = 0;
             for (const dev of devices) {
                 try {
+                    console.log(`[OPTIMIZE] Dang xu ly ADB cho thiet bi ${dev.id}...`);
                     if (isLow) {
                         // Ép cấu hình siêu thấp
                         await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm size 480x854`);
@@ -275,13 +284,16 @@ function registerHandlers(win) {
                         await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm density reset`);
                     }
                     successCount++;
+                    console.log(`[OPTIMIZE] OK ADB cho ${dev.id}`);
                 } catch (e) {
-                    console.error(`Lỗi đổi độ phân giải thiết bị ${dev.id}: ${e.message}`);
+                    console.error(`[OPTIMIZE] Loi ADB thiet bi ${dev.id}: ${e.message}`);
                 }
             }
             
+            console.log(`[OPTIMIZE] Hoan tat xu ly ADB cho ${successCount} thiet bi.`);
             return { ok: true, count: successCount };
         } catch (err) {
+            console.log(`[OPTIMIZE] Exception ADB: ${err.message}`);
             return { ok: false, error: err.message };
         }
     });
