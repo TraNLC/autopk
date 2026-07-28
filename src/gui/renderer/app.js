@@ -697,3 +697,63 @@ if (btnSaveNpcCoord) {
     }
   });
 }
+
+// ---------------------------
+// OPTIMIZATION (Tab 3) LOGIC
+// ---------------------------
+const btnFps1 = document.getElementById('btn-fps-1');
+const btnFpsRestore = document.getElementById('btn-fps-restore');
+const btnAdbLow = document.getElementById('btn-adb-low');
+const btnAdbReset = document.getElementById('btn-adb-reset');
+
+if (btnFps1) {
+  btnFps1.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      alert('Vui lòng chọn 1 tài khoản (acc) ở bảng trên trước khi bật Đóng Băng!');
+      return;
+    }
+    const res = await window.api.setGameSpeed(currentSelectedDeviceId, 0.05);
+    if (res && res.ok) {
+      addLog(`[${currentSelectedDeviceId}] ✅ Đã bật chế độ Đóng băng màn hình (FPS 1) siêu nhẹ máy.`, 'success');
+    } else {
+      addLog(`[${currentSelectedDeviceId}] ❌ Lỗi bật đóng băng: ${res ? res.error : 'Unknown'}`, 'error');
+    }
+  });
+}
+
+if (btnFpsRestore) {
+  btnFpsRestore.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      alert('Vui lòng chọn 1 tài khoản (acc) ở bảng trên trước khi Khôi phục!');
+      return;
+    }
+    const res = await window.api.setGameSpeed(currentSelectedDeviceId, 1.0);
+    if (res && res.ok) {
+      addLog(`[${currentSelectedDeviceId}] 🔄 Đã khôi phục tốc độ game (FPS) bình thường.`, 'success');
+    } else {
+      addLog(`[${currentSelectedDeviceId}] ❌ Lỗi khôi phục: ${res ? res.error : 'Unknown'}`, 'error');
+    }
+  });
+}
+
+if (btnAdbLow) {
+  btnAdbLow.addEventListener('click', async () => {
+    const res = await window.api.optimizeAdbResolution(true);
+    if (res && res.ok) {
+      addLog(`✅ Đã gửi lệnh ADB ép độ phân giải 480x854 (DPI 120) cho ${res.count} giả lập. Hãy Restart game để áp dụng!`, 'success');
+    } else {
+      addLog(`❌ Lỗi ép độ phân giải ADB: ${res ? res.error : 'Unknown'}`, 'error');
+    }
+  });
+}
+
+if (btnAdbReset) {
+  btnAdbReset.addEventListener('click', async () => {
+    const res = await window.api.optimizeAdbResolution(false);
+    if (res && res.ok) {
+      addLog(`🔄 Đã gửi lệnh khôi phục độ phân giải bằng ADB cho ${res.count} giả lập.`, 'success');
+    } else {
+      addLog(`❌ Lỗi khôi phục ADB: ${res ? res.error : 'Unknown'}`, 'error');
+    }
+  });
+}

@@ -229,9 +229,66 @@ function registerHandlers(win) {
         }
     });
 
-    // =====================================
-    // GET PLAYER POSITION
-    // =====================================
+    // ==========================================
+    // OPTIMIZATION HANDLERS
+    // ==========================================
+    
+    // Set Game Speed (Freeze FPS)
+    ipcMain.handle('set-game-speed', async (event, deviceId, speed) => {
+        const state = sessionManager.sessions.get(deviceId);
+        if (!state || !state.frida) {
+            return { ok: false, error: 'Not connected' };
+        }
+        try {
+            const res = await state.frida.callRpc('setGameSpeed', parseFloat(speed));
+            if (res && res.ok) {
+                return { ok: true, method: res.method };
+            }
+            return { ok: false, error: res ? res.error : 'Unknown error from rpc' };
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
+    });
+
+    // Optimize ADB Resolution
+    ipcMain.handle('optimize-adb-resolution', async (event, isLow) => {
+        try {
+            const util = require('util');
+            const exec = util.promisify(require('child_process').exec);
+            const { getConnectedDevices } = require('./adb-helper');
+            
+            const devices = await getConnectedDevices();
+            if (!devices || devices.length === 0) {
+                return { ok: false, error: 'No devices found' };
+            }
+
+            let successCount = 0;
+            for (const dev of devices) {
+                try {
+                    if (isLow) {
+                        // Ép cấu hình siêu thấp
+                        await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm size 480x854`);
+                        await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm density 120`);
+                    } else {
+                        // Khôi phục mặc định
+                        await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm size reset`);
+                        await exec(`"${config.ADB_PATH}" -s ${dev.id} shell wm density reset`);
+                    }
+                    successCount++;
+                } catch (e) {
+                    console.error(`Lỗi đổi độ phân giải thiết bị ${dev.id}: ${e.message}`);
+                }
+            }
+            
+            return { ok: true, count: successCount };
+        } catch (err) {
+            return { ok: false, error: err.message };
+        }
+    });
+
+    // ==========================================
+    // MAP & NPC COORDINATES
+    // ==========================================
     ipcMain.handle('get-player-position', async (event, deviceId) => {
         const state = sessionManager.sessions.get(deviceId);
         if (!state || !state.session) return { ok: false, error: 'Chưa kết nối' };
