@@ -1553,7 +1553,7 @@ rpc.exports.getPlayerInfo = function() {
                         var SECT_NAMES = {
                             0: "Thiếu Lâm", 1: "Thiên Vương", 2: "Đường Môn", 3: "Ngũ Độc",
                             4: "Nga Mi", 5: "Thúy Yên", 6: "Cái Bang", 7: "Thiên Nhẫn",
-                            8: "Võ Đang", 9: "Côn Lôn", 10: "Minh Giáo", 11: "Đoàn Thị"
+                            8: "Võ Đang", 9: "Côn Lôn"
                         };
                         res.sectName = SECT_NAMES[res.sect] || "Chưa rõ";
                         try { res.level = character.add(0x58).readU32(); } catch(e) {}

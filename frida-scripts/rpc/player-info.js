@@ -338,7 +338,7 @@ rpc.exports.getPlayerInfo = function() {
                             var SECT_NAMES = {
                                 0: "Thieu Lam", 1: "Thien Vuong", 2: "Duong Mon", 3: "Ngu Doc",
                                 4: "Nga My", 5: "Thuy Yen", 6: "Cai Bang", 7: "Thien Nhan",
-                                8: "Vo Dang", 9: "Con Lon", 10: "Minh Giao", 11: "Doan Thi"
+                                8: "Vo Dang", 9: "Con Lon"
                             };
                             if (res.sect !== undefined && res.sect !== null) {
                                 res.sectName = SECT_NAMES[res.sect] || "None";
