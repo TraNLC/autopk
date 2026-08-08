@@ -284,44 +284,40 @@ rpc.exports.getPlayerInfo = function() {
                         var mapPos = posPtr.add(0x28).readPointer();
                         if (mapPos && !mapPos.isNull()) {
                             res.x = mapPos.add(0x10).readInt();
-                            res.y = mapPos.add(0x14).readInt();
-                            res.position = { x: res.x, y: res.y, eid: pos.eid || '', age: 0 };
-                        }
-                    }
-                }
-            } catch(e) {}
             
             var npcontroller = _playerMainInstance.add(0x20).readPointer();
             if (!npcontroller.isNull()) {
-                var dataPtr = npcontroller.add(0x30).readPointer();
-                if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
-                    // Read cid
-                    var cidPtr = dataPtr.add(0x10).readPointer();
-                    if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
-                        var cidLen = cidPtr.add(0x10).readInt();
-                        if (cidLen > 0 && cidLen < 100) {
-                            res.cid = cidPtr.add(0x14).readUtf16String(cidLen);
-                        }
+                try {
+                    var dataPtr = npcontroller.add(0x30).readPointer();
+                    if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
+                        try {
+                            var cidPtr = dataPtr.add(0x10).readPointer();
+                            if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
+                                var cidLen = cidPtr.add(0x10).readInt();
+                                if (cidLen > 0 && cidLen < 100) res.cid = cidPtr.add(0x14).readUtf16String(cidLen);
+                            }
+                        } catch(e) {}
+                        
+                        try {
+                            var namePtr = dataPtr.add(0x40).readPointer();
+                            if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
+                                var strLen = namePtr.add(0x10).readU32();
+                                if (strLen > 0 && strLen < 100) res.name = namePtr.add(0x14).readUtf16String(strLen);
+                            }
+                        } catch(e) {}
+                        try { res.level = dataPtr.add(0x54).readU32(); } catch(e) {}
                     }
-                    
-                    // Read name
-                    var namePtr = dataPtr.add(0x40).readPointer();
-                    if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
-                        var strLen = namePtr.add(0x10).readU32();
-                        if (strLen > 0 && strLen < 100) {
-                            res.name = namePtr.add(0x14).readUtf16String(strLen);
-                        }
-                    }
-                    res.level = dataPtr.add(0x54).readU32();
-                }
+                } catch(e) {}
                 
-                var character = npcontroller.add(0xa0).readPointer();
-                if (!character.isNull() && parseInt(character.toString()) > 0x10000) {
-                    res.money = character.add(0x48).readS64().toString();
-                    res.sect = character.add(0x34).readU32();
-                    res.level = character.add(0x58).readU32();
-                    res.storageMoney = character.add(0x110).readS64().toString();
-                }
+                try {
+                    var character = npcontroller.add(0xa0).readPointer();
+                    if (!character.isNull() && parseInt(character.toString()) > 0x10000) {
+                        try { res.money = character.add(0x48).readS64().toString(); } catch(e) {}
+                        try { res.sect = character.add(0x34).readU32(); } catch(e) {}
+                        try { res.level = character.add(0x58).readU32(); } catch(e) {}
+                        try { res.storageMoney = character.add(0x110).readS64().toString(); } catch(e) {}
+                    }
+                } catch(e) {}
 
                 // Read HP/MP using Il2Cpp if available
                 if (typeof Il2Cpp !== 'undefined') {
@@ -373,8 +369,8 @@ rpc.exports.getPlayerInfo = function() {
 
                             var idn = ctrl.field('identify').value;
                             if (idn && !idn.isNull()) {
-                                res.hp = idn.field('healthCurrent').value;
-                                res.maxHp = idn.field('healthMax').value;
+                                try { res.hp = idn.field('healthCurrent').value; } catch(e) {}
+                                try { res.maxHp = idn.field('healthMax').value; } catch(e) {}
                                 
                                 var mc = ['manaCurrent', 'mpCurrent', 'powerCurrent', 'internalCurrent'];
                                 var mm = ['manaMax', 'mpMax', 'powerMax', 'internalMax'];
@@ -402,7 +398,7 @@ rpc.exports.getPlayerInfo = function() {
                 }
             }
         } catch (e) {
-            res.error = "Error reading fields: " + e.message;
+            res.error = "Error reading general fields: " + e.message;
         }
     }
     return res;

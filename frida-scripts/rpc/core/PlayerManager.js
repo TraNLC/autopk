@@ -158,54 +158,55 @@ rpc.exports.getPlayerInfo = function() {
             
             var npcontroller = _playerMainInstance.add(0x20).readPointer();
             if (!npcontroller.isNull()) {
-                var dataPtr = npcontroller.add(0x30).readPointer();
-                if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
-                    // Read cid
-                    var cidPtr = dataPtr.add(0x10).readPointer();
-                    if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
-                        var cidLen = cidPtr.add(0x10).readInt();
-                        if (cidLen > 0 && cidLen < 100) {
-                            res.cid = cidPtr.add(0x14).readUtf16String(cidLen);
-                        }
+                try {
+                    var dataPtr = npcontroller.add(0x30).readPointer();
+                    if (!dataPtr.isNull() && parseInt(dataPtr.toString()) > 0x10000) {
+                        try {
+                            var cidPtr = dataPtr.add(0x10).readPointer();
+                            if (!cidPtr.isNull() && parseInt(cidPtr.toString()) > 0x10000) {
+                                var cidLen = cidPtr.add(0x10).readInt();
+                                if (cidLen > 0 && cidLen < 100) res.cid = cidPtr.add(0x14).readUtf16String(cidLen);
+                            }
+                        } catch(e) {}
+                        try {
+                            var namePtr = dataPtr.add(0x40).readPointer();
+                            if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
+                                var strLen = namePtr.add(0x10).readU32();
+                                if (strLen > 0 && strLen < 100) res.name = namePtr.add(0x14).readUtf16String(strLen);
+                            }
+                        } catch(e) {}
+                        try { res.level = dataPtr.add(0x54).readU32(); } catch(e) {}
                     }
-                    
-                    // Read name
-                    var namePtr = dataPtr.add(0x40).readPointer();
-                    if (!namePtr.isNull() && parseInt(namePtr.toString()) > 0x10000) {
-                        var strLen = namePtr.add(0x10).readU32();
-                        if (strLen > 0 && strLen < 100) {
-                            res.name = namePtr.add(0x14).readUtf16String(strLen);
-                        }
-                    }
-                    res.level = dataPtr.add(0x54).readU32();
-                }
+                } catch(e) {}
                 
-                var character = npcontroller.add(0xa0).readPointer();
-                if (!character.isNull() && parseInt(character.toString()) > 0x10000) {
-                    res.money = character.add(0x48).readS64().toString();
-                    res.sect = character.add(0x34).readU32();
-                    var SECT_NAMES = {
-                        0: "Thiếu Lâm", 1: "Thiên Vương", 2: "Đường Môn", 3: "Ngũ Độc",
-                        4: "Nga Mi", 5: "Thúy Yên", 6: "Cái Bang", 7: "Thiên Nhẫn",
-                        8: "Võ Đang", 9: "Côn Lôn", 10: "Minh Giáo", 11: "Đoàn Thị"
-                    };
-                    res.sectName = SECT_NAMES[res.sect] || "Chưa rõ";
-                    res.level = character.add(0x58).readU32();
-                    res.storageMoney = character.add(0x110).readS64().toString();
-                }
+                try {
+                    var character = npcontroller.add(0xa0).readPointer();
+                    if (!character.isNull() && parseInt(character.toString()) > 0x10000) {
+                        try { res.money = character.add(0x48).readS64().toString(); } catch(e) {}
+                        try { res.sect = character.add(0x34).readU32(); } catch(e) {}
+                        var SECT_NAMES = {
+                            0: "Thiếu Lâm", 1: "Thiên Vương", 2: "Đường Môn", 3: "Ngũ Độc",
+                            4: "Nga Mi", 5: "Thúy Yên", 6: "Cái Bang", 7: "Thiên Nhẫn",
+                            8: "Võ Đang", 9: "Côn Lôn", 10: "Minh Giáo", 11: "Đoàn Thị"
+                        };
+                        res.sectName = SECT_NAMES[res.sect] || "Chưa rõ";
+                        try { res.level = character.add(0x58).readU32(); } catch(e) {}
+                        try { res.storageMoney = character.add(0x110).readS64().toString(); } catch(e) {}
+                    }
+                } catch(e) {}
 
-                // Read HP/MP/Camp using raw memory offsets (fully bridge-free!)
-                var idnPtr = npcontroller.add(0x28).readPointer();
-                if (!idnPtr.isNull() && parseInt(idnPtr.toString()) > 0x10000) {
-                    res.campValue = idnPtr.add(0x50).readInt();
-                    res.seriesValue = idnPtr.add(0x54).readInt();
-                    res.hp = idnPtr.add(0x58).readInt();
-                    res.maxHp = idnPtr.add(0x5C).readInt();
-                    res.mp = idnPtr.add(0x60).readInt();
-                    res.maxMp = idnPtr.add(0x64).readInt();
-                }
+                try {
+                    var idnPtr = npcontroller.add(0x28).readPointer();
+                    if (!idnPtr.isNull() && parseInt(idnPtr.toString()) > 0x10000) {
+                        try { res.campValue = idnPtr.add(0x50).readInt(); } catch(e) {}
+                        try { res.seriesValue = idnPtr.add(0x54).readInt(); } catch(e) {}
+                        try { res.hp = idnPtr.add(0x58).readInt(); } catch(e) {}
+                        try { res.maxHp = idnPtr.add(0x5C).readInt(); } catch(e) {}
+                        try { res.mp = idnPtr.add(0x60).readInt(); } catch(e) {}
+                        try { res.maxMp = idnPtr.add(0x64).readInt(); } catch(e) {}
+                    }
+                } catch(e) {}
                 
-                // Read riding state (fully bridge-free native check)
                 try {
                     var isRidingFn = new NativeFunction(il2cppBase.add(0xFB7568), 'bool', ['pointer']);
                     res.riding = isRidingFn(npcontroller);
@@ -214,7 +215,7 @@ rpc.exports.getPlayerInfo = function() {
                 }
             }
         } catch (e) {
-            res.error = "Error reading fields: " + e.message;
+            res.error = "Error reading general fields: " + e.message;
         }
     }
     return res;
