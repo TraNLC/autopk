@@ -156,41 +156,7 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           }
         }
 
-        // Tốc biến đến Trinh Sát (clientMoveMemory + sync server) — chỉ 1 lần
-        if (cache.trinhSatX && cache.trinhSatY && !cache._trinhSatReached) {
-            const dist = Math.sqrt(Math.pow((cache.trinhSatX - (info.x || 0)), 2) + Math.pow((cache.trinhSatY - (info.y || 0)), 2));
-            if (dist > 50) {
-                // Thêm logic chờ 2.5s trước khi tốc biến
-                if (!cache._waitBeforeTeleport) {
-                    cache._waitBeforeTeleport = Date.now();
-                    sendLog(`[${deviceId}] [Staging] ⏳ Phát hiện Trinh Sát ở xa. Chờ 2.5s trước khi tốc biến...`, 'warn');
-                    return; // Thoát loop này, chờ loop sau
-                }
-                if (Date.now() - cache._waitBeforeTeleport < 2500) {
-                    return; // Vẫn đang trong thời gian chờ
-                }
-
-                sendLog(`[${deviceId}] [Staging] ⚡ Đã chờ 2.5s, Tốc biến đến NPC Trinh Sát (${cache.trinhSatX}, ${cache.trinhSatY}). Cự ly: ${dist.toFixed(0)}`, 'success');
-                try {
-                    await session.callRpc('clientMoveMemory', cache.trinhSatX, cache.trinhSatY);
-                    await injector.sendStringData(`1|${Math.round(cache.trinhSatX)}|${Math.round(cache.trinhSatY)}`);
-                    await new Promise(r => setTimeout(r, 300));
-                    await injector.sendStringData(`2|${Math.round(cache.trinhSatX)}|${Math.round(cache.trinhSatY)}|2`);
-                    
-                    // Thêm gotoFindingPath RPC giống bên test-move
-                    try {
-                        await session.callRpc('gotoFindingPath', cache.trinhSatX, cache.trinhSatY, 20);
-                    } catch(e) {}
-
-                    cache._trinhSatReached = true;
-                    sendLog(`[${deviceId}] [Staging] ✅ Đã tốc biến thành công!`, 'success');
-                } catch(e) {
-                    sendLog(`[${deviceId}] [Staging] Lỗi tốc biến: ${e.message}`, 'warn');
-                }
-            } else {
-                cache._trinhSatReached = true;
-            }
-        }
+        // (Đoạn tốc biến cũ đã được chuyển xuống dưới logic Buff theo yêu cầu mới)
 
 
 
@@ -269,13 +235,38 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
             battleOption = (campValue === 2) ? 1 : 0;
           }
           sendLog(`[${deviceId}] [Ra Tran] Dang qua cua Trinh Sat ra chien truong...`, 'info');
-          await injector.sendNpcDialogue(trinhSatId);
-          await new Promise(r => setTimeout(r, 500));
-          await injector.sendNpcSelect(battleOption);
-          await new Promise(r => setTimeout(r, 1000)); // Wait for map transition to complete under latency
-          try {
-            await session.callRpc('clearFocus');
-          } catch(err) {}
+          
+          if (cache.trinhSatX && cache.trinhSatY) {
+              try {
+                  await session.callRpc('clientMoveMemory', cache.trinhSatX, cache.trinhSatY);
+                  await injector.sendStringData(`1|${Math.round(cache.trinhSatX)}|${Math.round(cache.trinhSatY)}`);
+                  await new Promise(r => setTimeout(r, 300));
+                  await injector.sendStringData(`2|${Math.round(cache.trinhSatX)}|${Math.round(cache.trinhSatY)}|2`);
+                  
+                  // Thêm gotoFindingPath RPC giống bên test-move
+                  try {
+                      await session.callRpc('gotoFindingPath', cache.trinhSatX, cache.trinhSatY, 20);
+                  } catch(e) {}
+
+                  sendLog(`[${deviceId}] [Staging] Đã tốc biến! Chờ 4s để ép load NPC...`, 'success');
+                  await new Promise(r => setTimeout(r, 4000));
+              } catch(e) {}
+          }
+          
+          if (trinhSatId) {
+              await injector.sendNpcDialogue(trinhSatId);
+              sendLog(`[${deviceId}] [Ra Tran] Đã gọi Trinh Sát, chờ 5s...`, 'info');
+              await new Promise(r => setTimeout(r, 5000));
+              
+              await injector.sendNpcSelect(battleOption);
+              sendLog(`[${deviceId}] [Ra Tran] Đã chọn phe, chờ 5s chuyển map...`, 'info');
+              await new Promise(r => setTimeout(r, 5000));
+              try {
+                await session.callRpc('clearFocus');
+              } catch(err) {}
+          } else {
+              sendLog(`[${deviceId}] [Ra Tran] Chưa thấy ID NPC Trinh Sat, đợi server sync...`, 'warn');
+          }
         } catch(e) {
           sendLog(`[${deviceId}] [Ra Tran] Loi qua cua Trinh Sat: ${e.message}`, 'error');
         }
