@@ -23,7 +23,7 @@ async function scanDevices(adbPath, execAsync, sendLog) {
         function checkPort(port) {
             return new Promise((resolve) => {
                 const s = new net.Socket();
-                s.setTimeout(150);
+                s.setTimeout(500); // Tăng timeout lên 500ms để tránh miss port trên máy chậm
                 s.on('connect', () => { 
                     s.destroy(); 
                     console.log(`[TRACE] [ADB-Helper] Port ${port} is OPEN.`);
@@ -35,11 +35,19 @@ async function scanDevices(adbPath, execAsync, sendLog) {
             });
         }
 
-        // Build list of all ports to scan (MuMu range + other common emulators)
+        // Build list of all ports to scan
         const scanPorts = new Set();
         for (let p = SCAN_START; p <= SCAN_END; p++) {
             scanPorts.add(p);
         }
+        
+        // Add DEFAULT_PORTS from config
+        if (config.DEFAULT_PORTS) {
+            for (const p of config.DEFAULT_PORTS) {
+                scanPorts.add(p);
+            }
+        }
+        
         const commonPorts = [];
         // MEmu (21503, 21513, 21523, ...) up to 50 instances
         for (let i = 0; i < 50; i++) commonPorts.push(21503 + i * 10);
@@ -48,16 +56,19 @@ async function scanDevices(adbPath, execAsync, sendLog) {
         for (let i = 0; i < 50; i++) commonPorts.push(62025 + i);
         
         for (const p of commonPorts) {
-            if (p >= 10000) {
-                scanPorts.add(p);
-            }
+            if (p >= 10000) scanPorts.add(p);
         }
         const allPorts = Array.from(scanPorts).filter(p => p >= 10000).sort((a, b) => a - b);
 
-        // Phase 1: TCP scan all ports in parallel (lightning fast)
-        console.log(`[TRACE] [ADB-Helper] Quet song song ${allPorts.length} cong...`);
-        const results = await Promise.all(allPorts.map(p => checkPort(p).then(ok => ok ? p : null)));
-        const openPorts = results.filter(r => r !== null);
+        // Phase 1: TCP scan ports (batching to avoid socket exhaustion)
+        console.log(`[TRACE] [ADB-Helper] Quet bat dong bo ${allPorts.length} cong...`);
+        const openPorts = [];
+        const batchSize = 100;
+        for (let i = 0; i < allPorts.length; i += batchSize) {
+            const batch = allPorts.slice(i, i + batchSize);
+            const results = await Promise.all(batch.map(p => checkPort(p).then(ok => ok ? p : null)));
+            openPorts.push(...results.filter(r => r !== null));
+        }
         console.log(`[TRACE] [ADB-Helper] Hoan tat quet port. Tim thay cac cong dang mo:`, openPorts);
 
         // Phase 2: adb connect to open ports in parallel batches
