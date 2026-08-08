@@ -175,6 +175,34 @@ rpc.exports.getPlayerInfo = function() {
                                 if (strLen > 0 && strLen < 100) res.name = namePtr.add(0x14).readUtf16String(strLen);
                             }
                         } catch(e) {}
+                        
+                        // Il2Cpp fallback for name if native failed
+                        if (!res.name && typeof Il2Cpp !== 'undefined') {
+                            try {
+                                Il2Cpp.perform(function() {
+                                    var ctrl = new Il2Cpp.Object(npcontroller);
+                                    var data = null;
+                                    try { data = ctrl.field('data').value; } catch(e) {
+                                        try { data = ctrl.field('m_data').value; } catch(e2) {}
+                                    }
+                                    if (data && !data.isNull()) {
+                                        var nv = data.field('name').value;
+                                        if (nv) {
+                                            if (typeof nv.content !== 'undefined' && nv.content !== null) {
+                                                res.name = nv.content;
+                                            } else {
+                                                var ptr = nv.handle ? nv.handle : new NativePointer(nv);
+                                                if (!ptr.isNull()) {
+                                                    var len = ptr.add(0x10).readS32();
+                                                    if (len > 0 && len < 100) res.name = ptr.add(0x14).readUtf16String(len);
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            } catch(e) {}
+                        }
+                        
                         try { res.level = dataPtr.add(0x54).readU32(); } catch(e) {}
                     }
                 } catch(e) {}
@@ -204,6 +232,19 @@ rpc.exports.getPlayerInfo = function() {
                         try { res.maxHp = idnPtr.add(0x5C).readInt(); } catch(e) {}
                         try { res.mp = idnPtr.add(0x60).readInt(); } catch(e) {}
                         try { res.maxMp = idnPtr.add(0x64).readInt(); } catch(e) {}
+                        
+                        // Try reading name from identify if it failed earlier
+                        if (!res.name) {
+                            try {
+                                var nameValPtr = idnPtr.add(0x48).readPointer();
+                                if (!nameValPtr.isNull() && parseInt(nameValPtr.toString()) > 0x10000) {
+                                    var len = nameValPtr.add(0x10).readInt();
+                                    if (len > 0 && len < 100) {
+                                        res.name = nameValPtr.add(0x14).readUtf16String(len);
+                                    }
+                                }
+                            } catch(e) {}
+                        }
                     }
                 } catch(e) {}
                 
