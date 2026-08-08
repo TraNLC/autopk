@@ -7,7 +7,10 @@ function findAdbPath() {
   const memuAdb = 'C:\\Microvirt\\MEmu\\adb.exe';
   if (fs.existsSync(memuAdb)) return memuAdb;
 
-  const localAdb = path.join(process.cwd(), 'tools', 'adb.exe');
+  const localAdb1 = path.join(process.cwd(), 'tools', 'adb.exe');
+  if (fs.existsSync(localAdb1)) return localAdb1;
+  const localAdb2 = path.join(__dirname, 'tools', 'adb.exe');
+  if (fs.existsSync(localAdb2)) return localAdb2;
 
   try {
     const electronMod = 'electron';
