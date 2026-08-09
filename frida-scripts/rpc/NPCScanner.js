@@ -315,7 +315,7 @@ rpc.exports.getNearNpcNames = function() {
         var npcCoords = {};
 
         function scanNextRange() {
-            if (rangeIdx >= filteredRanges.length || found >= 20000) {
+            if (rangeIdx >= filteredRanges.length || found >= 200) {
                 return resolve({ ok: true, npcMap: npcMap, npcCoords: npcCoords, count: found, mapId: mapId });
             }
             var range = filteredRanges[rangeIdx++];
@@ -358,10 +358,18 @@ rpc.exports.getNearNpcNames = function() {
                             }
                             
                             if (npcId && !npcMap[npcId] && name) {
-                                npcMap[npcId] = name;
-                                found++;
+                                var lowerName = name.toLowerCase();
+                                // Khi quét tĩnh (Datafield), chỉ lọc đúng các NPC cần thiết để chống lag và giật game
+                                var isTarget = isNpcController || 
+                                              lowerName.includes("trinh") || lowerName.includes("quân") || 
+                                              lowerName.includes("quan nhu") || lowerName.includes("mộ binh") || 
+                                              lowerName.includes("chiêu binh") || lowerName.includes("mã binh");
                                 
-                                if (isNpcController) {
+                                if (isTarget) {
+                                    npcMap[npcId] = name;
+                                    found++;
+                                    
+                                    if (isNpcController) {
                                     try {
                                         var pos = obj.add(0x10).readPointer();
                                         if (!pos.isNull()) {
