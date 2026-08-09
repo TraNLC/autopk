@@ -315,7 +315,7 @@ rpc.exports.getNearNpcNames = function() {
         var npcCoords = {};
 
         function scanNextRange() {
-            if (rangeIdx >= filteredRanges.length || found >= 200) {
+            if (rangeIdx >= filteredRanges.length || found >= 20000) {
                 return resolve({ ok: true, npcMap: npcMap, npcCoords: npcCoords, count: found, mapId: mapId });
             }
             var range = filteredRanges[rangeIdx++];

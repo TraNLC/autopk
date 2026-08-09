@@ -155,6 +155,25 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
             }
           }
         }
+        // Cố gắng tự học ID NPC xung quanh nếu chưa có
+        if (!trinhSatId) {
+            try {
+                const npcNamesRes = await session.callRpc('getNearNpcNames');
+                if (npcNamesRes && npcNamesRes.ok && npcNamesRes.npcMap) {
+                    for (const [npcId, npcName] of Object.entries(npcNamesRes.npcMap)) {
+                        const lower = String(npcName).toLowerCase();
+                        if (lower.includes('trinh sát') || lower.includes('trinh sat') || lower.includes('mã binh quan') || lower.includes('ma binh quan')) {
+                            trinhSatId = npcId;
+                            cache.trinhSatId = npcId;
+                            sendLog(`[${deviceId}] [Staging] Da quet thay ID Trinh Sat tu vung nho: ${trinhSatId} (${npcName})`, 'success');
+                            break; // Stop after finding one
+                        }
+                    }
+                }
+            } catch (e) {
+                sendLog(`[${deviceId}] [Staging] Loi khi quet RAM tim NPC: ${e.message}`, 'warn');
+            }
+        }
 
         // (Đoạn tốc biến cũ đã được chuyển xuống dưới logic Buff theo yêu cầu mới)
 

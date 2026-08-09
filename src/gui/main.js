@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const sessionManager = require('./session-manager');
