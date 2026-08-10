@@ -769,3 +769,128 @@ if (btnAdbReset) {
     }
   });
 }
+
+// ---------------------------
+// DÃ TẨU & NGŨ HÀNH (Tab 4, 5) LOGIC
+// ---------------------------
+const btnScanDatau = document.getElementById('btn-scan-datau');
+const btnScan5Hanh = document.getElementById('btn-scan-5hanh');
+
+if (btnScanDatau) {
+  btnScanDatau.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      alert('Vui lòng chọn 1 tài khoản (acc) ở bảng trên trước khi quét Dã Tẩu!');
+      return;
+    }
+    const devId = currentSelectedDeviceId;
+    
+    const loadingText = document.getElementById('datau-loading-text');
+    if (loadingText) {
+      loadingText.innerText = 'Đang quét các sạp hàng xung quanh... Vui lòng chờ...';
+      loadingText.style.color = 'blue';
+    }
+    btnScanDatau.disabled = true;
+    
+    // Đăng ký nghe progress
+    window.api.onScanDatauProgress((msg) => {
+      if (loadingText) loadingText.innerText = msg;
+    });
+    
+    try {
+      const limitInput = document.getElementById('num-shops-to-scan');
+      const limit = limitInput ? (parseInt(limitInput.value, 10) || 50) : 50;
+      
+      const kwInput = document.getElementById('txt-datau-keyword');
+      const keyword = kwInput ? kwInput.value.trim() : '';
+
+      // Scan with optional keyword
+      const res = await window.api.scanDatau(devId, keyword, { series: -1, level: -1, itemType: -1, gender: 'all', limit });
+      if (res && res.ok) {
+        if (loadingText) {
+          loadingText.innerText = `Quét xong! Tìm thấy ${res.items ? res.items.length : 0} vật phẩm. Mở cửa sổ chi tiết...`;
+          loadingText.style.color = 'green';
+        }
+        
+        if (res.items && res.items.length > 0) {
+          // Send to main process to open the global shop detail window
+          window.api.showAllShopsDetail({
+            devId: devId,
+            items: res.items,
+            mapId: devicesMap.has(devId) && devicesMap.get(devId).info ? devicesMap.get(devId).info.mapId : 0
+          });
+        } else {
+          if (loadingText) {
+            loadingText.innerText = 'Không tìm thấy vật phẩm nào xung quanh.';
+            loadingText.style.color = '#888';
+          }
+        }
+      } else {
+        if (loadingText) {
+          loadingText.innerText = `Lỗi quét: ${res ? res.error : 'Unknown'}`;
+          loadingText.style.color = 'red';
+        }
+      }
+    } catch(e) {
+      if (loadingText) {
+        loadingText.innerText = `Ngoại lệ: ${e.message}`;
+        loadingText.style.color = 'red';
+      }
+    }
+    btnScanDatau.disabled = false;
+  });
+}
+
+if (btnScan5Hanh) {
+  btnScan5Hanh.addEventListener('click', async () => {
+    if (!currentSelectedDeviceId) {
+      alert('Vui lòng chọn 1 tài khoản (acc) ở bảng trên trước khi phối đồ Ngũ Hành!');
+      return;
+    }
+    const devId = currentSelectedDeviceId;
+    
+    const loadingText = document.getElementById('5hanh-loading-text');
+    if (loadingText) {
+      loadingText.innerText = 'Đang quét sạp hàng xung quanh để lọc Ngũ Hành... Vui lòng chờ...';
+      loadingText.style.color = 'blue';
+    }
+    btnScan5Hanh.disabled = true;
+    
+    window.api.onScanDatauProgress((msg) => {
+      if (loadingText) loadingText.innerText = msg;
+    });
+    
+    try {
+      const res = await window.api.scanDatau(devId, '', { series: -1, level: -1, itemType: -1, gender: 'all', limit: 100 });
+      if (res && res.ok) {
+        if (loadingText) {
+          loadingText.innerText = `Quét xong! Lọc được ${res.items ? res.items.length : 0} trang bị. Đang hiển thị bảng Ngũ Hành...`;
+          loadingText.style.color = 'green';
+        }
+        
+        if (res.items && res.items.length > 0) {
+          window.api.show5HanhDetail({
+            devId: devId,
+            items: res.items,
+            mapId: devicesMap.has(devId) && devicesMap.get(devId).info ? devicesMap.get(devId).info.mapId : 0
+          });
+        } else {
+          if (loadingText) {
+            loadingText.innerText = 'Không tìm thấy trang bị nào xung quanh.';
+            loadingText.style.color = '#888';
+          }
+        }
+      } else {
+        if (loadingText) {
+          loadingText.innerText = `Lỗi quét: ${res ? res.error : 'Unknown'}`;
+          loadingText.style.color = 'red';
+        }
+      }
+    } catch(e) {
+      if (loadingText) {
+        loadingText.innerText = `Ngoại lệ: ${e.message}`;
+        loadingText.style.color = 'red';
+      }
+    }
+    btnScan5Hanh.disabled = false;
+  });
+}

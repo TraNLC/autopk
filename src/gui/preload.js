@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('api', {
   getShopDetails: (mapId, sellerId) => ipcRenderer.invoke('get-shop-details', mapId, sellerId),
   showShopDetail: (shopData) => ipcRenderer.send('show-shop-detail', shopData),
   showAllShopsDetail: (data) => ipcRenderer.send('show-all-shops-detail', data),
+  scanDatau: (deviceId, keyword, filters) => ipcRenderer.invoke('scan-datau', deviceId, keyword, filters),
+  buyDatau: (deviceId, sellerId, itemIdx, price) => ipcRenderer.invoke('buy-datau', deviceId, sellerId, itemIdx, price),
+  show5HanhDetail: (data) => ipcRenderer.send('show-5hanh-detail', data),
   testCastSkill: (deviceId) => ipcRenderer.invoke('test-cast-skill', deviceId),
   testBuff: (deviceId) => ipcRenderer.invoke('test-buff', deviceId),
   testNpcFindByName: (deviceId, npcName) => ipcRenderer.invoke('test-npc-find-by-name', deviceId, npcName),
@@ -24,6 +27,10 @@ contextBridge.exposeInMainWorld('api', {
   // Optimization
   setGameSpeed: (deviceId, speed) => ipcRenderer.invoke('set-game-speed', deviceId, speed),
   optimizeAdbResolution: (isLow) => ipcRenderer.invoke('optimize-adb-resolution', isLow),
+  onScanDatauProgress: (callback) => {
+    ipcRenderer.removeAllListeners('datau-progress');
+    ipcRenderer.on('datau-progress', (event, msg) => callback(msg));
+  },
   
   // Event listeners
   onTabLog: (callback) => {

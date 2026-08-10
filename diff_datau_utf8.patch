@@ -1,0 +1,1496 @@
+﻿commit 0daf4a911084a60a94d0c05a0f92d0c75922415c
+Author: Admin <admin@localhost>
+Date:   Fri Jul 24 01:23:46 2026 +0700
+
+    fix code, remove tab da tau, 5hanh, tai khoan, fix bug connect adb
+
+diff --git a/src/features/datau.js b/src/features/datau.js
+deleted file mode 100644
+index 0b35d72..0000000
+--- a/src/features/datau.js
++++ /dev/null
+@@ -1,221 +0,0 @@
+-const fs = require('fs');
+-const path = require('path');
+-const { lookupByGdpl, lookupByGdplInfo, getMagicInfo } = require('../item-db');
+-
+-function removeAccents(str) {
+-  if (!str) return '';
+-  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+-}
+-
+-const shopCache = {}; // mapId -> { sellerId -> [items] }
+-
+-function formatMoney(amount) {
+-  if (amount >= 10000) {
+-    const van = Math.floor(amount / 10000);
+-    const luong = amount % 10000;
+-    if (luong === 0) return `${van} vß║ín`;
+-    return `${van} vß║ín ${luong}`;
+-  }
+-  return String(amount);
+-}
+-
+-/**
+- * Scan nearby player stalls for items matching the query.
+- * @param {string} deviceId 
+- * @param {FridaSession} session 
+- * @param {string} itemNameQuery 
+- * @param {function} sendLog 
+- */
+-async function scanDatauItems(deviceId, session, mapId, itemNameQuery, filters, event, sendLog) {
+-  if (!session) return { ok: false, error: 'Chua ket noi thiet bi.' };
+-  
+-  sendLog(`[${deviceId}] Bat dau quet cac sap hang xung quanh...`, 'info');
+-  
+-  try {
+-    const queryNormalized = itemNameQuery ? removeAccents(itemNameQuery) : '';
+-    const res = await session.callRpc('getNearbyShops');
+-    if (!res || !res.ok) {
+-      sendLog(`[${deviceId}] Loi khong lay duoc danh sach sap: ${res ? res.error : 'Unknown'}`, 'error');
+-      return { ok: false, error: res ? res.error : 'Unknown' };
+-    }
+-    
+-    const shops = res.shops || [];
+-    sendLog(`[${deviceId}] Tim thay ${shops.length} sap xung quanh.`, 'info');
+-    
+-    let foundItems = [];
+-    if (!shopCache[mapId]) shopCache[mapId] = {};
+-    
+-    const limit = filters.limit > 0 ? filters.limit : 9999;
+-    const maxShops = Math.min(shops.length, limit);
+-    
+-    if (limit < shops.length) {
+-       sendLog(`[${deviceId}] Gioi han quet: Chon ${maxShops} sap gan nhat trong ${shops.length} sap.`, 'info');
+-    }
+-    
+-    for (let i = 0; i < maxShops; i++) {
+-      const shop = shops[i];
+-      sendLog(`[${deviceId}] Dang mo sap "${shop.name}" (${i+1}/${maxShops})...`, 'info');
+-      
+-      if (event) {
+-        event.sender.send('datau-progress', `Dang quet sap cua "${shop.name}" (${i+1}/${maxShops})...`);
+-      }
+-      
+-      const itemsRes = await session.callRpc('getShopItems', 0, shop.name, shop.namePtrStr, shop.cidPtrStr, shop.controllerPtrStr);
+-      
+-      if (itemsRes && itemsRes.ok && itemsRes.items) {
+-        const fullShopItems = [];
+-        for (const item of itemsRes.items) {
+-          const detail = Math.floor(item.detailAndGenre / 10000);
+-          const genre = item.detailAndGenre % 10000;
+-          const particular = Math.floor(item.particularAndLevel / 10000);
+-          const level = item.particularAndLevel % 10000;
+-          const series = item.stackAndSeries % 10000;
+-          
+-          let finalName = item.name;
+-          let reqLevel = level;
+-          let reqGender = -1;
+-          let reqStr = 0;
+-          let reqDex = 0;
+-          const info = lookupByGdplInfo(genre, detail, particular, level);
+-          if (info) {
+-            finalName = info.name;
+-            reqLevel = info.reqLevel > 0 ? info.reqLevel : level;
+-            reqGender = info.gender;
+-            reqStr = info.reqStr || 0;
+-            reqDex = info.reqDex || 0;
+-          }
+-          
+-          const itemNameNorm = removeAccents(finalName);
+-          let magicDescs = [];
+-          if (item.magics && item.magics.length > 0) {
+-            for (let m = 0; m < item.magics.length; m++) {
+-              const magicInt = item.magics[m];
+-              if (magicInt !== 0) {
+-                const magicId = Math.abs(magicInt % 1000);
+-                const magicVal = Math.trunc(magicInt / 1000);
+-                const minfo = getMagicInfo(magicId);
+-                let displayVal = magicVal > 0 ? `+${magicVal}` : `${magicVal}`;
+-                let magicName = minfo.desc || minfo.name;
+-                
+-                // Match various placeholders like {value}, {-.value.1}, {+.value.1}
+-                if (magicName.includes('{value}')) {
+-                  magicDescs.push(magicName.replace('{value}', displayVal));
+-                } else if (magicName.match(/\{\-\.value\.\d+\}/)) {
+-                  // If it's a negative placeholder, we display a minus sign
+-                  const formattedVal = `-${Math.abs(magicVal)}`;
+-                  magicDescs.push(magicName.replace(/\{\-\.value\.\d+\}/g, formattedVal));
+-                } else if (magicName.match(/\{\+?\.value\.\d+\}/)) {
+-                  // If it's a positive placeholder, we display a plus sign
+-                  const formattedVal = `+${Math.abs(magicVal)}`;
+-                  magicDescs.push(magicName.replace(/\{\+?\.value\.\d+\}/g, formattedVal));
+-                } else {
+-                  magicDescs.push(`${magicName}: ${displayVal}`);
+-                }
+-              }
+-            }
+-          }
+-          
+-          const itemData = {
+-            idx: item.idx,
+-            shopName: shop.name,
+-            sellerId: shop.cid,
+-            name: itemNameNorm,
+-            realName: finalName || itemNameNorm,
+-            genre: genre,
+-            series: series,
+-            level: level,
+-            reqLevel: reqLevel,
+-            reqStr: reqStr,
+-            reqDex: reqDex,
+-            gender: reqGender !== undefined ? reqGender : -1,
+-            money: item.money,
+-            knb: item.knb,
+-            magics: magicDescs
+-          };
+-          fullShopItems.push(itemData);
+-          
+-          let isMatch = true;
+-          if (queryNormalized && !itemNameNorm.includes(queryNormalized)) isMatch = false;
+-          if (filters.gender === 'nam' && !itemNameNorm.includes('(nam)')) isMatch = false;
+-          if (filters.gender === 'nu' && !itemNameNorm.includes('(nß╗»)')) isMatch = false;
+-          if (filters.series !== -1 && series !== filters.series) isMatch = false;
+-          if (filters.level !== -1 && level !== filters.level) isMatch = false;
+-          if (filters.itemType !== -1) {
+-            if (filters.itemType === 0 && genre !== 0 && genre !== 1) isMatch = false;
+-            else if (filters.itemType === 1 && (genre !== 2 || detail !== 0)) isMatch = false;
+-            else if (filters.itemType === 2 && (genre !== 2 || detail !== 1)) isMatch = false;
+-            else if (filters.itemType === 3 && (genre !== 2 || detail !== 2)) isMatch = false;
+-            else if (filters.itemType === 4 && (genre !== 2 || detail !== 3)) isMatch = false;
+-            else if (filters.itemType === 5 && (genre !== 2 || detail !== 4)) isMatch = false;
+-            else if (filters.itemType === 6 && (genre !== 3 || detail !== 0)) isMatch = false;
+-            else if (filters.itemType === 7 && (genre !== 3 || detail !== 1)) isMatch = false;
+-            else if (filters.itemType === 8 && (genre !== 3 || detail !== 2)) isMatch = false;
+-          }
+-          
+-          if (isMatch) foundItems.push(itemData);
+-        }
+-        shopCache[mapId][shop.cid] = {
+-          shopName: shop.name,
+-          location: `${shop.x}, ${shop.y}`,
+-          items: fullShopItems
+-        };
+-      } else {
+-        sendLog(`[${deviceId}] Bo qua sap "${shop.name}": Khong doc duoc vat pham.`, 'warn');
+-      }
+-      
+-      await session.callRpc('closeDialogPopups').catch(() => {});
+-      await new Promise(r => setTimeout(r, 600));
+-    }
+-    
+-    // Save cache to disk
+-    try {
+-      const today = new Date().toISOString().split('T')[0];
+-      const cachePath = path.join(__dirname, '..', '..', 'data', 'output', `shops_cache_${mapId}_${today}.json`);
+-      fs.writeFileSync(cachePath, JSON.stringify(shopCache[mapId], null, 2), 'utf-8');
+-    } catch(e) {
+-      console.error('Failed to save shop cache:', e);
+-    }
+-    
+-    sendLog(`[${deviceId}] Quet hoan tat. Tim thay ${foundItems.length} vat pham phu hop.`, 'success');
+-    return { ok: true, items: foundItems };
+-    
+-  } catch (err) {
+-    sendLog(`[${deviceId}] Loi ngoai le khi quet Da Tau: ${err.message}`, 'error');
+-    return { ok: false, error: err.message };
+-  }
+-}
+-
+-function getShopDetails(mapId, sellerId) {
+-  if (shopCache[mapId] && shopCache[mapId][sellerId]) {
+-    return shopCache[mapId][sellerId];
+-  }
+-  return null;
+-}
+-
+-async function buyDatauItem(deviceId, session, sellerId, itemIdx, price, sendLog) {
+-  if (!session) return { ok: false, error: 'Chua ket noi thiet bi.' };
+-  
+-  sendLog(`[${deviceId}] Dang gui yeu cau mua vat pham (ID: ${itemIdx}, Gia: ${price}) tu sap (Chu: ${sellerId})...`, 'info');
+-  
+-  try {
+-    // Send buy packet using Opcode 206
+-    const res = await session.callRpc('buyOtherStallItem', sellerId, itemIdx, price || 0);
+-    
+-    if (res && res.ok) {
+-      sendLog(`[${deviceId}] Da gui lenh mua hang thanh cong. Vui long kiem tra hanh trang!`, 'success');
+-      return { ok: true };
+-    } else {
+-      sendLog(`[${deviceId}] Loi mua do: ${res ? res.error : 'Unknown'}`, 'error');
+-      return { ok: false, error: res ? res.error : 'Unknown' };
+-    }
+-  } catch (err) {
+-    sendLog(`[${deviceId}] Loi ngoai le khi mua do: ${err.message}`, 'error');
+-    return { ok: false, error: err.message };
+-  }
+-}
+-
+-module.exports = {
+-  scanDatauItems,
+-  buyDatauItem,
+-  getShopDetails
+-};
+diff --git a/src/gui/ipc-register.js b/src/gui/ipc-register.js
+index 1d3cdc3..6708dba 100644
+--- a/src/gui/ipc-register.js
++++ b/src/gui/ipc-register.js
+@@ -4,7 +4,6 @@ const { exec } = require('child_process');
+ const adbHelper = require('./adb-helper');
+ const sessionManager = require('./session-manager');
+ const config = require('../../config');
+-const { scanDatauItems, buyDatauItem, getShopDetails } = require('../features/datau');
+ 
+ const ADB = config.ADB_PATH || 'C:\\platform-tools\\adb.exe';
+ 
+@@ -172,27 +171,7 @@ function registerHandlers(win) {
+         }
+     });
+ 
+-    ipcMain.handle('perform-auto-login', async (event, deviceId, username, password) => {
+-        traceLog('perform-auto-login', deviceId, `Yeu cau auto login tick voi user: ${username}`);
+-        const state = sessionManager.sessions.get(deviceId);
+-        if (!state || !state.session) return { state: 'ERROR', error: 'May chua ket noi' };
+-        try {
+-            return await state.session.callRpc('autoLoginTick', username, password);
+-        } catch(e) {
+-            return { state: 'ERROR', error: e.message };
+-        }
+-    });
+ 
+-    const { performFullAutoLaunch } = require('../features/full-auto-launch');
+-    ipcMain.handle('full-auto-launch', async (event, mumuPath, username, password, port, index) => {
+-        traceLog('full-auto-launch', `127.0.0.1:${port}`, `Yeu cau Full Auto voi port ${port}, index ${index}, user ${username}`);
+-        return await performFullAutoLaunch(mumuPath, username, password, port, index, (msg, type) => {
+-            // Forward logs to frontend
+-            if (globalThis._mainWindow && !globalThis._mainWindow.isDestroyed()) {
+-                globalThis._mainWindow.webContents.send('tab-log', { msg, type });
+-            }
+-        });
+-    });
+ 
+     // 5. NPC test v├á t╞░╞íng t├íc
+     ipcMain.handle('test-npc-find-by-name', async (event, deviceId, npcName) => {
+@@ -249,31 +228,7 @@ function registerHandlers(win) {
+         }
+     });
+ 
+-    // 6. D├ú Tß║⌐u qu├⌐t sß║íp & mua h├áng
+-    ipcMain.handle('scan-datau', async (event, deviceId, keyword, filters) => {
+-        traceLog('scan-datau', deviceId, `Quet do Da Tau voi tu khoa: "${keyword}"`);
+-        const state = sessionManager.sessions.get(deviceId);
+-        if (!state || !state.session) {
+-            sendLog(`[${deviceId}] Loi: May chua ket noi.`, 'error');
+-            return { ok: false, error: 'May chua ket noi Frida.' };
+-        }
+-        const mapId = state.info ? state.info.mapId : 0;
+-        return await scanDatauItems(deviceId, state.session, mapId, keyword, filters, event, sendLog);
+-    });
+-
+-    ipcMain.handle('buy-datau', async (event, deviceId, sellerId, itemIdx, price) => {
+-        traceLog('buy-datau', deviceId, `Mua do Da Tau tu seller: ${sellerId}, index: ${itemIdx}, gia: ${price}`);
+-        const state = sessionManager.sessions.get(deviceId);
+-        if (!state || !state.session) {
+-            return { ok: false, error: 'May chua ket noi Frida.' };
+-        }
+-        return await buyDatauItem(deviceId, state.session, sellerId, itemIdx, price, sendLog);
+-    });
+ 
+-    ipcMain.handle('get-shop-details', (event, mapId, sellerId) => {
+-        traceLog('get-shop-details', null, `Lay chi tiet cua sap map: ${mapId}, seller: ${sellerId}`);
+-        return getShopDetails(mapId, sellerId);
+-    });
+ 
+     // 7. Bß║¡t/Tß║»t Tß╗æng Kim to├án cß╗Ñc
+     ipcMain.handle('toggle-auto-tk', (event, enable, tkConfigs) => {
+@@ -318,23 +273,7 @@ function registerHandlers(win) {
+         });
+     });
+ 
+-    ipcMain.on('show-5hanh-detail', (event, globalData) => {
+-        traceLog('show-5hanh-detail', null, `Hien thi cua so Ngu Hanh.`);
+-        const detailWin = new BrowserWindow({
+-            width: 900,
+-            height: 750,
+-            title: `Phß╗æi ─Éß╗ô Ng┼⌐ H├ánh`,
+-            webPreferences: {
+-                nodeIntegration: true,
+-                contextIsolation: false
+-            }
+-        });
+-        detailWin.setMenuBarVisibility(false);
+-        detailWin.loadFile(path.join(__dirname, 'renderer', '5hanh-detail.html'));
+-        detailWin.webContents.on('did-finish-load', () => {
+-            detailWin.webContents.send('load-5hanh-data', globalData);
+-        });
+-    });
++
+ }
+ 
+ module.exports = {
+diff --git a/src/gui/preload.js b/src/gui/preload.js
+index a7a87fe..2de99fd 100644
+--- a/src/gui/preload.js
++++ b/src/gui/preload.js
+@@ -4,12 +4,9 @@ contextBridge.exposeInMainWorld('api', {
+   scanDevices: () => ipcRenderer.invoke('scan-devices'),
+   toggleDevice: (deviceId, connect) => ipcRenderer.invoke('toggle-device', deviceId, connect),
+   toggleAutoTK: (enable, side, lacs) => ipcRenderer.invoke('toggle-auto-tk', enable, side, lacs),
+-  scanDatau: (deviceId, keyword, filters) => ipcRenderer.invoke('scan-datau', deviceId, keyword, filters),
+-  buyDatau: (deviceId, sellerId, itemIdx, price) => ipcRenderer.invoke('buy-datau', deviceId, sellerId, itemIdx, price),
+   getShopDetails: (mapId, sellerId) => ipcRenderer.invoke('get-shop-details', mapId, sellerId),
+   showShopDetail: (shopData) => ipcRenderer.send('show-shop-detail', shopData),
+   showAllShopsDetail: (data) => ipcRenderer.send('show-all-shops-detail', data),
+-  show5HanhDetail: (data) => ipcRenderer.send('show-5hanh-detail', data),
+   testCastSkill: (deviceId) => ipcRenderer.invoke('test-cast-skill', deviceId),
+   testBuff: (deviceId) => ipcRenderer.invoke('test-buff', deviceId),
+   testNpcFindByName: (deviceId, npcName) => ipcRenderer.invoke('test-npc-find-by-name', deviceId, npcName),
+@@ -18,9 +15,6 @@ contextBridge.exposeInMainWorld('api', {
+   npcInteract: (deviceId, npcId) => ipcRenderer.invoke('npc-interact', deviceId, npcId),
+   npcSelectOption: (deviceId, index) => ipcRenderer.invoke('npc-select-option', deviceId, index),
+   collectPoints: (deviceId) => ipcRenderer.invoke('collect-points', deviceId),
+-  performAutoLogin: (deviceId, username, password) => ipcRenderer.invoke('perform-auto-login', deviceId, username, password),
+-  performFullAutoLaunch: (mumuPath, username, password, port, index) => ipcRenderer.invoke('full-auto-launch', mumuPath, username, password, port, index),
+-  onScanDatauProgress: (callback) => ipcRenderer.on('datau-progress', (event, msg) => callback(msg)),
+   
+   // Event listeners
+   onTabLog: (callback) => {
+diff --git a/src/gui/renderer/app.js b/src/gui/renderer/app.js
+index cadca72..8eb47eb 100644
+--- a/src/gui/renderer/app.js
++++ b/src/gui/renderer/app.js
+@@ -228,225 +228,6 @@ function renderTable() {
+     const tdScore = document.createElement('td');
+     tdScore.innerText = (dev.info && dev.info.tkScore !== undefined) ? dev.info.tkScore : '';
+ 
+-    // Status
+-    const tdStatus = document.createElement('td');
+-    const statusSpan = document.createElement('span');
+-    statusSpan.className = dev.connected ? 'text-blue' : '';
+-    if (dev.info && dev.info.error) {
+-      statusSpan.style.color = 'red';
+-      statusSpan.innerText = 'Lß╗ùi';
+-    } else if (dev.info && dev.info.mapId) {
+-      let mapName = dev.info.mapName ? dev.info.mapName : `Bß║ún ─æß╗ô (${dev.info.mapId})`;
+-      const BATTLE_MAPS = [44, 375, 376, 377, 580, 581, 868, 869, 870, 879, 880, 881, 883, 884, 885, 902, 903, 904, 988];
+-      if (BATTLE_MAPS.includes(dev.info.mapId)) {
+-        let isMax = false;
+-        if (dev.tkConfig && dev.tkConfig.stopMaxScore === true && dev.info.tkScore !== undefined && dev.info.tkScore >= 30000) {
+-          isMax = true;
+-        }
+-
+-        if (isMax) {
+-          mapName = '─É├ú ─æß║ít Max ─Éiß╗âm';
+-          statusSpan.style.color = '#27ae60'; // green color for success
+-        } else {
+-          mapName = '─Éang ─æ├ính TK';
+-          statusSpan.style.color = '#e67e22'; // distinct color for battle
+-        }
+-        statusSpan.style.fontWeight = 'bold';
+-      }
+-      statusSpan.innerText = mapName;
+-    } else {
+-      statusSpan.innerText = dev.connected ? '─Éang ─æß╗ìc...' : 'Chß╗¥';
+-    }
+-    tdStatus.appendChild(statusSpan);
+-    
+-    tr.appendChild(tdToggle);
+-    tr.appendChild(tdName);
+-    tr.appendChild(tdLevel);
+-    tr.appendChild(tdSect);
+-    tr.appendChild(tdScore);
+-    tr.appendChild(tdStatus);
+-
+-    // Right-click listener for context menu
+-    tr.addEventListener('contextmenu', (e) => {
+-      e.preventDefault();
+-      showContextMenu(e.clientX, e.clientY, id, dev);
+-    });
+-
+-    deviceTableBody.appendChild(tr);
+-  }
+-}
+-
+-let activeContextMenu = null;
+-
+-function showContextMenu(x, y, id, dev) {
+-  if (activeContextMenu) {
+-    activeContextMenu.remove();
+-    activeContextMenu = null;
+-  }
+-
+-  const menu = document.createElement('div');
+-  menu.className = 'custom-context-menu';
+-  menu.style.position = 'absolute';
+-  menu.style.left = `${x}px`;
+-  menu.style.top = `${y}px`;
+-  menu.style.zIndex = '99999';
+-  menu.style.background = '#2c3e50';
+-  menu.style.border = '1px solid #34495e';
+-  menu.style.borderRadius = '6px';
+-  menu.style.boxShadow = '0 4px 15px rgba(0,0,0,0.5)';
+-  menu.style.padding = '5px 0';
+-  menu.style.minWidth = '150px';
+-
+-  const item = document.createElement('div');
+-  item.className = 'context-menu-item';
+-  item.style.padding = '8px 15px';
+-  item.style.cursor = 'pointer';
+-  item.style.color = '#ecf0f1';
+-  item.style.display = 'flex';
+-  item.style.alignItems = 'center';
+-  item.style.justifyContent = 'space-between';
+-  item.style.fontSize = '13px';
+-  item.style.transition = 'background 0.2s';
+-  
+-  item.addEventListener('mouseenter', () => {
+-    item.style.background = '#2980b9';
+-  });
+-  item.addEventListener('mouseleave', () => {
+-    item.style.background = 'transparent';
+-  });
+-
+-  const isFightTop1 = !!(dev.tkConfig && dev.tkConfig.fightTop1);
+-  item.innerHTML = `<span>─É├ính Top 1</span> <input type="checkbox" ${isFightTop1 ? 'checked' : ''} style="margin-left: 10px; cursor: pointer;">`;
+-
+-  item.addEventListener('click', () => {
+-    if (!dev.tkConfig) {
+-      dev.tkConfig = { side: 'auto', lacs: ['45', '51', '50'], autoBaoDanh: true };
+-    }
+-    dev.tkConfig.fightTop1 = !isFightTop1;
+-    updateGlobalTK();
+-    renderTable();
+-    menu.remove();
+-    activeContextMenu = null;
+-  });
+-
+-  menu.appendChild(item);
+-  document.body.appendChild(menu);
+-  activeContextMenu = menu;
+-}
+-
+-// Close context menu on general click
+-document.addEventListener('click', (e) => {
+-  if (activeContextMenu && !activeContextMenu.contains(e.target)) {
+-    activeContextMenu.remove();
+-    activeContextMenu = null;
+-  }
+-});
+-
+-// Select Device Logic
+-const lblSelectedAccGlobals = document.querySelectorAll('.lbl-selected-acc-global');
+-
+-function selectDevice(id) {
+-  currentSelectedDeviceId = id;
+-  renderTable(); // Update selection styling
+-  
+-  const name = (id && devicesMap.has(id)) 
+-    ? ((devicesMap.get(id).info && devicesMap.get(id).info.name) ? devicesMap.get(id).info.name : id) 
+-    : 'Chua chon';
+-  
+-  lblSelectedAcc.innerText = name;
+-  lblSelectedAccGlobals.forEach(el => {
+-    el.innerText = name;
+-  });
+-  
+-  // Kß║┐t xuß║Ñt lß║íi logs cß╗ºa thiß║┐t bß╗ï ─æ╞░ß╗úc chß╗ìn
+-  renderLogsForSelectedDevice(id);
+-  
+-  if (!id || !devicesMap.has(id)) {
+-    selSide.value = 'auto';
+-    chkLac1.checked = true;
+-    chkLac2.checked = true;
+-    chkLac3.checked = true;
+-    const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+-    if (chkBaoDanh) chkBaoDanh.checked = true;
+-    return;
+-  }
+-  
+-  const dev = devicesMap.get(id);
+-  
+-  // Load config
+-  const cfg = dev.tkConfig || { side: 'auto', lacs: [], autoBaoDanh: true };
+-  selSide.value = cfg.side || 'auto';
+-  chkLac1.checked = cfg.lacs ? cfg.lacs.includes('45') : false;
+-  chkLac2.checked = cfg.lacs ? cfg.lacs.includes('51') : false;
+-  chkLac3.checked = cfg.lacs ? cfg.lacs.includes('50') : false;
+-  
+-  const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+-  if (chkBaoDanh) {
+-    chkBaoDanh.checked = cfg.autoBaoDanh !== false;
+-  }
+-
+-  const chkStopMaxScore = document.getElementById('chk-stop-max-score');
+-  if (chkStopMaxScore) {
+-    chkStopMaxScore.checked = !!cfg.stopMaxScore;
+-  }
+-}
+-
+-// Save Acc Settings
+-btnSaveAcc.addEventListener('click', () => {
+-  if (!currentSelectedDeviceId) return;
+-  const dev = devicesMap.get(currentSelectedDeviceId);
+-  if (!dev) return;
+-  
+-  dev.tkConfig = dev.tkConfig || {};
+-  dev.tkConfig.side = selSide.value;
+-  
+-  const chkBaoDanh = document.getElementById('chk-auto-baodanh');
+-  if (chkBaoDanh) {
+-    dev.tkConfig.autoBaoDanh = chkBaoDanh.checked;
+-  }
+-
+-  const chkStopMaxScore = document.getElementById('chk-stop-max-score');
+-  if (chkStopMaxScore) {
+-    dev.tkConfig.stopMaxScore = chkStopMaxScore.checked;
+-  }
+-  
+-  const lacs = [];
+-  if (chkLac1.checked) lacs.push('45');
+-  if (chkLac2.checked) lacs.push('51');
+-  if (chkLac3.checked) lacs.push('50');
+-  dev.tkConfig.lacs = lacs;
+-  
+-  updateGlobalTK();
+-  addLog(`[${currentSelectedDeviceId}] Da luu cau hinh nhan vat.`, 'success');
+-});
+-
+-// Collect Points (Gom Diem)
+-const btnCollectPoints = document.getElementById('btn-collect-points');
+-if (btnCollectPoints) {
+-  btnCollectPoints.addEventListener('click', async () => {
+-    if (!currentSelectedDeviceId) {
+-      addLog('Chua chon nhan vat de thuc hien gom diem.', 'error');
+-      return;
+-    }
+-    btnCollectPoints.disabled = true;
+-    const oldText = btnCollectPoints.innerText;
+-    btnCollectPoints.innerText = 'Dang Gom Diem...';
+-    try {
+-      const res = await window.api.collectPoints(currentSelectedDeviceId);
+-      if (res && res.ok) {
+-        addLog(`[${currentSelectedDeviceId}] Gom diem hoan tat!`, 'success');
+-      } else {
+-        addLog(`[${currentSelectedDeviceId}] Gom diem that bai: ${res ? res.error : 'Loi khong xac dinh'}`, 'error');
+-      }
+-    } catch(e) {
+-      addLog(`[${currentSelectedDeviceId}] Loi: ${e.message}`, 'error');
+-    } finally {
+-      btnCollectPoints.disabled = false;
+-      btnCollectPoints.innerText = oldText;
+-    }
+-  });
+-}
+-
+ 
+ 
+ // Auto TK Logic
+@@ -475,442 +256,5 @@ btnRestart.addEventListener('click', () => {
+ });
+ 
+ // Auto TK Logic
+-// ...
+-const btnScanDatau = document.getElementById('btn-scan-datau');
+-const txtDatauKeyword = document.getElementById('txt-datau-keyword');
+-const selDatauSeries = document.getElementById('sel-datau-series');
+-const txtDatauLevel = document.getElementById('txt-datau-level');
+-const selDatauType = document.getElementById('sel-datau-type');
+-const selDatauGender = document.getElementById('sel-datau-gender');
+-const datauResultsBody = document.getElementById('datau-results-body');
+-
+-const SERIES_ICONS = {
+-  0: 'V├┤', 1: '≡ƒƒí Kim', 2: '≡ƒƒó Mß╗Öc', 3: '≡ƒö╡ Thß╗ºy', 4: '≡ƒö┤ Hß╗Åa', 5: '≡ƒƒñ Thß╗ò'
+-};
+-
+-if (btnScanDatau) {
+-  btnScanDatau.addEventListener('click', async () => {
+-    const devId = getTestDeviceId();
+-    if (!devId) return;
+-    
+-    const loadingText = document.getElementById('datau-loading-text');
+-    if (loadingText) {
+-      loadingText.innerText = '─Éang qu├⌐t c├íc sß║íp h├áng xung quanh... Vui l├▓ng chß╗¥...';
+-      loadingText.style.color = 'blue';
+-    }
+-    btnScanDatau.disabled = true;
+-    
+-    // ─É─âng k├╜ nghe progress
+-    window.api.onScanDatauProgress((msg) => {
+-      if (loadingText) loadingText.innerText = msg;
+-    });
+-    
+-    try {
+-      const limitInput = document.getElementById('num-shops-to-scan');
+-      const limit = limitInput ? (parseInt(limitInput.value, 10) || 50) : 50;
+-      
+-      const kwInput = document.getElementById('txt-datau-keyword');
+-      const keyword = kwInput ? kwInput.value.trim() : '';
+-
+-      // Scan with optional keyword
+-      const res = await window.api.scanDatau(devId, keyword, { series: -1, level: -1, itemType: -1, gender: 'all', limit });
+-      if (res && res.ok) {
+-        if (loadingText) {
+-          loadingText.innerText = `Qu├⌐t xong! T├¼m thß║Ñy ${res.items ? res.items.length : 0} vß║¡t phß║⌐m. Mß╗ƒ cß╗¡a sß╗ò chi tiß║┐t...`;
+-          loadingText.style.color = 'green';
+-        }
+-        
+-        if (res.items && res.items.length > 0) {
+-          // Send to main process to open the global shop detail window
+-          window.api.showAllShopsDetail({
+-            devId: devId,
+-            items: res.items,
+-            mapId: devicesMap.has(devId) && devicesMap.get(devId).info ? devicesMap.get(devId).info.mapId : 0
+-          });
+-        } else {
+-          if (loadingText) {
+-            loadingText.innerText = 'Kh├┤ng t├¼m thß║Ñy vß║¡t phß║⌐m n├áo xung quanh.';
+-            loadingText.style.color = '#888';
+-          }
+-        }
+-      } else {
+-        if (loadingText) {
+-          loadingText.innerText = `Lß╗ùi qu├⌐t: ${res ? res.error : 'Unknown'}`;
+-          loadingText.style.color = 'red';
+-        }
+-      }
+-    } catch(e) {
+-      if (loadingText) {
+-        loadingText.innerText = `Ngoß║íi lß╗ç: ${e.message}`;
+-        loadingText.style.color = 'red';
+-      }
+-    }
+-    btnScanDatau.disabled = false;
+-  });
+-}
+-
+-const btnScan5Hanh = document.getElementById('btn-scan-5hanh');
+-if (btnScan5Hanh) {
+-  btnScan5Hanh.addEventListener('click', async () => {
+-    const devId = getTestDeviceId();
+-    if (!devId) return;
+-    
+-    const loadingText = document.getElementById('5hanh-loading-text');
+-    if (loadingText) {
+-      loadingText.innerText = '─Éang qu├⌐t sß║íp h├áng xung quanh ─æß╗â lß╗ìc Ng┼⌐ H├ánh... Vui l├▓ng chß╗¥...';
+-      loadingText.style.color = 'blue';
+-    }
+-    btnScan5Hanh.disabled = true;
+-    
+-    window.api.onScanDatauProgress((msg) => {
+-      if (loadingText) loadingText.innerText = msg;
+-    });
+-    
+-    try {
+-      const res = await window.api.scanDatau(devId, '', { series: -1, level: -1, itemType: -1, gender: 'all' });
+-      if (res && res.ok) {
+-        if (loadingText) {
+-          loadingText.innerText = `Qu├⌐t xong! Lß╗ìc ─æ╞░ß╗úc ${res.items ? res.items.length : 0} trang bß╗ï. ─Éang hiß╗ân thß╗ï bß║úng Ng┼⌐ H├ánh...`;
+-          loadingText.style.color = 'green';
+-        }
+-        
+-        if (res.items && res.items.length > 0) {
+-          window.api.show5HanhDetail({
+-            devId: devId,
+-            items: res.items,
+-            mapId: devicesMap.has(devId) && devicesMap.get(devId).info ? devicesMap.get(devId).info.mapId : 0
+-          });
+-        } else {
+-          if (loadingText) {
+-            loadingText.innerText = 'Kh├┤ng t├¼m thß║Ñy trang bß╗ï n├áo xung quanh.';
+-            loadingText.style.color = '#888';
+-          }
+-        }
+-      } else {
+-        if (loadingText) {
+-          loadingText.innerText = `Lß╗ùi qu├⌐t: ${res ? res.error : 'Unknown'}`;
+-          loadingText.style.color = 'red';
+-        }
+-      }
+-    } catch(e) {
+-      if (loadingText) {
+-        loadingText.innerText = `Ngoß║íi lß╗ç: ${e.message}`;
+-        loadingText.style.color = 'red';
+-      }
+-    }
+-    btnScan5Hanh.disabled = false;
+-  });
+-}
+-
+ // Init
+-scanDevices();
+-
+-// Helpers
+-function getTestDeviceId() {
+-  if (currentSelectedDeviceId) return currentSelectedDeviceId;
+-  for (const [id, dev] of devicesMap.entries()) {
+-    if (dev.connected) return id;
+-  }
+-  addLog('Ch╞░a chß╗ìn nh├ón vß║¡t hoß║╖c ch╞░a kß║┐t nß╗æi giß║ú lß║¡p n├áo.', 'error');
+-  return null;
+-}
+-
+-// --- Auto Login Tab Logic ---
+-const btnAutoLogin = document.getElementById('btn-auto-login');
+-const txtAccountsList = document.getElementById('txt-accounts-list');
+-
+-// Load danh sach tai khoan tu localStorage luc khoi dong
+-if (txtAccountsList) {
+-  const saved = localStorage.getItem('auto_login_accounts_list');
+-  if (saved) {
+-    txtAccountsList.value = saved;
+-  }
+-  txtAccountsList.addEventListener('input', () => {
+-    localStorage.setItem('auto_login_accounts_list', txtAccountsList.value);
+-  });
+-}
+-
+-if (btnAutoLogin) {
+-  btnAutoLogin.addEventListener('click', async () => {
+-    if (!currentSelectedDeviceId) {
+-      addLog('Chua chon nhan vat/thiet bi de dang nhap.', 'error');
+-      return;
+-    }
+-
+-    const rawList = txtAccountsList ? txtAccountsList.value : '';
+-    const lines = rawList.split('\n')
+-      .map(line => line.trim())
+-      .filter(line => line.length > 0);
+-
+-    if (lines.length === 0) {
+-      addLog('Vui long nhap hoac dan danh sach tai khoan.', 'error');
+-      return;
+-    }
+-
+-    // Tim index cua thiet bi hien tai trong danh sach thiet bi da quet duoc
+-    const deviceIds = Array.from(devicesMap.keys());
+-    const devIdx = deviceIds.indexOf(currentSelectedDeviceId);
+-
+-    if (devIdx === -1) {
+-      addLog('Loi: Thiet bi dang chon khong hop le.', 'error');
+-      return;
+-    }
+-
+-    if (devIdx >= lines.length) {
+-      addLog(`Loi: So luong tai khoan da nhap (${lines.length}) it hon chi muc thiet bi (${devIdx + 1}).`, 'error');
+-      return;
+-    }
+-
+-    // Doc tai khoan & mat khau o dong tuong ung
+-    const credentialsLine = lines[devIdx];
+-    const parts = credentialsLine.split(/\s+/);
+-    if (parts.length < 2) {
+-      addLog(`Loi: Dong thu ${devIdx + 1} khong dung dinh dang (TaiKhoan MatKhau).`, 'error');
+-      return;
+-    }
+-
+-    const username = parts[0];
+-    const password = parts[1];
+-
+-    addLog(`[${currentSelectedDeviceId}] Bß║»t ─æß║ºu Auto Login cho d├▓ng ${devIdx + 1}: ${username}...`, 'info');
+-    btnAutoLogin.disabled = true;
+-    
+-    const statusCard = document.getElementById('login-status-card');
+-    const lblStatus = document.getElementById('lbl-login-status');
+-    
+-    const updateStatusUI = (type, msg) => {
+-      if (!statusCard) return;
+-      statusCard.style.display = 'block';
+-      statusCard.className = `status-card ${type}`;
+-      lblStatus.innerText = msg;
+-    };
+-    
+-    updateStatusUI('', '─Éang khß╗ƒi tß║ío kß║┐t nß╗æi...');
+-
+-    let attempts = 0;
+-    const maxAttempts = 30; // Max ~75 seconds
+-    const interval = setInterval(async () => {
+-      try {
+-        attempts++;
+-        const res = await window.api.performAutoLogin(currentSelectedDeviceId, username, password);
+-        
+-        if (res && res.state) {
+-          if (res.state === 'ERROR') {
+-            addLog(`[${currentSelectedDeviceId}] Lß╗ùi AutoLogin: ${res.error}`, 'error');
+-            updateStatusUI('error', `Lß╗ùi: ${res.error}`);
+-            // If it's the first attempt and fails, maybe the device isn't connected
+-            if (attempts === 1 && res.error.includes('chua ket noi')) {
+-              alert(`Lß╗ùi: Thiß║┐t bß╗ï ch╞░a ─æ╞░ß╗úc kß║┐t nß╗æi!\nVui l├▓ng check v├áo ├┤ vu├┤ng b├¬n cß║ính t├¬n thiß║┐t bß╗ï ß╗ƒ danh s├ích ph├¡a tr├¬n ─æß╗â kß║┐t nß╗æi tr╞░ß╗¢c khi ─É─âng nhß║¡p.`);
+-            }
+-            clearInterval(interval);
+-            btnAutoLogin.disabled = false;
+-          } else if (res.state === 'STATE_IN_GAME') {
+-            addLog(`[${currentSelectedDeviceId}] Tuyß╗çt vß╗¥i! ─É├ú v├áo game an to├án.`, 'success');
+-            updateStatusUI('success', 'Tuyß╗çt vß╗¥i! ─É├ú v├áo game an to├án.');
+-            clearInterval(interval);
+-            btnAutoLogin.disabled = false;
+-          } else if (res.state !== 'STATE_UNKNOWN') {
+-            addLog(`[${currentSelectedDeviceId}] Tiß║┐n tr├¼nh: ${res.msg}`, 'system');
+-            updateStatusUI('', res.msg);
+-          } else {
+-            updateStatusUI('', res.msg || '─Éang chß╗¥ load m├án h├¼nh...');
+-          }
+-        } else {
+-          addLog(`[${currentSelectedDeviceId}] Phß║ún hß╗ôi kh├┤ng x├íc ─æß╗ïnh.`, 'warn');
+-          updateStatusUI('error', 'Phß║ún hß╗ôi kh├┤ng x├íc ─æß╗ïnh tß╗½ hß╗ç thß╗æng.');
+-        }
+-
+-        if (attempts >= maxAttempts) {
+-          addLog(`[${currentSelectedDeviceId}] Hß║┐t thß╗¥i gian chß╗¥ Auto Login. H├úy kiß╗âm tra lß║íi game.`, 'error');
+-          updateStatusUI('error', 'Hß║┐t thß╗¥i gian chß╗¥ Auto Login.');
+-          clearInterval(interval);
+-          btnAutoLogin.disabled = false;
+-        }
+-      } catch(e) {
+-        addLog(`[${currentSelectedDeviceId}] Ngoß║íi lß╗ç v├▓ng lß║╖p: ${e.message}`, 'error');
+-        updateStatusUI('error', `Ngoß║íi lß╗ç: ${e.message}`);
+-        clearInterval(interval);
+-        btnAutoLogin.disabled = false;
+-      }
+-    }, 2500); // Tick every 2.5 seconds
+-  });
+-}
+-
+-// ----------------------------------------------------
+-// Full Auto Launch (MuMu Player) - Interactive Table
+-// ----------------------------------------------------
+-const accTableBody = document.getElementById('acc-table-body');
+-const btnAddAccRow = document.getElementById('btn-add-acc-row');
+-const btnImportAcc = document.getElementById('btn-import-acc');
+-
+-function createAccRow(slot, user = '', pass = '') {
+-  const tr = document.createElement('tr');
+-  tr.innerHTML = `
+-    <td style="text-align: center; font-weight: bold;">${slot}</td>
+-    <td><input type="text" class="input-acc" value="${user}" placeholder="T├ái khoß║ún"></td>
+-    <td><input type="password" class="input-pass" value="${pass}" placeholder="Mß║¡t khß║⌐u"></td>
+-    <td style="text-align: center;">
+-      <button class="btn-start-acc" title="Start">Γû╢</button>
+-      <button class="btn-stop-acc" title="Stop">ΓÅ╣</button>
+-      <button class="btn-del-acc" title="Delete">Γ£û</button>
+-    </td>
+-  `;
+-  
+-  const btnDel = tr.querySelector('.btn-del-acc');
+-  btnDel.addEventListener('click', () => {
+-    tr.remove();
+-    updateSlots();
+-  });
+-
+-  const btnStart = tr.querySelector('.btn-start-acc');
+-  btnStart.addEventListener('click', () => handleStartRow(tr));
+-  
+-  // Stop button implementation depends on backend logic (e.g. killing the mumu instance)
+-  // For now, it will just alert or try to kill the ADB session.
+-  const btnStop = tr.querySelector('.btn-stop-acc');
+-  btnStop.addEventListener('click', () => {
+-      alert('─Éang cß║¡p nhß║¡t t├¡nh n─âng Stop Giß║ú Lß║¡p!');
+-  });
+-
+-  return tr;
+-}
+-
+-function updateSlots() {
+-  if (!accTableBody) return;
+-  const rows = accTableBody.querySelectorAll('tr');
+-  rows.forEach((row, idx) => {
+-    row.children[0].innerText = idx + 1;
+-  });
+-}
+-
+-if (accTableBody) {
+-  // Init one empty row
+-  accTableBody.appendChild(createAccRow(1));
+-
+-  if (btnAddAccRow) {
+-    btnAddAccRow.addEventListener('click', () => {
+-      const slot = accTableBody.children.length + 1;
+-      accTableBody.appendChild(createAccRow(slot));
+-    });
+-  }
+-
+-  if (btnImportAcc) {
+-    btnImportAcc.addEventListener('click', async () => {
+-      try {
+-        const text = await navigator.clipboard.readText();
+-        if (!text || text.trim() === '') {
+-          alert('Ch╞░a c├│ dß╗» liß╗çu copy trong bß╗Ö nhß╗¢. Vui l├▓ng copy 2 cß╗Öt (User Pass) tß╗½ Excel tr╞░ß╗¢c.');
+-          return;
+-        }
+-        
+-        const lines = text.split('\\n').map(l => l.trim()).filter(l => l !== '');
+-        // Clear existing empty rows if any
+-        if (accTableBody.children.length === 1) {
+-          const firstRow = accTableBody.children[0];
+-          const user = firstRow.querySelector('.input-acc').value;
+-          if (!user) firstRow.remove();
+-        }
+-
+-        let currentSlot = accTableBody.children.length + 1;
+-        lines.forEach(line => {
+-          const parts = line.split(/\\s+/);
+-          if (parts.length >= 2) {
+-            accTableBody.appendChild(createAccRow(currentSlot, parts[0], parts[1]));
+-            currentSlot++;
+-          }
+-        });
+-        alert(`─É├ú d├ín th├ánh c├┤ng ${lines.length} d├▓ng!`);
+-      } catch (err) {
+-        alert('Lß╗ùi ─æß╗ìc clipboard: ' + err.message);
+-      }
+-    });
+-  }
+-}
+-
+-async function handleStartRow(tr) {
+-  const user = tr.querySelector('.input-acc').value.trim();
+-  const pass = tr.querySelector('.input-pass').value.trim();
+-  const slot = parseInt(tr.children[0].innerText, 10);
+-  
+-  if (!user || !pass) {
+-    alert('Vui l├▓ng nhß║¡p ─æß╗º T├ái khoß║ún v├á Mß║¡t khß║⌐u.');
+-    return;
+-  }
+-
+-  const txtMumuPath = document.getElementById('txt-mumu-path');
+-  const mumuPath = txtMumuPath ? txtMumuPath.value.trim() : '';
+-  if (!mumuPath) {
+-    alert('Vui l├▓ng nhß║¡p ─æ╞░ß╗¥ng dß║½n MuMuManager.exe');
+-    return;
+-  }
+-
+-  const index = slot - 1;
+-  const port = 16384 + (index * 32);
+-  const btnStart = tr.querySelector('.btn-start-acc');
+-  
+-  btnStart.disabled = true;
+-  const statusCard = document.getElementById('login-status-card');
+-  const lblStatus = document.getElementById('lbl-login-status');
+-  
+-  const updateStatusUI = (type, msg) => {
+-    if (!statusCard) return;
+-    statusCard.style.display = 'block';
+-    statusCard.className = `status-card ${type}`;
+-    lblStatus.innerText = msg;
+-  };
+-  
+-  updateStatusUI('', `Khß╗ƒi ─æß╗Öng MuMu ${index} cho acc ${user}...`);
+-  
+-  try {
+-    const res = await window.api.performFullAutoLaunch(mumuPath, user, pass, port, index);
+-    if (res && res.ok) {
+-        updateStatusUI('success', `─É├ú mß╗ƒ game, bß║»t ─æß║ºu ─É─âng Nhß║¡p...`);
+-        let deviceId = res.deviceId; 
+-        
+-        let attempts = 0;
+-        const maxAttempts = 30;
+-        const interval = setInterval(async () => {
+-          try {
+-            attempts++;
+-            const resLogin = await window.api.performAutoLogin(deviceId, user, pass);
+-            
+-            if (resLogin && resLogin.state) {
+-              if (resLogin.state === 'ERROR') {
+-                updateStatusUI('error', `Lß╗ùi: ${resLogin.error}`);
+-                clearInterval(interval);
+-                btnStart.disabled = false;
+-              } else if (resLogin.state === 'STATE_IN_GAME') {
+-                updateStatusUI('success', 'Tuyß╗çt vß╗¥i! ─É├ú v├áo game an to├án.');
+-                clearInterval(interval);
+-                btnStart.disabled = false;
+-              } else if (resLogin.state !== 'STATE_UNKNOWN') {
+-                updateStatusUI('', resLogin.msg);
+-              } else {
+-                updateStatusUI('', resLogin.msg || '─Éang chß╗¥ m├án h├¼nh...');
+-              }
+-            } else {
+-              updateStatusUI('error', 'Phß║ún hß╗ôi lß║í.');
+-            }
+-
+-            if (attempts >= maxAttempts) {
+-              updateStatusUI('error', 'Hß║┐t thß╗¥i gian chß╗¥.');
+-              clearInterval(interval);
+-              btnStart.disabled = false;
+-            }
+-          } catch(e) {
+-            updateStatusUI('error', `Ngoß║íi lß╗ç: ${e.message}`);
+-            clearInterval(interval);
+-            btnStart.disabled = false;
+-          }
+-        }, 2500);
+-
+-    } else {
+-        updateStatusUI('error', res.error || 'Lß╗ùi kh├┤ng x├íc ─æß╗ïnh.');
+-        btnStart.disabled = false;
+-    }
+-  } catch(e) {
+-    updateStatusUI('error', e.message);
+-    btnStart.disabled = false;
+-  }
+-}
+-
++scanDevices();
+\ No newline at end of file
+diff --git a/src/gui/renderer/index.html b/src/gui/renderer/index.html
+index 00400d4..45238e9 100644
+--- a/src/gui/renderer/index.html
++++ b/src/gui/renderer/index.html
+@@ -35,9 +35,6 @@
+     <div class="tab-headers">
+       <button class="tab-btn active" data-tab="tab-tongkim">─ÉIß╗ÇU KHIß╗éN</button>
+       <button class="tab-btn" data-tab="tab-pk">TIß╗åN ├ìCH</button>
+-      <button class="tab-btn" data-tab="tab-datau">T├îM D├â Tß║¿U</button>
+-      <button class="tab-btn" data-tab="tab-5hanh">NG┼¿ H├ÇNH</button>
+-      <button class="tab-btn" data-tab="tab-login">T├ÇI KHOß║óN</button>
+     </div>
+ 
+     <div class="tab-content">
+@@ -118,110 +115,7 @@
+         </div>
+       </div>
+ 
+-      <!-- TAB: T├¼m D├ú Tß║⌐u -->
+-      <div id="tab-datau" class="tab-pane">
+-        <div class="tab-pane-header">
+-          <span class="tab-title">Qu├⌐t Sß║íp Ng╞░ß╗¥i Ch╞íi (T├¼m ─æß╗ô D├ú Tß║⌐u)</span>
+-        </div>
+-        <div style="margin-bottom: 10px; font-size: 11.5px; font-weight: bold;">Nhan vat quet: <strong
+-            class="lbl-selected-acc-global" style="color: #0078d7;">Chua chon</strong></div>
+-
+-        <div
+-          style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
+-          <p style="margin-bottom: 10px; color: #555;">Nhß║Ñn n├║t b├¬n d╞░ß╗¢i ─æß╗â qu├⌐t sß║íp h├áng xung quanh. Dß╗» liß╗çu sß║╜ hiß╗ân
+-            thß╗ï trong mß╗Öt cß╗¡a sß╗ò chi tiß║┐t mß╗¢i.</p>
+-          <div style="margin-bottom: 10px;">
+-            <label for="txt-datau-keyword" style="font-size: 13px;">Tß╗½ kh├│a vß║¡t phß║⌐m:</label>
+-            <input type="text" id="txt-datau-keyword" placeholder="V├¡ dß╗Ñ: Lam Bß║úo R╞░╞íng"
+-              style="width: 150px; padding: 3px; margin-right: 15px;">
+-
+-            <label for="num-shops-to-scan" style="font-size: 13px;">Sß╗æ sß║íp tß╗æi ─æa:</label>
+-            <input type="number" id="num-shops-to-scan" value="50" min="1" max="500"
+-              style="width: 60px; padding: 3px; margin-right: 10px;">
+-          </div>
+-          <button id="btn-scan-datau"
+-            style="padding: 8px 30px; font-weight: bold; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Qu├⌐t
+-            T├¼m Sß║íp</button>
+-        </div>
+-
+-        <div id="datau-status-container"
+-          style="height: 50px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
+-          <span id="datau-loading-text" style="color: #888; font-style: italic;">Sß║╡n s├áng qu├⌐t...</span>
+-        </div>
+       </div>
+-
+-      <!-- TAB: Phß╗æi ─Éß╗ô Ng┼⌐ H├ánh -->
+-      <div id="tab-5hanh" class="tab-pane">
+-        <div class="tab-pane-header">
+-          <span class="tab-title">X├óy Dß╗▒ng ─Éß╗ô Ng┼⌐ H├ánh (Lß╗ìc Trang Bß╗ï)</span>
+-        </div>
+-        <div style="margin-bottom: 10px; font-size: 11.5px; font-weight: bold;">Nhan vat quet: <strong
+-            class="lbl-selected-acc-global" style="color: #0078d7;">Chua chon</strong></div>
+-
+-        <div
+-          style="margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 5px;">
+-          <p style="margin-bottom: 10px; color: #555;">Qu├⌐t to├án bß╗Ö sß║íp h├áng ─æß╗â ph├ón loß║íi trang bß╗ï th├ánh bß╗Ö Ng┼⌐ H├ánh 5
+-            m├│n ho├án chß╗ënh.</p>
+-          <button id="btn-scan-5hanh"
+-            style="padding: 8px 30px; font-weight: bold; background-color: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Qu├⌐t
+-            & Phß╗æi ─Éß╗ô Ng┼⌐ H├ánh</button>
+-        </div>
+-
+-        <div id="5hanh-status-container"
+-          style="height: 50px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
+-          <span id="5hanh-loading-text" style="color: #888; font-style: italic;">Sß║╡n s├áng phß╗æi ─æß╗ô...</span>
+-        </div>
+-      </div>
+-
+-      <!-- TAB: T├ái Khoß║ún -->
+-      <div id="tab-login" class="tab-pane">
+-        <div class="tab-pane-header">
+-          <span class="tab-title">Cß║Ñu h├¼nh ─É─âng Nhß║¡p Tß╗▒ ─Éß╗Öng</span>
+-        </div>
+-
+-        <div class="login-card">
+-          <div class="login-header">
+-            <span>Cß║Ñu h├¼nh MuMu Player & Danh s├ích T├ái Khoß║ún</span>
+-          </div>
+-
+-          <div class="login-body">
+-            <label for="txt-mumu-path" class="input-label">─É╞░ß╗¥ng dß║½n MuMuManager.exe (MuMu 12)</label>
+-            <input type="text" id="txt-mumu-path" class="modern-input"
+-              value="C:\Program Files\Netease\MuMuPlayer-12.0\shell\MuMuManager.exe"
+-              style="width: 100%; margin-bottom: 15px;">
+-
+-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+-              <span class="input-label" style="margin: 0;">Danh s├ích T├ái Khoß║ún (Slot 1 = Giß║ú lß║¡p sß╗æ 0)</span>
+-              <div>
+-                <button id="btn-add-acc-row" style="padding: 4px 8px; font-size: 11px; font-weight: bold; background-color: #f39c12; color: white; border: none; border-radius: 3px; cursor: pointer;">Γ₧ò Th├¬m</button>
+-                <button id="btn-import-acc" style="padding: 4px 8px; font-size: 11px; font-weight: bold; background-color: #27ae60; color: white; border: none; border-radius: 3px; cursor: pointer;">≡ƒôï D├ín tß╗½ Excel</button>
+-              </div>
+-            </div>
+-
+-            <div class="datagrid-container" style="height: 220px; border: 1px solid #ddd; margin-bottom: 10px;">
+-              <table class="datagrid" id="acc-table">
+-                <thead>
+-                  <tr>
+-                    <th width="40">Slot</th>
+-                    <th>T├ái khoß║ún</th>
+-                    <th>Mß║¡t khß║⌐u</th>
+-                    <th width="70">Action</th>
+-                  </tr>
+-                </thead>
+-                <tbody id="acc-table-body">
+-                  <!-- JS will populate -->
+-                </tbody>
+-              </table>
+-            </div>
+-          </div>
+-        </div>
+-
+-        <div id="login-status-card" class="status-card" style="display: none;">
+-          <div class="status-title">Tiß║┐n tr├¼nh Full Auto:</div>
+-          <div id="lbl-login-status" class="status-message">─Éang chß╗¥...</div>
+-        </div>
+-      </div>
+-    </div>
+   </div>
+ 
+   <!-- BOTTOM: StatusBar -->
+diff --git a/src/gui/renderer/shop-detail.html b/src/gui/renderer/shop-detail.html
+deleted file mode 100644
+index e47e9e0..0000000
+--- a/src/gui/renderer/shop-detail.html
++++ /dev/null
+@@ -1,333 +0,0 @@
+-<!DOCTYPE html>
+-<html>
+-<head>
+-  <meta charset="UTF-8">
+-  <title>Chi Tiß║┐t Sß║íp H├áng</title>
+-  <style>
+-    body { font-family: Tahoma, sans-serif; font-size: 13px; background: #f5f6fa; color: #333; margin: 0; padding: 15px; }
+-    .header { font-size: 18px; font-weight: bold; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 10px; }
+-    .filter-bar { background: #fff; padding: 10px; border: 1px solid #dcdde1; border-radius: 5px; margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+-    .filter-bar input, .filter-bar select { padding: 4px; border: 1px solid #ccc; border-radius: 3px; outline: none; }
+-    
+-    .shop-section { background: #fff; border: 1px solid #dcdde1; border-radius: 5px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+-    .shop-header { background: #ecf0f1; padding: 10px; font-weight: bold; font-size: 14px; border-bottom: 1px solid #dcdde1; display: flex; justify-content: space-between; }
+-    .shop-header span { color: #e67e22; }
+-    .shop-items { padding: 10px; display: flex; flex-wrap: wrap; gap: 10px; }
+-    
+-    .item-card { border: 1px solid #dcdde1; border-radius: 5px; width: calc(50% - 5px); box-sizing: border-box; padding: 10px; background: #fdfdfd; }
+-    .item-header { font-size: 14px; font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px; }
+-    .item-prop { margin-bottom: 4px; font-size: 12px; }
+-    .item-prop .lbl { color: #7f8fa6; display: inline-block; width: 80px; }
+-    .magics { margin-top: 8px; background: #f9f9f9; border: 1px dashed #dcdde1; padding: 6px; border-radius: 4px; font-size: 12px; }
+-    .magic-lbl { font-weight: bold; color: #8e44ad; margin-bottom: 4px; }
+-    .magic-item { color: #2c3e50; padding: 2px 0; }
+-  </style>
+-</head>
+-<body>
+-  <div class="header">Kß║┐t Quß║ú Qu├⌐t Sß║íp</div>
+-  
+-  <div class="filter-bar">
+-    <input type="text" id="flt-keyword" placeholder="Nhß║¡p t├¬n vß║¡t phß║⌐m..." style="flex: 1;">
+-    <select id="flt-series">
+-      <option value="-1">Tß║Ñt cß║ú hß╗ç</option>
+-      <option value="0">Kim</option>
+-      <option value="1">Mß╗Öc</option>
+-      <option value="2">Thß╗ºy</option>
+-      <option value="3">Hß╗Åa</option>
+-      <option value="4">Thß╗ò</option>
+-    </select>
+-    <select id="flt-level">
+-      <option value="-1">Tß║Ñt cß║ú cß║Ñp</option>
+-      <option value="1">Cß║Ñp 1</option>
+-      <option value="2">Cß║Ñp 2</option>
+-      <option value="3">Cß║Ñp 3</option>
+-      <option value="4">Cß║Ñp 4</option>
+-      <option value="5">Cß║Ñp 5</option>
+-      <option value="6">Cß║Ñp 6</option>
+-      <option value="7">Cß║Ñp 7</option>
+-      <option value="8">Cß║Ñp 8</option>
+-      <option value="9">Cß║Ñp 9</option>
+-      <option value="10">Cß║Ñp 10</option>
+-    </select>
+-    <select id="flt-item-type">
+-      <option value="-1">Tß║Ñt cß║ú loß║íi</option>
+-      <option value="0">V┼⌐ Kh├¡</option>
+-      <option value="2">├üo</option>
+-      <option value="7">M┼⌐</option>
+-      <option value="5">Gi├áy</option>
+-      <option value="3">Nhß║½n</option>
+-      <option value="4">D├óy Chuyß╗ün</option>
+-      <option value="8">Bao Tay</option>
+-      <option value="9">Ngß╗ìc Bß╗Öi</option>
+-      <option value="6">Thß║»t L╞░ng</option>
+-      <option value="10006">Kh├íc (Ti├¬u hao, B├¡ k├¡p...)</option>
+-    </select>
+-    <select id="flt-gender">
+-      <option value="all">Nam/Nß╗»</option>
+-      <option value="nam">Nam</option>
+-      <option value="nu">Nß╗»</option>
+-    </select>
+-    </select>
+-  </div>
+-
+-  <div style="background: white; padding: 10px 20px; border-bottom: 1px solid #ddd; margin-bottom: 15px;">
+-    <div style="font-weight: bold; font-size: 13px; color: #555; margin-bottom: 5px;">Lß╗ìc theo thuß╗Öc t├¡nh (Magic Attributes):</div>
+-    <div id="magic-filters-container" style="display: flex; flex-direction: column; gap: 8px;">
+-      <!-- Magic filter rows will be added here -->
+-    </div>
+-    <button id="btn-add-magic-filter" style="margin-top: 8px; padding: 4px 10px; background: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">+ Th├¬m thuß╗Öc t├¡nh</button>
+-  </div>
+-  
+-  <div id="content" style="overflow-y: auto; max-height: calc(100vh - 180px); padding-right: 5px;">─Éang tß║úi...</div>
+-
+-  <script>
+-    const { ipcRenderer } = require('electron');
+-    let allItems = [];
+-    let currentDevId = '';
+-    let availableMagics = [];
+-
+-    const seriesColors = ['#d4af37', '#27ae60', '#3498db', '#e74c3c', '#e67e22'];
+-    const seriesNames = ['Kim', 'Mß╗Öc', 'Thß╗ºy', 'Hß╗Åa', 'Thß╗ò'];
+-
+-    function formatMoney(amount) {
+-      let van = Math.floor(amount / 10000);
+-      return van + ' vß║ín';
+-    }
+-
+-    function renderItems() {
+-      try {
+-        const kw = document.getElementById('flt-keyword').value.toLowerCase().trim();
+-        const ser = parseInt(document.getElementById('flt-series').value);
+-        const lvl = parseInt(document.getElementById('flt-level').value);
+-        const gen = document.getElementById('flt-gender').value;
+-        const itype = parseInt(document.getElementById('flt-item-type').value);
+-
+-        const magicRows = document.querySelectorAll('#magic-filters-container > div');
+-        const activeMagics = [];
+-        magicRows.forEach(row => {
+-          const mName = row.querySelector('.magic-name').value;
+-          const mVal = parseFloat(row.querySelector('.magic-val').value) || 0;
+-          if (mName) activeMagics.push({ name: mName, val: mVal });
+-        });
+-
+-        // Filter and Group items by shop
+-        const shops = {};
+-        
+-        allItems.forEach(item => {
+-          // Filter logic
+-          if (kw && !item.name.toLowerCase().includes(kw) && !(item.realName && item.realName.toLowerCase().includes(kw))) return;
+-          if (ser !== -1 && item.series !== ser) return;
+-          if (lvl !== -1 && item.level !== lvl) return;
+-          
+-          if (gen === 'nam' && item.gender !== 0) return;
+-          if (gen === 'nu' && item.gender !== 1) return;
+-          
+-          if (itype !== -1) {
+-            if (itype === 0 && item.genre !== 0 && item.genre !== 1) return; // v┼⌐ kh├¡
+-            else if (itype === 10006 && item.genre !== 6 && item.genre !== 10006) return; // kh├íc
+-            else if (itype !== 0 && itype !== 10006 && item.genre !== itype) return; // ├ío, m┼⌐, gi├áy... match exactly genre
+-          }
+-
+-          if (activeMagics.length > 0) {
+-            let passed = true;
+-            for (let am of activeMagics) {
+-              let found = false;
+-              if (item.magics) {
+-                for (let m of item.magics) {
+-                  if (m.startsWith(am.name)) {
+-                    let match = m.match(/([+-]?\d+)/);
+-                    if (match) {
+-                      let v = parseInt(match[1], 10);
+-                      if (Math.abs(v) >= am.val) {
+-                        found = true;
+-                        break;
+-                      }
+-                    } else if (am.val === 0) { // property exists but no number (e.g., skill)
+-                      found = true;
+-                      break;
+-                    }
+-                  }
+-                }
+-              }
+-              if (!found) { passed = false; break; }
+-            }
+-            if (!passed) return;
+-          }
+-
+-          if (!shops[item.sellerId]) {
+-            shops[item.sellerId] = {
+-              shopName: item.shopName,
+-              cid: item.sellerId,
+-              items: []
+-            };
+-          }
+-          shops[item.sellerId].items.push(item);
+-        });
+-
+-        const content = document.getElementById('content');
+-        let html = '';
+-
+-        const shopKeys = Object.keys(shops);
+-        if (shopKeys.length === 0) {
+-          html = '<div style="color: red; padding: 10px; text-align: center;">Kh├┤ng t├¼m thß║Ñy vß║¡t phß║⌐m n├áo khß╗¢p vß╗¢i ─æiß╗üu kiß╗çn lß╗ìc.</div>';
+-        } else {
+-          shopKeys.forEach(cid => {
+-            const shop = shops[cid];
+-            
+-            let itemsHtml = shop.items.map(item => {
+-              const sColor = seriesColors[item.series] || '#888';
+-              const sName = seriesNames[item.series];
+-              
+-              let genderStr = 'Kh├┤ng y├¬u cß║ºu';
+-              if (item.gender === 0) genderStr = 'Nam';
+-              else if (item.gender === 1) genderStr = 'Nß╗»';
+-              
+-              let magicsHtml = '<div style="color: #999; font-style: italic;">Kh├┤ng c├│ thuß╗Öc t├¡nh ß║⌐n</div>';
+-              if (item.magics && item.magics.length > 0) {
+-                magicsHtml = item.magics.map((m, idx) => {
+-                  const color = idx % 2 === 0 ? '#0984e3' : '#636e72';
+-                  return `<div class="magic-item" style="color: ${color}; font-weight: 500;">ΓÇó ${m}</div>`;
+-                }).join('');
+-              }
+-              
+-              return `
+-                <div class="item-card">
+-                  <div class="item-header" style="color: black;">
+-                    ${item.realName || item.name} ${ (item.genre !== 6 && item.genre !== 10006 && sName) ? `<span style="color: ${sColor}; font-size: 13px; font-weight: normal;">(Hß╗ç ${sName})</span>` : ''}
+-                  </div>
+-                  ${ (item.genre !== 6 && item.genre !== 10006) ? `
+-                  <div class="item-prop"><span class="lbl" style="color: black;">Cß║Ñp:</span> <span style="color: black;">${item.level || 0}</span></div>
+-                  ${ item.reqStr > 0 ? `<div class="item-prop"><span class="lbl" style="color: black;">Y├¬u cß║ºu sß╗⌐c mß║ính:</span> <span style="color: black;">${item.reqStr} ─æiß╗âm</span></div>` : '' }
+-                  ${ item.reqDex > 0 ? `<div class="item-prop"><span class="lbl" style="color: black;">Y├¬u cß║ºu th├ón ph├íp:</span> <span style="color: black;">${item.reqDex} ─æiß╗âm</span></div>` : '' }
+-                  <div class="item-prop"><span class="lbl" style="color: black;">Giß╗¢i T├¡nh:</span> <span style="color: black;">${genderStr}</span></div>
+-                  ` : '' }
+-                  <div class="item-prop"><span class="lbl" style="color: black;">Gi├í b├ín:</span> <b style="color: #d35400;">${formatMoney(item.money)}</b> | <b style="color: #27ae60;">${item.knb || 0} KNB</b></div>
+-                  <div class="magics">
+-                    <div class="magic-lbl">[ Thuß╗Öc T├¡nh ]</div>
+-                    ${magicsHtml}
+-                  </div>
+-                  <div style="margin-top: 10px; text-align: right;">
+-                    <button class="buy-btn" data-idx="${item.idx}" data-cid="${cid}" data-price="${item.money > 0 ? item.money : item.knb}" style="padding: 4px 12px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">Mua M├│n N├áy</button>
+-                  </div>
+-                </div>
+-              `;
+-            }).join('');
+-
+-            html += `
+-              <div class="shop-section">
+-                <div class="shop-header">
+-                  <div>Chß╗º Sß║íp: <span>${shop.shopName}</span></div>
+-                  <div>Hiß╗ân thß╗ï ${shop.items.length} m├│n ─æß╗ô</div>
+-                </div>
+-                <div class="shop-items">
+-                  ${itemsHtml}
+-                </div>
+-              </div>
+-            `;
+-          });
+-        }
+-
+-        content.innerHTML = html;
+-
+-        // Attach buy events
+-        document.querySelectorAll('.buy-btn').forEach(btn => {
+-          btn.onclick = async () => {
+-            btn.disabled = true;
+-            btn.innerText = '...';
+-            const idx = parseInt(btn.getAttribute('data-idx'));
+-            const cid = btn.getAttribute('data-cid');
+-            const price = parseInt(btn.getAttribute('data-price'));
+-            
+-            try {
+-              const res = await ipcRenderer.invoke('buy-datau', currentDevId, cid, idx, price);
+-              if (res && res.ok) {
+-                btn.innerText = '─É├ú Mua';
+-                btn.style.background = '#27ae60';
+-              } else {
+-                btn.innerText = 'Lß╗ùi';
+-                btn.style.background = '#e74c3c';
+-                alert('Lß╗ùi: ' + (res ? res.error : 'Unknown'));
+-              }
+-            } catch(e) {
+-              btn.innerText = 'Lß╗ùi';
+-              alert('Ngoß║íi lß╗ç: ' + e.message);
+-            }
+-          };
+-        });
+-      } catch(e) {
+-        document.getElementById('content').innerHTML = `<div style="color: red; padding: 20px;">Lß╗ùi render: ${e.message}</div>`;
+-      }
+-    }
+-
+-    document.getElementById('flt-keyword').addEventListener('input', renderItems);
+-    document.getElementById('flt-series').addEventListener('change', renderItems);
+-    document.getElementById('flt-level').addEventListener('change', renderItems);
+-    document.getElementById('flt-item-type').addEventListener('change', renderItems);
+-    document.getElementById('flt-gender').addEventListener('change', renderItems);
+-
+-    function populateAvailableMagics() {
+-      let magicsSet = new Set();
+-      allItems.forEach(item => {
+-        if (item.magics) {
+-          item.magics.forEach(m => {
+-            const parts = m.split(':');
+-            if (parts.length > 0) {
+-              magicsSet.add(parts[0].trim());
+-            }
+-          });
+-        }
+-      });
+-      availableMagics = Array.from(magicsSet).sort((a, b) => a.localeCompare(b, 'vi'));
+-    }
+-
+-    ipcRenderer.on('load-all-shops-data', (event, globalData) => {
+-      currentDevId = globalData.devId;
+-      allItems = globalData.items || [];
+-      document.querySelector('.header').innerText = `Kß║┐t Quß║ú Qu├⌐t: T├¼m thß║Ñy ${allItems.length} vß║¡t phß║⌐m`;
+-      populateAvailableMagics();
+-      renderItems();
+-    });
+-
+-    // Support single shop fallback
+-    ipcRenderer.on('load-shop-data', (event, shopData) => {
+-      currentDevId = shopData.devId;
+-      allItems = shopData.items || [];
+-      // Assign sellerId to all items to fit the global group logic if missing
+-      allItems.forEach(it => { 
+-        if(!it.sellerId) it.sellerId = shopData.cid; 
+-        if(!it.shopName) it.shopName = shopData.shopName; 
+-      });
+-      document.querySelector('.header').innerText = `Chi Tiß║┐t Sß║íp: ${shopData.shopName}`;
+-      populateAvailableMagics();
+-      renderItems();
+-    });
+-
+-    document.getElementById('btn-add-magic-filter').addEventListener('click', () => {
+-      const container = document.getElementById('magic-filters-container');
+-      const row = document.createElement('div');
+-      row.style = 'display: flex; gap: 10px; align-items: center;';
+-      
+-      let optionsHtml = availableMagics.map(m => `<option value="${m}">${m}</option>`).join('');
+-      
+-      row.innerHTML = `
+-        <select class="magic-name" style="flex: 2; padding: 4px; border: 1px solid #ccc; border-radius: 3px;">
+-          <option value="">-- Chß╗ìn thuß╗Öc t├¡nh --</option>
+-          ${optionsHtml}
+-        </select>
+-        <input type="number" class="magic-val" placeholder="Gi├í trß╗ï tß╗æi thiß╗âu..." style="flex: 1; padding: 4px; border: 1px solid #ccc; border-radius: 3px;">
+-        <button class="btn-remove-magic" style="padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer;">X</button>
+-      `;
+-      
+-      row.querySelector('.btn-remove-magic').onclick = () => {
+-        row.remove();
+-        renderItems();
+-      };
+-      
+-      row.querySelector('.magic-name').onchange = renderItems;
+-      row.querySelector('.magic-val').oninput = renderItems;
+-      
+-      container.appendChild(row);
+-    });
+-  </script>
+-</body>
+-</html>

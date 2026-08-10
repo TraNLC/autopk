@@ -156,17 +156,24 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
           }
         }
         // Cố gắng tự học ID NPC xung quanh nếu chưa có
-        if (!trinhSatId) {
+        if (!trinhSatId || !quanNhuId) {
             try {
                 const npcNamesRes = await session.callRpc('getNearNpcNames');
                 if (npcNamesRes && npcNamesRes.ok && npcNamesRes.npcMap) {
                     for (const [npcId, npcName] of Object.entries(npcNamesRes.npcMap)) {
                         const lower = String(npcName).toLowerCase();
-                        if (lower.includes('trinh sát') || lower.includes('trinh sat') || lower.includes('mã binh quan') || lower.includes('ma binh quan')) {
-                            trinhSatId = npcId;
-                            cache.trinhSatId = npcId;
-                            sendLog(`[${deviceId}] [Staging] Da quet thay ID Trinh Sat tu vung nho: ${trinhSatId} (${npcName})`, 'success');
-                            break; // Stop after finding one
+                        if (lower.includes('trinh') || lower.includes('trình') || lower.includes('mã binh quan') || lower.includes('ma binh quan')) {
+                            if (!trinhSatId) {
+                                trinhSatId = npcId;
+                                cache.trinhSatId = npcId;
+                                sendLog(`[${deviceId}] [Staging] Da quet thay ID Trinh Sat tu vung nho: ${trinhSatId} (${npcName})`, 'success');
+                            }
+                        } else if (lower.includes('quân nhu') || lower.includes('quan nhu') || lower.includes('quan y') || lower.includes('quân y')) {
+                            if (!quanNhuId) {
+                                quanNhuId = npcId;
+                                cache.quanNhuId = npcId;
+                                sendLog(`[${deviceId}] [Staging] Da quet thay ID Quan Nhu tu vung nho: ${quanNhuId} (${npcName})`, 'success');
+                            }
                         }
                     }
                 }
@@ -209,24 +216,24 @@ async function autoTongKimLoop(deviceId, session, info, _side, _lacs, sendLog, a
         cache._lastCallTime = now;
 
         // Mac dinh luon nhan thuoc truoc khi qua cua Trinh Sat
-        // if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 1 * 60 * 1000)) {
-        //   sendLog(`[${deviceId}] [Ra Tran] Dang nhan thuoc Quan Nhu...`, 'info');
-        //   try {
-        //     await injector.sendNpcDialogue(quanNhuId);
-        //     await new Promise(r => setTimeout(r, 800));
-        //     await injector.sendNpcSelect(0);
-        //     await new Promise(r => setTimeout(r, 400));
-        //     await session.callRpc('sendPacket', 232, '');
-        //     await new Promise(r => setTimeout(r, 400));
-        //     sendLog(`[${deviceId}] [Ra Tran] Nhan thuoc Quan Nhu thanh cong!`, 'success');
-        //   } catch(e) {
-        //     sendLog(`[${deviceId}] [Ra Tran] Loi nhan thuoc: ${e.message}`, 'error');
-        //   }
-        //   cache._lastHealTime = now;
-        // 
-        //   try { await session.callRpc('closeDialogPopups'); } catch(e) {}
-        //   await new Promise(r => setTimeout(r, 200));
-        // }
+        if (quanNhuId && (!cache._lastHealTime || (now - cache._lastHealTime) > 1 * 60 * 1000)) {
+          sendLog(`[${deviceId}] [Ra Tran] Dang nhan thuoc Quan Nhu...`, 'info');
+          try {
+            await injector.sendNpcDialogue(quanNhuId);
+            await new Promise(r => setTimeout(r, 800));
+            await injector.sendNpcSelect(0);
+            await new Promise(r => setTimeout(r, 400));
+            await session.callRpc('sendPacket', 232, '');
+            await new Promise(r => setTimeout(r, 400));
+            sendLog(`[${deviceId}] [Ra Tran] Nhan thuoc Quan Nhu thanh cong!`, 'success');
+          } catch(e) {
+            sendLog(`[${deviceId}] [Ra Tran] Loi nhan thuoc: ${e.message}`, 'error');
+          }
+          cache._lastHealTime = now;
+        
+          try { await session.callRpc('closeDialogPopups'); } catch(e) {}
+          await new Promise(r => setTimeout(r, 200));
+        }
 
         // Buff tran phai
         try {

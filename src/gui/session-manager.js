@@ -240,7 +240,7 @@ async function connectDevice(deviceId, pkgName, sendLog) {
                             const lowerName = name.toLowerCase();
                             const currentMapId = res.mapId || (state.info ? state.info.mapId : null);
 
-                            if (lowerName.includes("trinh sát") || lowerName.includes("trinh sat")) {
+                            if (lowerName.includes("trinh") || lowerName.includes("trình") || lowerName.includes("mã binh quan") || lowerName.includes("ma binh quan")) {
                                 cache.trinhSatId = dynamicId;
                                 if (!cache.learnedIds.includes(dynamicId)) cache.learnedIds.push(dynamicId);
                                 traceLog(deviceId, `Da hoc ID Trinh Sat: ${dynamicId} (${name})`, 'success');

@@ -44,6 +44,8 @@
         <button class="tab-btn active" data-tab="tab-auto-tk">Auto Tống Kim</button>
         <button class="tab-btn" data-tab="tab-test-npc">Test NPC</button>
         <button class="tab-btn" data-tab="tab-optimize">Tối Ưu</button>
+        <button class="tab-btn" data-tab="tab-datau">Dã Tẩu</button>
+        <button class="tab-btn" data-tab="tab-5hanh">Ngũ Hành</button>
       </div>
 
       <!-- Tab 1: Auto TK -->
@@ -179,6 +181,41 @@
             <button id="btn-adb-low" style="flex: 1; padding: 8px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Ép 480x854</button>
             <button id="btn-adb-superlow" style="flex: 1; padding: 8px; background: #8e44ad; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Ép 240x432 (Siêu thấp)</button>
             <button id="btn-adb-reset" style="flex: 1; padding: 8px; background: #95a5a6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Khôi phục Mặc định</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Dã Tẩu -->
+      <div id="tab-datau" class="tab-content">
+        <div class="groupbox" style="margin: 0 0 10px 0;">
+          <span class="groupbox-title">Quét Sạp Người Chơi (Tìm đồ Dã Tẩu)</span>
+          <div class="groupbox-content">
+            <p style="margin-bottom: 10px; color: #555; font-size: 12px;">Nhấn nút bên dưới để quét sạp hàng xung quanh. Dữ liệu sẽ hiển thị trong một cửa sổ chi tiết mới.</p>
+            <div style="margin-bottom: 10px; display: flex; flex-direction: column; gap: 5px;">
+              <label for="txt-datau-keyword" style="font-size: 12px;">Từ khóa vật phẩm:</label>
+              <input type="text" id="txt-datau-keyword" placeholder="Ví dụ: Lam Bảo Rương" style="padding: 4px; border: 1px solid #ccc; border-radius: 3px;">
+              
+              <label for="num-shops-to-scan" style="font-size: 12px;">Số sạp tối đa:</label>
+              <input type="number" id="num-shops-to-scan" value="50" min="1" max="500" style="padding: 4px; width: 60px; border: 1px solid #ccc; border-radius: 3px;">
+            </div>
+            <button id="btn-scan-datau" style="width: 100%; padding: 8px; font-size: 13px; font-weight: bold; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Quét Tìm Sạp</button>
+            <div id="datau-status-container" style="margin-top: 10px; text-align: center;">
+              <span id="datau-loading-text" style="color: #888; font-size: 12px; font-style: italic;">Sẵn sàng quét...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 5: Ngũ Hành -->
+      <div id="tab-5hanh" class="tab-content">
+        <div class="groupbox" style="margin: 0;">
+          <span class="groupbox-title">Xây Dựng Đồ Ngũ Hành (Lọc Trang Bị)</span>
+          <div class="groupbox-content">
+            <p style="margin-bottom: 10px; color: #555; font-size: 12px;">Quét toàn bộ sạp hàng để phân loại trang bị thành bộ Ngũ Hành 5 món hoàn chỉnh.</p>
+            <button id="btn-scan-5hanh" style="width: 100%; padding: 8px; font-size: 13px; font-weight: bold; background-color: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer;">Quét & Phối Đồ Ngũ Hành</button>
+            <div id="5hanh-status-container" style="margin-top: 10px; text-align: center;">
+              <span id="5hanh-loading-text" style="color: #888; font-size: 12px; font-style: italic;">Sẵn sàng phối đồ...</span>
+            </div>
           </div>
         </div>
       </div>
